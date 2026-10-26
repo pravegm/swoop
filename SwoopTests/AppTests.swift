@@ -1493,7 +1493,8 @@ struct RoundSixTests {
         var s = FlightSchool(touch: false, asksWingCheck: false)
         s.start(at: .hold, time: 0)
         #expect(!s.canSkip)
-        #expect(!s.skip())
+        let skippedEarly = s.skip()   // (`#expect` can't call a mutating method)
+        #expect(!skippedEarly)
         #expect(s.stepCount == 7)
         // Step 0: held open like a book and still; success only after the prompt has been up 1.2 s.
         var outs = driveSchool(&s, from: 0, to: 1.0) { SchoolInput(time: $0, landscape: true, angle: 150, still: true) }
@@ -1584,7 +1585,8 @@ struct RoundSixTests {
         #expect(duo.dotIndex == 3)
         #expect(duo.overline == "Flight School · step 4 of 8")
         #expect(duo.canSkip)
-        #expect(duo.skip())
+        let skippedDuo = duo.skip()
+        #expect(skippedDuo)
         var phone = FlightSchool(touch: true, asksWingCheck: false)
         phone.start(at: .wingCheck, time: 0)
         #expect(phone.stepNow == .dive)
