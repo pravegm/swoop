@@ -1,83 +1,90 @@
 # Swoop: App Store screenshot plan (v1.0)
 
-*Written Mon 26 Oct 2026. Owner: CI captures and captions, the launch lead writes captions, the founder approves. **Every frame comes from a CI demo scenario**: the app's own rendering, launched with `-swoopDemo "…"` (keys in `design/ROUND-1.md`) on the iPhone Duo simulator (`ci/duo.sh` store pass) and the iPhone simulators (`ci/screenshots.sh`), then captioned on the Mac runner. The scenario lines below go into **`ci/store-scenarios.txt`** (format `name|demo args|wait|caption|expect`, which `ci/duo.sh` and `ci/screenshots.sh` already read). Once that file exists it is the source of truth: change a caption there, not only here. The pipeline pieces still to port from Brim are listed in `DECISIONS.md` §2.*
+*Written Mon 26 Oct 2026, pipeline built the same day (Round 4, `design/notes/store-R4.md`). Owner: CI captures and captions, the launch lead writes captions, the founder approves. **Every frame comes from a CI demo scenario**: the app's own rendering, launched with `-swoopDemo "…"` (keys in the header of `Swoop/App/DemoMode.swift` and `design/ROUND-1.md`) on the iPhone Duo simulator and the iPhone simulators, then captioned on the Mac runner. **The scenario files are the source of truth**: `ci/store-scenarios.txt` (iPhone sets) and `ci/duo-store-scenarios.txt` (Duo set). Change a caption there, not only here.*
 
-## Sets and sizes
+## How to make the sets
 
-Swoop plays in **landscape** (the Duo held like a book: a 951 × 669 pt inner canvas with the fold running top to bottom). Every set is landscape.
+GitHub → Actions → **App Store screenshots** (`.github/workflows/store.yml`) → Run workflow. Inputs: which sets, an optional `duo_from_run` (reuse the Duo captures of an earlier run instead of the slow Duo job), the simulators, the name filters, and `book_angle`.
 
-| Set | Pixels (landscape) | Frames | Captured by | Upload |
-|---|---|---|---|---|
-| **iPhone Duo, inner display** (the hero set) | **2853 × 2007** (951 × 669 pt at 3×; Apple lists the slot as 2007 × 2853, and landscape is the same size turned sideways) | **6** (D1–D6) | `duo.yml` → `ci/duo.sh` store pass with `STORE_LIST=ci/store-scenarios.txt` and `STORE_FILTER=^D` | By hand in the web UI, **if** App Store Connect shows an iPhone Duo slot (`DECISIONS.md` #14) |
-| **iPhone 6.9"** | **2868 × 1320** | **5** (P1–P5) | `ci/screenshots.sh` on the iPhone 18 Pro Max (fallback: newest `… Pro Max`) | Web UI, "6.9-inch Display" |
-| **iPhone 6.1" class** | **2556 × 1179** (or 2532 × 1170); **2622 × 1206** when the runner has no 6.1-inch simulator | **5** (P1–P5) | `ci/screenshots.sh` on the newest simulator with that screen, else the iPhone 18 Pro (6.3") | Web UI: 2556 × 1179 and 2622 × 1206 go in the **6.3-inch** slot, 2532 × 1170 in the **6.1-inch** slot |
+1. **phones** builds the app and captures P1–P8 on the iPhone 18 Pro Max and the iPhone 18 Pro (`ci/store-capture.sh` → `ci/screenshots.sh`, retrying missing or wrong-sized frames twice).
+2. **duo** captures D1–D8 on the iPhone Duo's inner display (`ci/store-capture.sh` → `ci/duo.sh` store pass, hinge held at 150°).
+3. **assemble** captions every set (`ci/store-set.sh` + `ci/store-frame.swift`) and turns D1's real Duo capture into the **book-pose composite** that is frame 1 of every set.
 
-Rules: PNG or JPEG, **no alpha channel**, 1–10 per size. In search results a landscape set shows **only its first frame**, so **frame 1 has to sell the whole game on its own**, and frames 1–3 must each make sense alone on the product page.
+Artifacts: **`store-duo`**, **`store-69`**, **`store-63`**, each holding the upload-ready `*.png` (in name order), `MANIFEST.txt` / `MANIFEST.tsv` (file, size, slot match, caption, OK / FLAGGED / MISSING / FAILED and why) and `_flagged/`. The `raw-*` artifacts are the unframed captures and their app logs, for debugging. One bad frame never fails the run.
 
-**Check before upload:** open Apple's *Screenshot specifications* page and confirm the iPhone Duo slot accepts the landscape size. If it accepts portrait only, the Duo set ships with 1.0.1 (a rotated landscape frame on its side would be wrong).
+## Sets, sizes and slots (verified 26 Oct 2026 against Apple's *Screenshot specifications*)
+
+Swoop plays in **landscape** (the Duo held like a book: a 951 × 669 pt inner canvas with the fold running top to bottom). Every set is landscape, and Apple lists landscape sizes for every iPhone row.
+
+| Upload order | App Store Connect slot (Apple's row) | Pixels (landscape) | Frames | Artifact | Status |
+|---|---|---|---|---|---|
+| 1 | **iPhone 6.9"** (Dynamic Island, large display) | **2868 × 1320** (also accepted: 2796 × 1290, 2736 × 1260) | P1–P8 | `store-69` | Optional, but upload it: Apple scales it down for the 6.5" row, so 6.5" (2778 × 1284 / 2688 × 1242) needs nothing of its own |
+| 2 | **iPhone 6.3"** (Dynamic Island, medium display) | **2622 × 1206** (also accepted: 2556 × 1179) | P1–P8 | `store-63` | **Required** (Apple's only required iPhone size); Apple scales it down for 6.1" and smaller |
+| 3 | **iPhone Duo, inner display** | **2853 × 2007** (portrait 2007 × 2853 is the same slot) | D1–D8 | `store-duo` | Listed by Apple, no requirement stated. Apple: "Starting in April 2027, screenshots will be required for any app using the iOS 27.1 SDK or later", and submitting Duo screenshots shows the "optimized for iPhone Duo" badge on the product page |
+| – | iPhone Duo, outer (cover) display | 2034 × 1398 (portrait 1398 × 2034) | none | – | Not made: Swoop is not played on the cover; Apple does not say both Duo sizes are needed |
+
+**Does App Store Connect have an iPhone Duo slot?** Apple's specification page lists one (inner 2853 × 2007, outer 2034 × 1398). But in October 2026 developers reported that the version page's device selector and the API's `ScreenshotDisplayType` had no Duo entry yet (Apple Developer Forums 845505). So: **look for an "iPhone Duo" entry on upload day.** If it's there, upload `store-duo` (D1–D8). If it isn't, ship 1.0 with the 6.9" and 6.3" sets only: their frame 1 is the Duo book composite, so the Duo story is still the first thing anyone sees; add the Duo set with 1.0.1 (screenshots only change with a new version, and before April 2027).
+
+Rules: PNG, **no alpha channel** (the compositor writes opaque sRGB; `store-set.sh` checks with `sips`), 1–10 per size (we use 8). In search results a landscape set shows **only its first frame**, so frame 1 has to sell the whole game on its own, and frames 1–3 must each make sense alone on the product page.
 
 ## Frame 1 is the Duo held like a book, with the bird across the fold
 
-The hero image is the whole pitch: **a real iPhone Duo held open like a book, and on its two halves the title bird whose wings span the fold**. A flat capture of the inner display can't show that (it reads as a wide picture, not a folded phone), so frame 1 is a **store shot**: CI captures the live title screen on the Duo simulator (the bird across both halves, wings part-tucked) and maps that capture onto a modelled Duo standing open at about 150° in book pose, seen from a 3/4 front eye. This is Squish's approach (`Squish/Scene/Fold/FoldStoreShot.swift`, renders `*-storeshot-*.png`), to be ported for book pose (request in `DECISIONS.md` §2).
+The hero is the whole pitch: **an iPhone Duo standing open like a book, the title bird's wings spanning its two halves.** `store-frame --book` takes D1, a **real Duo inner-display capture** of Home (2853 × 2007), splits it at the fold (x = 1428 px; the crease band is x ≈ 1368–1488), and maps each half by a true perspective transform (Core Image `CIPerspectiveTransform`) onto one page of a stylised Duo open at **140°** (each page turned 20° toward the viewer; `book_angle=auto` uses the hinge angle in the capture's own log when it has one, which is the 150° the Duo was held at), tilted back 8° and seen from in front, slightly above. Around it: a thin graphite bezel lit from the right, the hinge spine (a metal barrel at the top and bottom, a seam in the bezel), a soft drop shadow and a ground shadow. **No hands.**
 
-- **Truthful:** the screen content is an unaltered capture of the app; the device is a model of the real Duo at an angle Swoop is played at. Nothing is drawn on the screen that the app doesn't render.
-- **No hands drawn** in 1.0 (a modelled hand looks fake). The founder's real-hands photo of the same moment is the 1.0.1 upgrade, as with Squish.
-- **Used in every set** as frame 1, including the iPhone sets: if App Store Connect has no Duo slot on upload day, the 6.9" set is the only one anyone sees, and its first frame must still say "Duo first". The caption's sub-line says other iPhones can play. It never shows a non-folding iPhone folded.
-- **Fallback** if the store shot isn't ready by code freeze (Mon 16 Nov): D1/P1 = the raw title-screen capture (bird across the crease) with the caption "Hold your Duo like a *book*." Tell the founder; the store shot then ships with 1.0.1.
+- **Truthful:** every screen pixel is the app's, only warped and clipped to the display's rounded corners. Nothing is drawn on the screen. The device is the real Duo pose Swoop is played in.
+- **Used in every set** as frame 1, including the iPhone sets (from the same Duo capture), because without a Duo slot the 6.9" set is all anyone sees. The iPhone caption's sub-line says other iPhones can play. It never shows a non-folding iPhone folded.
+- **Fallback, automatic:** if D1's capture is missing or isn't a 2853 × 2007 inner-display frame of the folded canvas (`SWOOP-T canvas 951x669 fold=1`), P1 is made flat from the iPhone's own Home capture and **FLAGGED**. Rerun the Duo job (or pass `duo_from_run`); don't upload a flat P1 without telling the founder.
+- 1.0.1 upgrade: the founder's real-hands photo of the same moment, as with Squish.
 
-## Caption style (what the caption renderer draws)
+## Caption style (what `ci/store-frame.swift` draws)
 
-- **Layout:** a dusk sweep (deep slate `#14212E` on the storm side → warm gold `#F6B73C` glow on the clear side), mirroring the game's own composition: storm left, clear sky right. Caption band across the top 4–22% of the frame. Below it the **screenshot itself, unaltered**, scaled to fit, rounded corners, hairline edge, soft shadow. The caption never covers the bird, the crease band or the lead meter.
-- **No device frame** on frames 2–6 (D) or 2–5 (P): only frame 1 is a store shot.
-- **Type:** SF Pro Rounded Heavy (plain system Heavy if unavailable), warm white `#FFF8EE`. Headline cap height starts at 5.5% of the image height and shrinks in 5% steps until it fits in ≤ 2 balanced lines (floor 4%: landscape frames are short). **One** highlighted word, written `*word*` in the scenario file (*in italics here*), drawn in ink `#13212E` on a gold `#F6B73C` marker swash. Optional sub-line after ` / ` in SF Pro Rounded Semibold at ~46%, `#E9DCC6`.
-- **Seven words maximum** per headline. No logo on any frame.
+- **Layout:** the caption band runs **across the top** (3.5–21.5 % of the height) with the screenshot under it (24–96.5 %). In a landscape frame a ≤ 7-word headline fits on one line at a size that still reads in a search thumbnail, the eye goes caption → picture, and the capture keeps ~55 % of the frame (a side column leaves ~44 %) with its storm-left / sun-right split intact. **Exception:** the book frame on the iPhone slots (2.2 : 1) puts the caption in a **left column** (left-aligned, up to three lines) with the book on the right, because a book is only ~1.25 : 1 and would fill under half the width under a top band.
+- **Background:** a diagonal sweep from deep sea-navy (`#0B2236` UI surface, `#0A2B44` near-deep sea) to dusk (`#2E2A5E` Rose Dusk zenith → `#7A5C9E`), with the Golden Hour sun glow `#FFC46B` added on the right with plus-lighter blending (never gold at partial alpha over navy, ART-DIRECTION §2), and a soft shade along the bottom.
+- **Flat frames (2–8):** the capture itself, unaltered, scaled to fit, rounded corners (9 % of the short side on iPhone, 5 % on Duo), a hairline edge and a soft shadow. No device frame.
+- **Type:** SF Pro Rounded Heavy (plain system Heavy if missing), foam `#F2F7FA`. Headline cap height starts at 6 % of the image height and shrinks in 5 % steps until it fits in ≤ 2 balanced lines (floor 4 %; side column: 8.5 %, ≤ 3 lines, floor 5 %). **One** highlighted word, `*word*` in the scenario file, drawn as ink `#0E2438` letters on a UI-gold `#F7C75B` marker swash. Sub-line after ` / ` in SF Pro Rounded Semibold at ~46 %, mist `#B6CCDA` (top band: shrinks to stay on one line, floor 36 %).
+- **Seven words maximum** per headline, no logo, never "Fold to Fly" (Valley Run's tagline) and none of DECISIONS #36's words. `store-set.sh` lints all three.
 
-## A. iPhone Duo, inner display (2853 × 2007): 6 frames
+## A. iPhone 6.9" (2868 × 1320) and 6.3" (2622 × 1206): 8 frames each
 
-| # | In-game moment | Caption: headline / sub-line | Scenario line (`ci/store-scenarios.txt`) |
+Same frames and captions at both sizes, captured with the `touch` key so no Duo-only hint shows.
+
+| # | In-game moment | Caption: headline / sub-line | Demo args (`ci/store-scenarios.txt`) |
 |---|---|---|---|
-| **D1** | **Store shot:** the modelled Duo held open like a book at ~150°, the title bird's wings spanning both halves across the fold, Golden Hour sky | **The two halves are your *wings*.** / *Hold your Duo like a book.* | `D1-book-hero\|screen=home;bird=gull;sky=goldenHour;storeshot=book\|12\|The two halves are your *wings*. / Hold your Duo like a book.\|storeshot done` |
-| **D2** | Mid-flight just after a launch: the bird stretched off a crest on the left half, spray burst, the swells and a lighthouse ahead on the right half | **Fold a little. *Dive.*** / *Open at the crest to soar.* | `D2-launch\|mode=flight;seed=7;autopilot=perfect;freezeOn=launch;freezeAfter=6\|20\|Fold a little. *Dive.* / Open at the crest to soar.\|freeze launch` |
-| **D3** | A Perfect skim: white ring on the water, gold trail, PERFECT ×4 | **Land the downslope. *Perfect.*** / *Three in a row catch a Tailwind.* | `D3-perfect\|mode=flight;seed=7;autopilot=perfect;chain=3;freezeOn=perfect\|20\|Land the downslope. *Perfect.* / Three in a row catch a Tailwind.\|freeze perfect` |
-| **D4** | The storm close: slate cloud and slanting rain on the left half, lead meter low, clear gold sky ahead across the fold | ***Outfly* the storm.** / *Every Perfect pushes it back.* | `D4-storm\|mode=flight;seed=11;autopilot=casual;lead=0.12;freezeOn=stormclose\|20\|*Outfly* the storm. / Every Perfect pushes it back.\|freeze stormclose` |
-| **D5** | Passing a lighthouse: beam sweep, name card ("Gull Point" or whichever the seed gives) | **Reach the next *lighthouse*.** / *Each one buys you a lead.* | `D5-lighthouse\|mode=flight;seed=7;autopilot=expert;freezeOn=lighthouse\|60\|Reach the next *lighthouse*. / Each one buys you a lead.\|freeze lighthouse` |
-| **D6** | Birds screen, mid progress: several birds unlocked, the rest locked with their rank | **Eight birds. Five *skies*.** / *No ads. No in-app purchases.* | `D6-birds\|screen=birds;progress=mid\|10\|Eight birds. Five *skies*. / No ads. No in-app purchases.\|` |
+| **P1** | **Book composite** of D1: the title bird's wings across the fold | **The two halves are your *wings*.** / Best on iPhone Duo. Hold to tuck on any iPhone. | frame `book:D1-book-hero` (fallback capture `screen=home;progress=mid;bird=gull;sky=goldenHour;touch`) |
+| **P2** | A Perfect skim, chain 5: ring on the water, gold trail | **Land the downslope. *Perfect.*** / Three in a row catch a Tailwind. | `mode=flight;seed=7;autopilot=perfect;touch;chain=4;freezeOn=perfect;freezeAfter=0;freezeDelay=0.12` |
+| **P3** | A Tailwind starting | **Chain three. Ride the *Tailwind*.** / A burst of speed. The storm falls back. | `…;chain=2;freezeOn=tailwind;freezeAfter=0;freezeDelay=0.12` |
+| **P4** | The storm close, lead low | ***Outfly* the storm.** / Every Perfect pushes it back. | `mode=flight;seed=7;autopilot=casual;touch;lead=0.12;freezeOn=stormclose;freezeAfter=0` |
+| **P5** | Passing the first lighthouse | **Reach the next *lighthouse*.** / The first is 4 km out. Can you make it? | `…;skipTo=3850;freezeOn=lighthouse;freezeAfter=0;freezeDelay=0.4` |
+| **P6** | Flight under the Moonrise sky (heron) | **Fly on by *moonlight*.** / Earn new skies and birds as you rank up. | `mode=flight;seed=11;…;sky=moonrise;bird=heron;freezeAt=7` |
+| **P7** | Results card, mid progress (a real headless run) | **One more *flight*?** / Goals to chase. Ranks to earn. | `screen=results;seed=7;progress=mid;autopilot=casual` |
+| **P8** | Birds screen, mid progress | **Eight birds. Five *skies*.** / No ads. No in-app purchases. | `screen=birds;progress=mid` |
 
-Reserves (capture with `STORE_FILTER=^(D\|R)`): `RD-tailwind` (`freezeOn=tailwind`), **Catch a *Tailwind*.** / *A golden burst of speed.*; `RD-daily` (`screen=results;mode=daily`), **One *Daily Flight*. Same sea for all.**
+Reserves (run with `phone_filter` `^(P[0-9]|R[0-9])`): `R1-soar` **Hold to *dive*. Let go to soar.**; `R2-daily` **One *Daily Flight*. Same sea for all.**
 
-## B. iPhone 6.9" (2868 × 1320) and 6.1" class (2556 × 1179 / 2622 × 1206): 5 frames each
+## B. iPhone Duo, inner display (2853 × 2007): 8 frames
 
-Same frames and captions at both sizes. Captured with the `touch` key so no Duo-only hint shows. In the scenario lines, `…` means "the same caption as the matching D frame": write it out in full in `ci/store-scenarios.txt`.
-
-| # | In-game moment | Caption: headline / sub-line | Scenario line |
-|---|---|---|---|
-| **P1** | **The D1 store shot**, re-rendered at the phone slot size | **The two halves are your *wings*.** / *Best on iPhone Duo. Hold to tuck on any iPhone.* | `P1-book-hero\|screen=home;bird=gull;sky=goldenHour;storeshot=book;storeshotsize=phone\|12\|The two halves are your *wings*. / Best on iPhone Duo. Hold to tuck on any iPhone.\|storeshot done` |
-| **P2** | Mid-flight after a launch (as D2), touch input | **Hold to *dive*. Let go to soar.** / *On any iPhone.* | `P2-launch\|mode=flight;seed=7;autopilot=perfect;touch;freezeOn=launch;freezeAfter=6\|20\|Hold to *dive*. Let go to soar. / On any iPhone.\|freeze launch` |
-| **P3** | A Perfect skim, chain 4 (as D3) | **Land the downslope. *Perfect.*** / *Three in a row catch a Tailwind.* | `P3-perfect\|mode=flight;seed=7;autopilot=perfect;touch;chain=3;freezeOn=perfect\|20\|…\|freeze perfect` |
-| **P4** | The storm close (as D4) | ***Outfly* the storm.** / *Every Perfect pushes it back.* | `P4-storm\|mode=flight;seed=11;autopilot=casual;touch;lead=0.12;freezeOn=stormclose\|20\|…\|freeze stormclose` |
-| **P5** | Birds screen, mid progress | **Eight birds. Five *skies*.** / *No ads. No in-app purchases.* | `P5-birds\|screen=birds;progress=mid\|10\|…\|` |
-
-The sub-line of P1 is longer than the usual one line; if it doesn't fit at ≥ 36% of the headline size, shorten it to *Or hold to tuck, on any iPhone.*
+Same moments and captions as A (no `touch`: the Duo frames are the hinge game; the autopilot flies). D1 is the book composite of its own capture, captioned **The two halves are your *wings*.** / Hold your Duo like a book. The storm close uses `lead=0.06` (as proven in `ci/duo-scenarios.txt`). Every Duo frame must log the folded inner canvas (`SWOOP-T canvas 951x669 fold=1`), so a cover-display capture is FLAGGED, never uploaded. Reserves (`^(D[0-9]|DR)`): `DR1-soar` **Fold to dive. Open to *soar*.**; `DR2-countdown` **Hold your Duo like a *book*.**
 
 ## Truthfulness rules (check every frame before upload)
 
-- [ ] **Only what the app renders.** Every screen is an unedited capture from the app; captions sit above it. No composited spray, rings, birds or skies.
-- [ ] **Frame 1's device is a real iPhone Duo pose** (book, about 150°), never a non-folding iPhone drawn folded, never closed or flat.
+- [ ] **Only what the app renders.** Every screen is an unedited capture from the app (frame 1: only warped onto the device); captions sit outside it. No composited spray, rings, birds or skies.
+- [ ] **Frame 1's device is a real iPhone Duo pose** (book, 140–150°), never a non-folding iPhone drawn folded, never closed or flat.
 - [ ] **No hands, no people, no photos** in 1.0's sets.
-- [ ] **Every caption is true of the build:** "Three in a row catch a Tailwind" only if a Tailwind is 3 Perfects; "Every Perfect pushes it back" only if a Perfect adds lead; "Eight birds. Five skies." only if the Birds screen shows 8 birds and the skies exist; "Hold to tuck on any iPhone" only if press-and-hold is the touch control.
-- [ ] **Seeded states are reachable states:** chain 3–4, a low lead and "mid progress" are things a real player sees. Never seed every bird unlocked or an impossible distance.
-- [ ] **No stale hint text** that contradicts the caption (for example "Fold on the way down" on a touch frame: use `touch` and no `hints=fresh`).
+- [ ] **Every caption is true of the build** (checked in `Swoop/Core/Tuning.swift` on 26 Oct): a Tailwind at every 3rd Perfect in a chain (+15 % speed, storm pushed back); every Perfect pushes the storm back; the first lighthouse at 4 km, each one pushing the storm back; 8 birds and 5 skies, earned by rank; press and hold is the iPhone tuck. If any of these change, change the caption.
+- [ ] **Seeded states are reachable states:** chain 2–5, a low lead and "mid progress" are things a real player sees. Never seed every bird unlocked or an impossible distance.
+- [ ] **No stale hint text** that contradicts the caption (iPhone frames use `touch` and no `hints=fresh`).
 - [ ] **Nothing important in the crease band** (x ≈ 456–496 pt) on the Duo frames, except the title bird's body in D1, which is the point.
 - [ ] **No prices, dates, "#1", Apple logos or the "Made for iPhone Duo" badge** drawn into a frame (Guideline 2.3.7; Apple adds its own badge).
-- [ ] **Exact size, PNG, no alpha.** Captions readable at 25% zoom.
+- [ ] **Exact size, PNG, no alpha** (MANIFEST says `slot yes`, `alpha no`). Captions readable at 25 % zoom.
 
 ## Upload order and checks (founder, runbook §6e)
-1. 6.9" slot: P1–P5. 2. 6.1"/6.3" slot: P1–P5. 3. If an **iPhone Duo** entry appears in the device list: D1–D6, then check them in App Store Connect's iPhone Duo preview. If there's no Duo entry, skip it; the Duo set ships with 1.0.1 (screenshots only change with a new version).
 
-**Never upload** a frame from outside the captioned `store/` folder of the run Claude names, anything in `store/_flagged/`, or anything from `ci.yml`'s `screenshots` artifact (test frames).
+1. 6.9" slot: `store-69` P1–P8. 2. 6.3" slot: `store-63` P1–P8. 3. If an **iPhone Duo** entry appears in the device list: `store-duo` D1–D8, then check them in App Store Connect's preview. No Duo entry: skip it; the Duo set ships with 1.0.1.
+
+**Never upload** anything in `_flagged/`, anything from a `raw-*` artifact, or anything from `ci.yml`'s `screenshots` artifact (test frames). Upload only from the `store-*` artifact of the run Claude names, after reading its MANIFEST.
 
 ## Sources
-- App Store Connect Help, *Screenshot specifications* (iPhone Duo inner 2007 × 2853; 6.9" 1320 × 2868; 6.1"-class 1206 × 2622; landscape accepted for iPhone; 1–10 per size; no alpha): https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications
-- Apple Developer Forums 845505 (Duo slot not yet in the selector or API, Oct 2026), as recorded in Brim's plan
+- Apple, App Store Connect Help, *Screenshot specifications* (read 26 Oct 2026: iPhone Duo inner 2853 × 2007 / 2007 × 2853, outer 2034 × 1398 / 1398 × 2034; 6.9" 2868 × 1320, 2796 × 1290, 2736 × 1260; 6.3" 2622 × 1206, 2556 × 1179, the one required iPhone size; landscape accepted; 1–10 per size; no alpha; "highest required resolution" is scaled down): https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications
+- Apple Developer Forums 845505, *How do I upload iPhone Duo screenshots in App Store Connect?* (no Duo entry in the selector or `ScreenshotDisplayType`, Oct 2026): https://developer.apple.com/forums/thread/845505
 - App Review Guideline 2.3.7 (no prices in screenshots): https://developer.apple.com/app-store/review/guidelines/
-- Brim's and Squish's plans (rules mirrored): `C:\Users\59527\Fold\docs\appstore\screenshots.md`, `C:\Users\59527\Squish\docs\appstore\screenshots.md`
+- Brim's pipeline (ported and reworked for landscape): `C:\Users\59527\Fold\ci\store-*`, `C:\Users\59527\Fold\.github\workflows\store.yml`
