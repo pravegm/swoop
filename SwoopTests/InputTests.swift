@@ -172,15 +172,13 @@ struct InputTests {
     // MARK: Closing
 
     @Test func closingLatchHasHysteresis() {
+        // `#expect(latch.update(…))` can't call a mutating method (the macro captures `latch` immutably), so the
+        // results are collected first.
         var latch = FeelClosingLatch()
-        #expect(latch.update(angle: 120) == false)
-        #expect(latch.update(angle: 96) == false)
-        #expect(latch.update(angle: 94))
-        #expect(latch.update(angle: 98))
-        #expect(latch.update(angle: 101.9))
-        #expect(latch.update(angle: 102.5) == false)
-        #expect(latch.update(angle: 97) == false)
-        #expect(latch.update(angle: Double.nan) == false)
+        let angles: [Double] = [120, 96, 94, 98, 101.9, 102.5, 97, Double.nan]
+        var results: [Bool] = []
+        for angle in angles { results.append(latch.update(angle: angle)) }
+        #expect(results == [false, false, true, true, true, false, false, false])
     }
 
     @Test func hingeSourceReportsClosingBelow95AndReopensAbove102() {
