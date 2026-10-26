@@ -16,9 +16,9 @@ enum ScenePaint {
     static func darker(_ c: RGBA, _ t: Double) -> RGBA { c.mixed(with: RGBA(0, 0, 0, c.a), t) }
     static func luminance(_ c: RGBA) -> Double { 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b }
 
-    /// The Perfect / Tailwind gold.
-    static let gold = RGBA(1.0, 0.80, 0.32)
-    static let paleGold = RGBA(1.0, 0.93, 0.66)
+    /// The reward gold (ART §2: the same in every sky): core #FFD45E, highlight #FFF3C4.
+    static let gold = RGBA(hex: 0xFFD45E)
+    static let paleGold = RGBA(hex: 0xFFF3C4)
     static let white = RGBA(1, 1, 1)
 }
 
@@ -210,40 +210,131 @@ enum SceneTextures {
         }
     }
 
-    /// A rain sheet hanging from the storm's base: streaks fading downward inside a soft column.
+    /// A rain sheet hanging from the storm's base: streaks inside a soft column with soft ends (ART §3: α 0 → 1 over
+    /// the top 30 %, back to 0 over the bottom 15 %, never a hard rectangle).
     static var rainSheet: SKTexture {
-        make("rainsheet", width: 64, height: 256, scale: 1) { ctx, s in
+        make("rainsheet2", width: 64, height: 256, scale: 1) { ctx, s in
+            var rng = SceneRNG(seed: 0x5EE7_0A)
             ctx.saveGState()
             ctx.clip(to: CGRect(x: 8, y: 0, width: s.width - 16, height: s.height))
-            linear(ctx, [white(0.22), white(0.10), white(0)], [0, 0.6, 1], from: CGPoint(x: 0, y: 0),
+            linear(ctx, [white(0), white(0.16), white(0.16), white(0)], [0, 0.3, 0.85, 1], from: CGPoint(x: 0, y: 0),
                    to: CGPoint(x: 0, y: s.height))
             ctx.restoreGState()
-            var rng = SceneRNG(seed: 0x5EE7_0A)
             for _ in 0..<26 {
                 let x = rng.range(6, s.width - 6)
-                let w = rng.range(1, 3)
-                let len = s.height * rng.range(0.55, 1.0)
+                let w = rng.range(1, 2.5)
+                let y0 = s.height * rng.range(0, 0.25)
+                let len = s.height * rng.range(0.5, 0.75)
                 ctx.saveGState()
-                ctx.clip(to: CGRect(x: x, y: 0, width: w, height: len))
-                linear(ctx, [white(0.55), white(0)], [0, 1], from: CGPoint(x: 0, y: 0), to: CGPoint(x: 0, y: len))
+                ctx.clip(to: CGRect(x: x, y: y0, width: w, height: len))
+                linear(ctx, [white(0), white(0.5), white(0.5), white(0)], [0, 0.3, 0.8, 1], from: CGPoint(x: 0, y: y0),
+                       to: CGPoint(x: 0, y: y0 + len))
                 ctx.restoreGState()
             }
         }
     }
 
-    /// The sun's glitter path on the far water: short dashes, dense at the horizon.
+    /// The sun's glitter column on the far water (ART §3): dashes 6–28 × 1.5 pt whose spacing grows downward.
     static var glitter: SKTexture {
-        make("glitter", width: 96, height: 192, scale: 1) { ctx, s in
+        make("glitter2", width: 112, height: 160, scale: 1) { ctx, s in
             var rng = SceneRNG(seed: 0x611_77E2)
-            for _ in 0..<80 {
-                let v = rng.unit()
-                let y = v * v * s.height
+            var y: CGFloat = 1
+            var gap: CGFloat = 2
+            while y < s.height {
                 let k = y / s.height
-                let w = 4 + rng.unit() * 18 * (1 - k * 0.5)
-                let x = s.width / 2 + (rng.unit() - 0.5) * s.width * (0.3 + 0.7 * k)
-                ctx.setFillColor(UIColor(white: 1, alpha: (1 - k) * 0.9).cgColor)
-                ctx.fill(CGRect(x: x - w / 2, y: y, width: w, height: 1.6))
+                let n = 1 + Int(rng.unit() * 2.5)
+                for _ in 0..<n {
+                    let w = 6 + rng.unit() * 22 * (1 - k * 0.6)
+                    let x = s.width / 2 + (rng.unit() - 0.5) * s.width * (0.35 + 0.6 * k)
+                    ctx.setFillColor(UIColor(white: 1, alpha: (1 - k) * 0.9).cgColor)
+                    ctx.fill(CGRect(x: x - w / 2, y: y, width: w, height: 1.5))
+                }
+                y += gap + 1.5
+                gap *= 1.13
             }
+        }
+    }
+
+    /// The sky (ART-S1): five fixed stops (0, 0.45, 0.80, 0.96, 1.0) with ±1/255 dither against banding.
+    static func sky(key: String, colors: [UIColor]) -> SKTexture {
+        make("sky5-" + key, width: 32, height: 512, scale: 1) { ctx, s in
+            linear(ctx, colors, [0, 0.45, 0.80, 0.96, 1], from: CGPoint(x: 0, y: 0), to: CGPoint(x: 0, y: s.height))
+            var rng = SceneRNG(seed: 0xD1_7E2)
+            let light = UIColor(white: 1, alpha: 1.0 / 255.0)
+            let dark = UIColor(white: 0, alpha: 1.0 / 255.0)
+            var y: CGFloat = 0
+            while y < s.height {
+                var x: CGFloat = 0
+                while x < s.width {
+                    let v = rng.unit()
+                    if v < 0.33 {
+                        ctx.setFillColor(light.cgColor)
+                        ctx.fill(CGRect(x: x, y: y, width: 1, height: 1))
+                    } else if v > 0.67 {
+                        ctx.setFillColor(dark.cgColor)
+                        ctx.fill(CGRect(x: x, y: y, width: 1, height: 1))
+                    }
+                    x += 1
+                }
+                y += 1
+            }
+        }
+    }
+
+    /// A thin, flat-bottomed cloud streak lit from below (ART-S3; no puffballs, they make the mud).
+    static var cloudStreak: SKTexture {
+        make("cloudstreak", width: 300, height: 36, scale: 1) { ctx, s in
+            var rng = SceneRNG(seed: 0xC10_0D5)
+            let base = s.height - 6
+            // A few long soft lumps sharing one flat underside.
+            for i in 0..<6 {
+                let cx = s.width * (0.12 + 0.76 * CGFloat(i) / 5) + rng.range(-12, 12)
+                let rx = rng.range(36, 70)
+                let ry = rng.range(9, 15)
+                ctx.saveGState()
+                ctx.clip(to: CGRect(x: 0, y: 0, width: s.width, height: base))
+                ctx.translateBy(x: cx, y: base)
+                ctx.scaleBy(x: rx / ry, y: 1)
+                radial(ctx, [white(0.75), white(0.45), white(0)], [0, 0.6, 1], center: .zero, radius: ry * 1.6)
+                ctx.restoreGState()
+            }
+            // The lit underside.
+            ctx.saveGState()
+            ctx.clip(to: CGRect(x: 0, y: base - 4, width: s.width, height: 4))
+            linear(ctx, [white(0), white(0.9), white(0.9), white(0)], [0, 0.15, 0.85, 1],
+                   from: CGPoint(x: 0, y: base), to: CGPoint(x: s.width, y: base))
+            ctx.restoreGState()
+        }
+    }
+
+    /// A hard water drop (ART §5): a crisp disc with a 1 px darker underside (the sprite colour tints it).
+    static var drop: SKTexture {
+        make("drop", width: 16, height: 16, scale: 2) { ctx, s in
+            let r = CGRect(x: 2, y: 2, width: s.width - 4, height: s.height - 4)
+            ctx.setFillColor(UIColor(white: 0.72, alpha: 1).cgColor)
+            ctx.fillEllipse(in: r)
+            ctx.setFillColor(UIColor.white.cgColor)
+            ctx.fillEllipse(in: r.insetBy(dx: 0.6, dy: 0).offsetBy(dx: 0, dy: -1.2))
+        }
+    }
+
+    /// A short glint dash, 18 × 2, soft-ended (the water's glints; the 4-point stars are kept for the Perfect).
+    static var dash: SKTexture {
+        make("dash", width: 36, height: 6, scale: 2) { ctx, s in
+            ctx.saveGState()
+            ctx.addEllipse(in: CGRect(x: 0, y: 1, width: s.width, height: s.height - 2))
+            ctx.clip()
+            linear(ctx, [white(0), white(1), white(1), white(0)], [0, 0.3, 0.7, 1],
+                   from: CGPoint(x: 0, y: s.height / 2), to: CGPoint(x: s.width, y: s.height / 2))
+            ctx.restoreGState()
+        }
+    }
+
+    /// A soft vertical band (alpha 0 → 1 → 0 top to bottom): the horizon haze.
+    static var band: SKTexture {
+        make("band", width: 4, height: 64, scale: 1) { ctx, s in
+            linear(ctx, [white(0), white(1), white(0)], [0, 0.5, 1], from: CGPoint(x: 0, y: 0),
+                   to: CGPoint(x: 0, y: s.height))
         }
     }
 
@@ -278,16 +369,16 @@ enum SceneTextures {
         }
     }
 
-    /// Aurora curtains (Northern Lights sky): green below fading to violet above.
+    /// Aurora curtains (Northern Lights sky, ART §3): two additive ribbons #48E6A8 → #7A6CFF.
     static var aurora: SKTexture {
-        make("aurora", width: 512, height: 256, scale: 1) { ctx, _ in
-            let green = UIColor(red: 0.35, green: 1.0, blue: 0.72, alpha: 0.42)
-            let violet = UIColor(red: 0.62, green: 0.42, blue: 1.0, alpha: 0.22)
-            for k in 0..<3 {
+        make("aurora2", width: 512, height: 256, scale: 1) { ctx, _ in
+            let green = UIColor(red: 0x48 / 255.0, green: 0xE6 / 255.0, blue: 0xA8 / 255.0, alpha: 0.5)
+            let violet = UIColor(red: 0x7A / 255.0, green: 0x6C / 255.0, blue: 1.0, alpha: 0.35)
+            for k in 0..<2 {
                 let kf = CGFloat(k)
                 var x: CGFloat = 0
                 while x < 512 {
-                    let top = 30 + 34 * kf + 24 * sin(x * 0.017 + kf * 1.9) + 10 * sin(x * 0.051 + kf)
+                    let top = 36 + 40 * kf + 24 * sin(x * 0.017 + kf * 1.9) + 10 * sin(x * 0.051 + kf)
                     let len = 70 + 30 * sin(x * 0.023 + kf * 2.3)
                     ctx.saveGState()
                     ctx.clip(to: CGRect(x: x, y: top, width: 3, height: len))

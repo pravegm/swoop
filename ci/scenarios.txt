@@ -30,3 +30,23 @@ daily|mode=daily;seed=7;progress=mid;autopilot=expert;skipCountdown;freezeAt=8|1
 daily-results|screen=results;mode=daily;progress=mid;autopilot=expert|10
 icon|screen=icon|6
 badges|screen=badges|10
+# Round 3 (UX §2 first 60 s, UX §9 Duo states, UX §10 fallback). `home` above is the fresh iPhone Home: Fly only and
+# the one-time "Made for iPhone Duo. Here, hold to tuck." line.
+home-returning|screen=home;progress=mid|5
+home-folded|screen=home;progress=mid;folded;titleTuck=0.8|5
+home-flat-duo|screen=home;progress=mid;duo;flat|5
+countdown-short|mode=flight;seed=7;shortCountdown;freezeOn=countdown|6
+countdown-flat-duo|mode=flight;seed=7;duo;flat;freezeOn=countdown|6
+countdown-daily|mode=daily;seed=7;progress=mid;freezeOn=countdown|6
+chain-lost|mode=flight;seed=7;autopilot=novice;chain=3;freezeOn=splash;freezeAfter=0;freezeDelay=0.3|24
+touch-wing|mode=flight;seed=7;touch;skipCountdown;freezeAt=3|9
+reopened-ready|mode=flight;seed=7;holdReady;autopilot=perfect;skipCountdown|6
+closing-duo|mode=flight;seed=7;duo;closing;autopilot=perfect;skipCountdown|6
+results-rankup|screen=results;seed=7;progress=mid;rankUp;autopilot=casual|8
+results-foldfill-duo|screen=results;seed=7;progress=mid;duo;foldFill=0.6;autopilot=casual|8
+daily-card|screen=daily;progress=mid;dailyToday|5
+cover-fresh|screen=cover|4
+cover-home|screen=cover;progress=mid;dailyToday|4
+cover-midrun|screen=cover;cover=midrun;mode=flight;seed=7;progress=mid;autopilot=perfect;skipCountdown|6
+cover-results|screen=cover;cover=results;seed=7;progress=mid;autopilot=casual|8
+goals-fresh|screen=goals;progress=fresh|5

@@ -63,17 +63,17 @@ struct TurnCard: View {
 
     private var copy: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(isDuo ? "Turn your Duo sideways and hold it like a book" : "Turn your iPhone sideways")
-                .font(SwoopTheme.title(28))
+            Text(isDuo ? "Turn it sideways, like a book" : "Turn your iPhone sideways")
+                .font(SwoopType.title(false))
                 .foregroundStyle(SwoopTheme.foam)
                 .fixedSize(horizontal: false, vertical: true)
             Text(isDuo ? "The two halves are your wings. Fold a little to dive, open to soar."
-                       : "Press and hold to fold your wings. Let go to soar.")
-                .font(SwoopTheme.text(17))
+                       : "Hold to dive. Let go to soar.")
+                .font(SwoopType.body(false))
                 .foregroundStyle(SwoopTheme.mist)
                 .fixedSize(horizontal: false, vertical: true)
             if isDuo {
-                SwoopButton(kind: .secondary, height: 58, action: onPlayWithTouch) {
+                SwoopButton(kind: .secondary, height: SwoopTheme.secondaryHeight(false), action: onPlayWithTouch) {
                     Label("Play with touch", systemImage: "hand.point.up.left.fill")
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
@@ -104,8 +104,8 @@ struct BookPoseDrawing: View {
             let openOut = Self.ease(min(max((t - 3.6) / 0.6, 0), 1))
             let open = openIn * (1 - openOut)                             // the book's V
             ZStack {
-                Ellipse()
-                    .fill(SwoopTheme.gold.opacity(0.10))
+                Circle()
+                    .fill(SwoopTheme.poseCircle)
                     .frame(width: 230, height: 230)
                 HStack(spacing: 2) {
                     half(left: true)
@@ -165,76 +165,256 @@ struct BirdGlyph: Shape {
     }
 }
 
-// MARK: - Closed / cover display: "Open your wings"
+// MARK: - The cover display (UX-D1, ART §8)
 
-/// The calm card on the cover display (or while the Duo is shut): best distance, today's Daily, "Open your wings".
+/// What the cover shows: the results you closed on, the run you paused, or Home.
+enum ClosedCardState: Equatable {
+    case home
+    case midRun(PausedRun)
+    case results(ResultSummary)
+}
+
+/// The cover display (466 × 678) and the shut Duo: black, a thin horizon strip, the dart bird, then the state's words.
+/// Nothing on the cover ever says "—": an unflown best reads "Your first flight is waiting."
 struct ClosedCard: View {
+    @ObservedObject var controller: GameController
     @ObservedObject var store: ProgressStore
+    let state: ClosedCardState
+    var insets: EdgeInsets = EdgeInsets()
 
     private var today: Int { DailySeed.dayNumber(for: Date()) }
 
+    /// The dart's width: 150 pt on Home, 96 pt with a paused run or results above the words.
+    nonisolated static func dartWidth(_ state: ClosedCardState) -> CGFloat {
+        if case .home = state { return 150 }
+        return 96
+    }
+
     var body: some View {
-        ZStack {
-            SwoopTheme.abyss.ignoresSafeArea()
-            RadialGradient(colors: [SwoopTheme.gold.opacity(0.22), SwoopTheme.abyss.opacity(0)],
-                           center: .bottom, startRadius: 0, endRadius: 420)
-                .ignoresSafeArea()
-            VStack(spacing: 16) {
-                // REVIEW-1 P2: bigger bird art, the stack raised ~15 %.
-                BirdGlyph()
-                    .fill(LinearGradient(colors: [SwoopTheme.foam, SwoopTheme.goldLight], startPoint: .top,
-                                         endPoint: .bottom))
-                    .frame(width: 120, height: 56)
-                    .shadow(color: SwoopTheme.gold.opacity(0.4), radius: 12)
-                Text("Open your wings")
-                    .font(SwoopTheme.display(32))
-                    .foregroundStyle(SwoopTheme.foam)
-                    .multilineTextAlignment(.center)
-                Text("Hold your Duo like a book to fly.")
-                    .font(SwoopTheme.text(16, .bold))
-                    .foregroundStyle(SwoopTheme.mist)
-                    .multilineTextAlignment(.center)
-                VStack(spacing: 12) {
-                    row(icon: "flag.fill", title: "Best flight",
-                        value: store.data.bestMeters > 0 ? ShareText.km(store.data.bestMeters) : "—")
-                    Rectangle().fill(SwoopTheme.foam.opacity(0.08)).frame(height: 1)
-                    row(icon: "calendar", title: "Daily Flight #\(today)", value: dailyValue)
-                    if store.data.dailyStreak(today: today) > 1 {
-                        Rectangle().fill(SwoopTheme.foam.opacity(0.08)).frame(height: 1)
-                        row(icon: "flame.fill", title: "Daily streak", value: "\(store.data.dailyStreak(today: today)) days")
+        GeometryReader { geo in
+            ZStack {
+                Color.black.ignoresSafeArea()
+                // The horizon: a thin warm strip low on the card, the only colour on black.
+                LinearGradient(colors: [SwoopTheme.abyss.opacity(0), SwoopTheme.rewardDeep.opacity(0.30),
+                                        SwoopTheme.abyss.opacity(0)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: 90)
+                    .position(x: geo.size.width / 2, y: geo.size.height * 0.80)
+                    .allowsHitTesting(false)
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 14) {
+                        BirdGlyph()
+                            .fill(LinearGradient(colors: [SwoopTheme.foam, SwoopTheme.mist], startPoint: .top,
+                                                 endPoint: .bottom))
+                            .frame(width: Self.dartWidth(state), height: Self.dartWidth(state) * 0.42)
+                            .padding(.top, 8)
+                            .accessibilityHidden(true)
+                        content
+                    }
+                    .frame(maxWidth: 400)
+                    .padding(.horizontal, 24)
+                    .padding(.top, max(insets.top, 20) + 16)
+                    .padding(.bottom, max(insets.bottom, 16) + 16)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: geo.size.height)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch state {
+        case .home: homeContent
+        case let .midRun(run): pausedContent(run)
+        case let .results(summary): resultsContent(summary)
+        }
+    }
+
+    // MARK: Home
+
+    private var homeContent: some View {
+        VStack(spacing: 14) {
+            Text("Open your wings")
+                .font(SwoopType.title(false))
+                .foregroundStyle(SwoopTheme.foam)
+                .multilineTextAlignment(.center)
+            Text(store.data.runs == 0 ? "Your first flight is waiting." : "Hold your Duo like a book to fly.")
+                .font(SwoopType.body(false))
+                .foregroundStyle(SwoopTheme.mist)
+                .multilineTextAlignment(.center)
+            VStack(spacing: 12) {
+                if store.data.bestMeters > 0 {
+                    row(icon: "flag.fill", title: "Best flight", value: ShareText.km(store.data.bestMeters))
+                    divider
+                }
+                row(icon: "calendar", title: "Daily #\(today)", value: dailyValue)
+                if store.data.dailyStreak(today: today) >= 2 {
+                    divider
+                    HStack {
+                        StreakLabel(days: store.data.dailyStreak(today: today), compact: false)
+                        Spacer(minLength: 0)
                     }
                 }
-                .swoopCard(padding: 18, radius: 22)
-                .frame(maxWidth: 340)
             }
-            .padding(24)
-            .offset(y: -40)
+            .swoopCard(padding: 18, radius: SwoopTheme.cardRadius(true))
+            .padding(.top, 4)
         }
     }
 
     private var dailyValue: String {
-        if let record = store.data.dailyRecord(day: today) { return "Flown · \(ShareText.km(record.meters))" }
+        let next = ShareText.nextInShort(seconds: ShareText.secondsToNextDaily(now: Date()))
+        if let record = store.data.dailyRecord(day: today) { return "Flown \(ShareText.km(record.meters)) · next in \(next)" }
         // QA-1 P1-2: a started try is spent even if nothing was filed.
-        if store.hasDailyAttempt(day: today) { return "Tried" }
+        if store.hasDailyAttempt(day: today) { return "Tried · next in \(next)" }
         return "Ready"
+    }
+
+    // MARK: Paused mid-run
+
+    private func pausedContent(_ run: PausedRun) -> some View {
+        VStack(spacing: 12) {
+            VStack(spacing: 12) {
+                SwoopOverline(text: "Paused")
+                Text(Self.heroDistance(run.meters))
+                    .font(.system(size: 56, weight: .heavy, design: .rounded).monospacedDigit())
+                    .foregroundStyle(SwoopTheme.foam)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                Text("Open your wings to keep flying.")
+                    .font(SwoopType.body(false))
+                    .foregroundStyle(SwoopTheme.mist)
+                    .multilineTextAlignment(.center)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Paused at \(ShareText.hudDistance(run.meters).value) "
+                                + "\(run.meters < 1000 ? "metres" : "kilometres"). Open your Duo to keep flying.")
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "cloud.bolt.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(SwoopTheme.mist)
+                    Text("Storm \(ShareText.km(run.stormMeters)) behind")
+                        .font(SwoopType.caption(false))
+                        .foregroundStyle(SwoopTheme.foam)
+                    Spacer(minLength: 0)
+                }
+                SwoopProgressBar(value: Self.stormFill(run.stormMeters), height: 6)
+                let stats = AppRules.statsLine(perfects: run.perfects, chain: run.chain, lighthouses: 0)
+                if !stats.isEmpty {
+                    Text(stats)
+                        .font(SwoopType.caption(false))
+                        .foregroundStyle(SwoopTheme.mist)
+                }
+                Text(Self.bestLine(meters: run.meters, best: run.bestMeters))
+                    .font(SwoopType.caption(false))
+                    .foregroundStyle(SwoopTheme.mist)
+                if run.isScoredDaily, let day = run.day {
+                    Text("Daily #\(day) · your one try is paused")
+                        .font(SwoopType.caption(false))
+                        .foregroundStyle(SwoopTheme.mist)
+                }
+            }
+            .swoopCard(padding: 16, radius: SwoopTheme.cardRadius(true))
+            .accessibilityElement(children: .combine)
+            SwoopButton(kind: .secondary, height: SwoopTheme.secondaryHeight(false), compact: true,
+                        action: { controller.keepFlyingHere() }) {
+                Label("Keep flying here", systemImage: "hand.point.up.left.fill")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .padding(.top, 4)
+            SwoopButton(kind: .quiet, height: 48, compact: true, action: { controller.endFlightHere() }) {
+                Text("End flight")
+            }
+        }
+    }
+
+    /// "1.0 km to your best" within 10 % of it, else "Beat 19.6 km to set a best"; "Past your best" beyond it; "Your
+    /// first flight" without one (never "—", UX §9). Pure; tested.
+    nonisolated static func bestLine(meters: Double, best: Double) -> String {
+        guard best > 0, best.isFinite else { return "Your first flight" }
+        let m = meters.isFinite ? max(meters, 0) : 0
+        if m >= best { return "Past your best" }
+        if best - m <= best * 0.10 { return "\(ShareText.km(best - m + 99.999)) to your best" }
+        return "Beat \(ShareText.km(best)) to set a best"
+    }
+
+    /// The paused hero: "18.57 km" (hundredths, like the HUD) or "842 m". Pure; tested.
+    nonisolated static func heroDistance(_ meters: Double) -> String {
+        let d = ShareText.hudDistance(meters)
+        return "\(d.value) \(d.unit)"
+    }
+
+    /// The cover's storm meter: 0 m empty, 3 km or more full. Pure; tested.
+    nonisolated static func stormFill(_ meters: Double) -> Double {
+        guard meters.isFinite else { return 0 }
+        return min(max(meters / 3000, 0), 1)
+    }
+
+    // MARK: Results
+
+    private func resultsContent(_ summary: ResultSummary) -> some View {
+        let r = summary.result
+        let o = summary.outcome
+        let hook = AppRules.hookLine(meters: r.meters, best: o.best, previousBest: o.previousBest,
+                                     lighthousesPassed: r.lighthouses, lastLighthouse: r.lastLighthouseName,
+                                     seed: r.seed, firstFlight: summary.title == "First flight")
+        return VStack(spacing: 12) {
+            SwoopOverline(text: summary.dailyDay != nil ? "Daily" : "Flight")
+            Text(ShareText.km(r.meters))
+                .font(.system(size: 56, weight: .heavy, design: .rounded).monospacedDigit())
+                .foregroundStyle(SwoopTheme.foam)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            if o.showsNewBest {
+                SwoopPill(text: "New best!")
+            }
+            if let hook {
+                Text(hook)
+                    .font(SwoopType.body(false))
+                    .foregroundStyle(SwoopTheme.mist)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text("Open to fly again")
+                .font(SwoopType.headline(false))
+                .foregroundStyle(SwoopTheme.foam)
+                .padding(.top, 8)
+            ShareLink(item: summary.share) {
+                Label("Share", systemImage: "square.and.arrow.up")
+                    .font(SwoopType.body(true))
+                    .foregroundStyle(SwoopTheme.foam)
+                    .frame(maxWidth: .infinity, minHeight: AppCanvas.minTap)
+                    .background(SwoopButtonBackground(kind: .secondary, pressed: false, compact: true)
+                                    .frame(height: SwoopTheme.secondaryHeight(true)))
+            }
+        }
+    }
+
+    // MARK: Pieces
+
+    private var divider: some View {
+        Rectangle().fill(SwoopTheme.stroke).frame(height: 1)
     }
 
     private func row(icon: String, title: String, value: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
                 .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(SwoopTheme.gold)
+                .foregroundStyle(SwoopTheme.foam)
                 .frame(width: 22)
             Text(title)
-                .font(SwoopTheme.text(16, .bold))
+                .font(SwoopType.body(false))
                 .foregroundStyle(SwoopTheme.foam)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             Spacer(minLength: 8)
             Text(value)
-                .font(SwoopTheme.number(17))
-                .foregroundStyle(SwoopTheme.goldLight)
+                .font(SwoopType.body(false).monospacedDigit())
+                .foregroundStyle(SwoopTheme.mist)
                 .lineLimit(1)
         }
+        .accessibilityElement(children: .combine)
     }
 }

@@ -152,7 +152,9 @@ struct FeedbackTests {
 
     @Test func chainBreakIsSoftFallingAndOnlyAfterARealChain() {
         #expect(FeedbackDirector.chainBroke(previousChain: 5, quality: .splash))
-        #expect(FeedbackDirector.chainBroke(previousChain: 2, quality: .splash))
+        #expect(FeedbackDirector.chainBroke(previousChain: 3, quality: .splash))
+        // Round 3: the same threshold as the HUD's "×N lost" pill (UX §3: a chain ≥ 3).
+        #expect(FeedbackDirector.chainBroke(previousChain: 2, quality: .splash) == false)
         #expect(FeedbackDirector.chainBroke(previousChain: 1, quality: .splash) == false)
         #expect(FeedbackDirector.chainBroke(previousChain: 6, quality: .good) == false)
         #expect(FeedbackDirector.chainBroke(previousChain: 6, quality: .perfect) == false)
@@ -503,5 +505,136 @@ struct FeedbackTests {
         #expect(bed.windGain.isFinite)
         #expect(bed.windCutoff.isFinite)
         #expect(bed.rainGain.isFinite)
+    }
+
+    // MARK: Round 3: haptic profiles (F2)
+
+    @Test func hapticProfileDefaultsAndTheBackwardCompatibleToggle() {
+        #expect(HapticProfile.defaultFor(hasFold: true) == .strong)
+        #expect(HapticProfile.defaultFor(hasFold: false) == .normal)
+        #expect(HapticProfile.allCases.map { $0.label } == ["Off", "Normal", "Strong"])
+        #expect(HapticProfile(rawValue: "strong") == .strong)
+        let director = FeedbackDirector()
+        director.soundOn = false
+        #expect(director.hapticProfile == .normal)
+        // A Duo, no choice made yet: Strong.
+        director.deviceHasFold = true
+        #expect(director.hapticProfile == .strong)
+        #expect(director.hapticsOn)
+        // The old Bool still works, and turning it back on restores the profile.
+        director.hapticsOn = false
+        #expect(director.hapticProfile == .off)
+        director.hapticsOn = true
+        #expect(director.hapticProfile == .strong)
+        // A player's choice sticks, even when the device changes its mind.
+        director.hapticProfile = .normal
+        director.deviceHasFold = false
+        director.deviceHasFold = true
+        #expect(director.hapticProfile == .normal)
+        director.hapticsOn = false
+        director.hapticsOn = true
+        #expect(director.hapticProfile == .normal)
+        director.hapticProfile = .off
+        #expect(director.hapticsOn == false)
+    }
+
+    @Test func strongProfileTurnsTapsIntoBurstsTheDuoCanFeel() {
+        // Every transient becomes a 55 ms continuous burst at sharpness 0.4; continuous notes get × 1.4.
+        let strong = FeelHapticBook.adapt(FeelHapticBook.lighthouse, to: .strong)
+        #expect(strong.notes.count == FeelHapticBook.lighthouse.notes.count)
+        for (index, note) in strong.notes.enumerated() {
+            let original = FeelHapticBook.lighthouse.notes[index]
+            #expect(note.kind == .continuous)
+            #expect(abs(note.duration - FeelHapticBook.strongBurst) < 1e-9)
+            #expect(note.sharpness == FeelHapticBook.strongBurstSharpness)
+            #expect(note.intensity >= original.intensity)
+            #expect(note.intensity <= 1)
+            #expect(note.time == original.time)
+        }
+        let caught = FeelHapticBook.adapt(FeelHapticBook.caught, to: .strong)
+        #expect(caught.curve == FeelHapticBook.caught.curve)
+        #expect((caught.notes.first?.intensity ?? 0) > (FeelHapticBook.caught.notes.first?.intensity ?? 1))
+        // Normal and Off leave a cue alone.
+        #expect(FeelHapticBook.adapt(FeelHapticBook.splash, to: .normal) == FeelHapticBook.splash)
+        // Strong Perfect: 2 × 60 ms bursts 80 ms apart. Strong launch: one 80 ms burst.
+        let perfect = FeelHapticBook.perfect(for: .strong).notes
+        #expect(perfect.count == 2)
+        #expect(perfect.allSatisfy { $0.kind == .continuous && abs($0.duration - 0.06) < 1e-9 })
+        #expect(abs(perfect[1].time - perfect[0].time - 0.08) < 1e-9)
+        #expect(FeelHapticBook.perfect(for: .normal) == FeelHapticBook.perfect)
+        let launch = FeelHapticBook.launch(speed: 1500, profile: .strong).notes
+        #expect(launch.count == 1)
+        #expect(abs((launch.first?.duration ?? 0) - 0.08) < 1e-9)
+        // Continuous: × 1.4 (clamped) and a 0.3 floor while skimming.
+        let normal = FeelHapticBook.rumbleLevel(speed: 800, playing: true, skimming: false, profile: .normal)
+        let loud = FeelHapticBook.rumbleLevel(speed: 800, playing: true, skimming: false, profile: .strong)
+        #expect(abs(loud - min(normal * 1.4, 1)) < 1e-6)
+        #expect(FeelHapticBook.rumbleLevel(speed: 300, playing: true, skimming: true, profile: .strong) >= 0.3)
+        #expect(FeelHapticBook.rumbleLevel(speed: 2600, playing: true, skimming: false, profile: .strong) <= 1)
+        #expect(FeelHapticBook.rumbleLevel(speed: 800, playing: false, skimming: true, profile: .strong) == 0)
+        #expect(FeelHapticBook.rumbleLevel(speed: 800, playing: true, skimming: true, profile: .off) == 0)
+        #expect(FeelHapticBook.skimLevel(speed: 800, skimming: true, playing: true, profile: .strong)
+                > FeelHapticBook.skimLevel(speed: 800, skimming: true, playing: true, profile: .normal))
+    }
+
+    // MARK: Round 3: cues for the App's states (F1, F4) and the motion language
+
+    @Test func stateCuesAreSoftShortAndAlwaysAudible() {
+        let perfectPeak: Float = 0.2
+        let cues: [[FeelSynthCommand]] = [
+            FeelSoundBook.homeFold(), FeelSoundBook.foldFired(), FeelSoundBook.closing(), FeelSoundBook.reopened(),
+            FeelSoundBook.go(), FeelSoundBook.splitDeck(), FeelSoundBook.bookPrompt(),
+            FeelSoundBook.resultsTick(step: 0), FeelSoundBook.resultsTick(step: 99),
+        ]
+        for recipe in cues {
+            #expect(!recipe.isEmpty)
+            for command in recipe {
+                #expect(command.gain > 0)
+                // Quieter than any flight moment (the UI settles).
+                #expect(command.gain < perfectPeak)
+                #expect(command.delay >= 0 && command.delay < 0.5)
+            }
+        }
+        // The closing breath falls, the reopening breath rises.
+        if case .noise(let fall) = FeelSoundBook.closing()[0] { #expect(fall.cutoffEnd < fall.cutoff) }
+        if case .noise(let rise) = FeelSoundBook.reopened()[0] { #expect(rise.cutoffEnd > rise.cutoff) }
+        // The count-up ticks climb a little and stop climbing.
+        var low: Float = 0
+        var high: Float = 0
+        var capped: Float = 0
+        if case .ring(let a) = FeelSoundBook.resultsTick(step: 0)[0] { low = a.fundamental }
+        if case .ring(let b) = FeelSoundBook.resultsTick(step: 10)[0] { high = b.fundamental }
+        if case .ring(let c) = FeelSoundBook.resultsTick(step: 500)[0] { capped = c.fundamental }
+        #expect(high > low)
+        #expect(capped < 3000)
+        // F4: the touch-down click only where there is no fold.
+        #expect(FeedbackDirector.touchDownPlays(deviceHasFold: false))
+        #expect(FeedbackDirector.touchDownPlays(deviceHasFold: true) == false)
+        #expect(FeelHapticBook.touchDown.notes.count == 1)
+        #expect((FeelHapticBook.touchDown.notes.first?.intensity ?? 1) < 0.5)
+    }
+
+    @Test func milestoneSparkleFollowsTheToastRule() {
+        // UX §3: km toasts only at 5, 10, 15 km…, never on top of a lighthouse.
+        #expect(FeedbackDirector.milestoneAudible(km: 5, lighthouseNearby: false))
+        #expect(FeedbackDirector.milestoneAudible(km: 10, lighthouseNearby: false))
+        #expect(FeedbackDirector.milestoneAudible(km: 1, lighthouseNearby: false) == false)
+        #expect(FeedbackDirector.milestoneAudible(km: 4, lighthouseNearby: false) == false)
+        #expect(FeedbackDirector.milestoneAudible(km: 5, lighthouseNearby: true) == false)
+        #expect(FeedbackDirector.milestoneAudible(km: 0, lighthouseNearby: false) == false)
+        #expect(FeedbackDirector.milestoneAudible(km: -5, lighthouseNearby: false) == false)
+    }
+
+    @Test func directorPlaysEveryStateCueWithFeedbackOff() {
+        let director = FeedbackDirector()
+        director.soundOn = false
+        director.hapticProfile = .off
+        let cues: [FeelCue] = [.homeFold, .homeFold, .foldArmed, .foldFired, .closing, .reopened, .go, .splitDeck,
+                               .bookPrompt, .resultsTick(0), .resultsTick(1), .touchDown]
+        for cue in cues { director.cue(cue) }
+        director.deviceHasFold = true
+        director.cue(.touchDown)
+        #expect(director.hapticProfile == .off)
+        #expect(director.hapticsOn == false)
     }
 }

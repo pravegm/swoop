@@ -37,37 +37,54 @@ enum BirdDrawing {
     static func color(_ c: RGBA) -> Color { Color(swoopRGBA: c) }
 }
 
-/// The front-on title bird whose wings span the whole canvas width, tucking with the hinge.
+/// The dorsal title bird (ART §7, A7) whose wings span 92 % of the canvas, tucking with the hinge: wings shaded along the
+/// chord (lit leading edge), the white trailing band, black primaries (`#2B2F36`) with two white mirrors, the gold beak
+/// and its darker spot, one soft drop shadow. All layers come from Scene's `BirdArt.titlePath` / `titleDetail`.
 struct TitleBirdView: View {
     let bird: Bird
     let tuck: Double
 
+    static let primaries = Color(swoopHex: 0x2B2F36)
+    static let beak = Color(swoopHex: 0xF2B33D)
+    static let beakSpot = Color(swoopHex: 0xD8862A)
+
     var body: some View {
         Canvas(rendersAsynchronously: false) { context, size in
-            let parts = BirdArt.titlePath(for: bird, tuck: min(max(tuck, 0), 1), width: size.width,
-                                          height: size.height)
+            let u = min(max(tuck, 0), 1)
+            let parts = BirdArt.titlePath(for: bird, tuck: u, width: size.width, height: size.height)
+            let detail = BirdArt.titleDetail(for: bird, tuck: u, width: size.width, height: size.height)
             let transform = BirdDrawing.fit([parts.body.boundingBoxOfPath, parts.leftWing.boundingBoxOfPath,
                                              parts.rightWing.boundingBoxOfPath],
                                             in: size, flipY: BirdDrawing.titleFlipsY)
-            let left = Path(parts.leftWing).applying(transform)
-            let right = Path(parts.rightWing).applying(transform)
-            let body = Path(parts.body).applying(transform)
+            func p(_ cg: CGPath) -> Path { Path(cg).applying(transform) }
+            let left = p(parts.leftWing)
+            let right = p(parts.rightWing)
+            let body = p(parts.body)
             let wing = BirdDrawing.color(bird.wing)
-            let tip = BirdDrawing.color(bird.wingTip)
-            let mid = size.width / 2
+            let shade = BirdDrawing.color(bird.wing.mixed(with: RGBA(0, 0, 0), 0.18))
+            let lit = BirdDrawing.color(bird.wing.mixed(with: RGBA(1, 1, 1), 0.14))
+            let box = left.boundingRect.union(right.boundingRect)
+            // Vertical chord shading: the leading edge (top) catches the light, the trailing edge falls into shade.
+            let chord = GraphicsContext.Shading.linearGradient(Gradient(colors: [lit, wing, shade]),
+                                                               startPoint: CGPoint(x: box.midX, y: box.minY),
+                                                               endPoint: CGPoint(x: box.midX, y: box.maxY))
             context.drawLayer { layer in
-                layer.addFilter(.shadow(color: Color.black.opacity(0.35), radius: 14, x: 0, y: 8))
-                layer.fill(left, with: .linearGradient(Gradient(colors: [tip, wing, wing]),
-                                                       startPoint: CGPoint(x: 0, y: 0),
-                                                       endPoint: CGPoint(x: mid, y: 0)))
-                layer.fill(right, with: .linearGradient(Gradient(colors: [wing, wing, tip]),
-                                                        startPoint: CGPoint(x: mid, y: 0),
-                                                        endPoint: CGPoint(x: size.width, y: 0)))
+                layer.addFilter(.shadow(color: SwoopTheme.shadowBase.opacity(0.40), radius: 12, x: 0, y: 8))
+                layer.fill(left, with: chord)
+                layer.fill(right, with: chord)
                 layer.fill(body, with: .color(BirdDrawing.color(bird.body)))
             }
-            // A soft rim light on the leading edges.
-            context.stroke(left, with: .color(Color.white.opacity(0.18)), lineWidth: 1.5)
-            context.stroke(right, with: .color(Color.white.opacity(0.18)), lineWidth: 1.5)
+            context.fill(p(detail.leftBand), with: .color(Color.white.opacity(0.92)))
+            context.fill(p(detail.rightBand), with: .color(Color.white.opacity(0.92)))
+            context.fill(p(detail.leftPrimaries), with: .color(Self.primaries))
+            context.fill(p(detail.rightPrimaries), with: .color(Self.primaries))
+            context.fill(p(detail.leftMirrors), with: .color(Color.white))
+            context.fill(p(detail.rightMirrors), with: .color(Color.white))
+            context.fill(p(detail.beak), with: .color(Self.beak))
+            context.fill(p(detail.beakSpot), with: .color(Self.beakSpot))
+            // A hairline rim light on the leading edges.
+            context.stroke(left, with: .color(Color.white.opacity(0.16)), lineWidth: 1)
+            context.stroke(right, with: .color(Color.white.opacity(0.16)), lineWidth: 1)
         }
         .accessibilityHidden(true)
     }

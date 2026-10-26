@@ -1,20 +1,31 @@
 import SpriteKit
 import UIKit
 
-/// The near sea, the hero of every frame: one filled polygon from Core's samples with a depth gradient fill whose
-/// stroke is the foam line, a lit band just under the surface, glints on the crests and twinkles in the water.
-/// World-local coordinates (child of the scene's world node).
+/// The near sea, the hero of every frame. It is one filled polygon from Core's samples, with these layers:
+/// - a depth gradient fill (7 eased stops, ART-S4) whose stroke is the foam line;
+/// - a soft sub-surface band;
+/// - lit strips on the faces turned toward the sun ahead;
+/// - glints on the crests near the sun, and a few dash glints in the water.
 ///
-/// R2 (QA-1 P1-6): the surface is built over a range wider than the screen and rebuilt only when the view leaves it,
-/// the zoom drifts by 25 %, the storm's chop moves, or the origin re-bases, a few times a second instead of every
-/// frame. The camera transform (the world node) does the rest. The fill's gradient is pinned to fixed sea heights
-/// (`seaFillTop` … `seaFillBottom`, via an off-screen marker), so a rebuild never shifts its colours.
+/// Everything is in world-local coordinates (a child of the scene's world node).
+///
+/// The surface is built over a range wider than the screen. It is rebuilt only when:
+/// - the view leaves that range;
+/// - the zoom drifts by 25 %;
+/// - the origin re-bases;
+/// - the storm's chop zone is on screen and the front has moved (QA-2 P2-2: not merely because the storm is "near").
+///
+/// The caller passes a reused sample buffer (`SeaProfile.samples(into:)`), so a rebuild allocates nothing new. The
+/// fill's gradient is pinned to fixed sea heights through an off-screen speck, so a rebuild never shifts its colours.
 @MainActor
 final class SceneSeaView {
     let root: SKNode
     private let fill: SKShapeNode
     private let band: SKShapeNode
+    private let litWide: SKShapeNode
+    private let litNarrow: SKShapeNode
     private var crests: [SKSpriteNode] = []
+    private var crestSeaX: [Double] = []
     private var crestActive = 0
     private var twinkles: [SKSpriteNode] = []
     private var pts: [CGPoint] = []
@@ -24,6 +35,7 @@ final class SceneSeaView {
     private var builtZoom: CGFloat = 1
     private var builtStormX: Double = 0
     private var builtCalm: Double = 1
+    private var builtCloseness: Double = 0
     private var builtOrigin: Double = .nan
     private var lineZoom: CGFloat = 0
     /// Rebuilds since the scene was made (tests, tuning).
@@ -33,15 +45,21 @@ final class SceneSeaView {
         root = SKNode()
         fill = SKShapeNode()
         band = SKShapeNode()
+        litWide = SKShapeNode()
+        litNarrow = SKShapeNode()
         fill.zPosition = 0
         fill.fillColor = .white
         fill.lineJoin = .round
         fill.isAntialiased = true
-        band.zPosition = 0.5
-        band.fillColor = .clear
-        band.lineJoin = .round
-        band.lineCap = .round
+        for (n, z) in [(litWide, CGFloat(0.3)), (litNarrow, CGFloat(0.35)), (band, CGFloat(0.5))] {
+            n.zPosition = z
+            n.fillColor = .clear
+            n.lineJoin = .round
+            n.lineCap = .round
+        }
         root.addChild(fill)
+        root.addChild(litWide)
+        root.addChild(litNarrow)
         root.addChild(band)
         for _ in 0..<SceneLook.crestGlintCount {
             let s = SKSpriteNode(texture: SceneTextures.streak, size: CGSize(width: 74, height: 7))
@@ -51,9 +69,10 @@ final class SceneSeaView {
             s.isHidden = true
             root.addChild(s)
             crests.append(s)
+            crestSeaX.append(0)
         }
         for _ in 0..<SceneLook.seaSparkleCount {
-            let s = SKSpriteNode(texture: SceneTextures.sparkle, size: CGSize(width: 16, height: 16))
+            let s = SKSpriteNode(texture: SceneTextures.dash, size: CGSize(width: 18, height: 2))
             s.blendMode = .add
             s.colorBlendFactor = 1
             s.zPosition = 1.2
@@ -64,19 +83,22 @@ final class SceneSeaView {
         pts.reserveCapacity(400)
     }
 
-    func apply(sky: Sky) {
-        let near = sky.seaNear
-        let crest = ScenePaint.lighter(near, 0.20).mixed(with: sky.horizon, 0.20)
-        // Stops over the fixed extent 700 … −1400 sea pt: crests (≈ +150) light, the mean line seaNear, troughs and the
-        // deep darker.
+    func apply(palette p: ScenePalette, sky id: SkyID) {
+        let lit = p.nearCrest.mixed(with: p.nearMean, 0.4)
+        let mean85 = ScenePaint.darker(p.nearMean, 0.15)
+        let deep70 = ScenePaint.darker(p.nearDeep, 0.30)
+        // Seven eased stops over the fixed extent 700 … −1400 sea pt: crests (≈ +150 … +320) in the lit colour, the
+        // mean line (≈ −50) at `nearMean`, troughs darker, the deep beyond.
         fill.fillTexture = SceneTextures.verticalGradient(
-            key: "sea2-\(sky.id.rawValue)",
-            colors: [ScenePaint.ui(crest), ScenePaint.ui(crest), ScenePaint.ui(near),
-                     ScenePaint.ui(ScenePaint.darker(near, 0.3)), ScenePaint.ui(ScenePaint.darker(near, 0.62))],
-            locations: [0, 0.24, 0.34, 0.50, 1])
-        fill.strokeColor = ScenePaint.ui(sky.foam, alpha: 0.95)
-        band.strokeColor = ScenePaint.ui(ScenePaint.lighter(near, 0.32).mixed(with: sky.horizon, 0.35), alpha: 0.36)
-        let glint = ScenePaint.ui(sky.foam.mixed(with: sky.sun, 0.45))
+            key: "sea3-\(id.rawValue)",
+            colors: [ScenePaint.ui(p.nearCrest), ScenePaint.ui(p.nearCrest), ScenePaint.ui(lit), ScenePaint.ui(p.nearMean),
+                     ScenePaint.ui(mean85), ScenePaint.ui(p.nearDeep), ScenePaint.ui(deep70)],
+            locations: [0, 0.18, 0.26, 0.36, 0.48, 0.66, 1])
+        fill.strokeColor = ScenePaint.ui(p.foam, alpha: 0.95)
+        band.strokeColor = ScenePaint.ui(p.nearCrest, alpha: SceneLook.bandAlpha)
+        litWide.strokeColor = ScenePaint.ui(p.nearCrest, alpha: SceneLook.litFaceAlpha * 0.5)
+        litNarrow.strokeColor = ScenePaint.ui(p.nearCrest, alpha: SceneLook.litFaceAlpha * 0.5)
+        let glint = ScenePaint.ui(p.glitter)
         for s in crests { s.color = glint }
         for s in twinkles { s.color = glint }
     }
@@ -88,12 +110,14 @@ final class SceneSeaView {
         builtOrigin = .nan
     }
 
-    /// The sea range and step to sample when the cached surface no longer covers the view, else nil.
-    func rebuildRequest(visibleLo: Double, visibleHi: Double, zoom z: CGFloat, stormX: Double, stormNear: Bool,
-                        calm: Double, originX: Double) -> (lo: Double, hi: Double, step: Double)? {
+    /// The sea range and step to sample when the cached surface no longer covers the view, else nil. `chopOnScreen`:
+    /// the storm's chop zone (`stormX … stormX + chopReach`) overlaps the view.
+    func rebuildRequest(visibleLo: Double, visibleHi: Double, zoom z: CGFloat, stormX: Double, chopOnScreen: Bool,
+                        closeness: Double, calm: Double, originX: Double) -> (lo: Double, hi: Double, step: Double)? {
         var stale = originX != builtOrigin || visibleLo < builtLo || visibleHi > builtHi
         if z / max(builtZoom, 0.01) > SceneLook.seaRebuildZoomDrift { stale = true }
-        if stormNear && abs(stormX - builtStormX) > SceneLook.seaRebuildStormMove { stale = true }
+        if chopOnScreen && abs(stormX - builtStormX) > SceneLook.seaRebuildStormMove { stale = true }
+        if chopOnScreen && abs(closeness - builtCloseness) > 0.2 { stale = true }
         if abs(calm - builtCalm) > 0.15 { stale = true }
         guard stale else { return nil }
         let v = max(visibleHi - visibleLo, 1)
@@ -101,24 +125,27 @@ final class SceneSeaView {
         return (visibleLo - SceneLook.seaBuildBehind * v, visibleHi + SceneLook.seaBuildAhead * v, s)
     }
 
-    /// Rebuilds the surface from Core's samples (sea space), adding the storm's static chop near `stormX`.
-    func rebuild(samples: [CGPoint], lo: Double, hi: Double, zoom z: CGFloat, stormX: Double, calm: Double,
-                 originX: Double) {
+    /// Rebuilds the surface from Core's samples (sea space), adding the storm's static chop near `stormX`
+    /// (9 → 14 pt as the storm closes).
+    func rebuild(samples: [CGPoint], lo: Double, hi: Double, zoom z: CGFloat, stormX: Double, closeness: Double,
+                 calm: Double, originX: Double) {
         guard samples.count >= 3 else { return }
         rebuildCount += 1
         builtLo = lo
         builtHi = hi
         builtZoom = z
         builtStormX = stormX
+        builtCloseness = closeness
         builtCalm = calm
         builtOrigin = originX
+        let amp = SceneLook.chopAmp + SceneLook.chopAmpClose * min(max(closeness, 0), 1)
         pts.removeAll(keepingCapacity: true)
         for p in samples {
             let sx = Double(p.x)
             var y = Double(p.y)
             let k = min(max(1 - (sx - stormX) / SceneLook.chopReach, 0), 1) * calm
             if k > 0 {
-                y += k * SceneLook.chopAmp * (0.6 * sin(sx * 0.083) + 0.4 * sin(sx * 0.041 + 1.1))
+                y += k * amp * (0.6 * sin(sx * 0.083) + 0.4 * sin(sx * 0.041 + 1.1))
             }
             pts.append(CGPoint(x: CGFloat(sx - originX), y: CGFloat(y)))
         }
@@ -144,12 +171,44 @@ final class SceneSeaView {
             bp.addLine(to: CGPoint(x: pts[i].x, y: pts[i].y - d))
         }
         band.path = bp
+
+        // Lit faces: each run of samples going down toward the sun (dh/dx < 0), as a strip just under the surface.
+        let wide = CGMutablePath()
+        let narrow = CGMutablePath()
+        let wd = SceneLook.litFaceWidth / z
+        var runStart = -1
+        for i in 0..<(pts.count - 1) {
+            let falling = pts[i + 1].y < pts[i].y - 0.05 * step
+            if falling && runStart < 0 { runStart = i }
+            if (!falling || i == pts.count - 2) && runStart >= 0 {
+                let end = falling ? i + 1 : i
+                if end - runStart >= 3 {
+                    addStrip(wide, from: runStart, to: end, depth: wd * 0.5)
+                    addStrip(narrow, from: runStart, to: end, depth: wd * 0.22)
+                }
+                runStart = -1
+            }
+        }
+        litWide.path = wide
+        litNarrow.path = narrow
         setLineWidths(z)
         placeCrests()
     }
 
-    /// Per frame: line widths (only when the zoom moved > 4 %), crest glints and twinkles. No path work.
-    func animate(zoom z: CGFloat, time t: Double, visibleLo: Double, visibleHi: Double, originX: Double) {
+    private func addStrip(_ path: CGMutablePath, from a: Int, to b: Int, depth: CGFloat) {
+        path.move(to: CGPoint(x: pts[a].x, y: pts[a].y - depth))
+        var i = a + 1
+        while i <= b {
+            path.addLine(to: CGPoint(x: pts[i].x, y: pts[i].y - depth))
+            i += 1
+        }
+    }
+
+    /// Per frame: line widths (only when the zoom moved > 4 %), crest glints near the sun and the dash glints. No path
+    /// work. `sunSeaX`: the sea x under the sun; `reach`: 0.30 w in canvas px; `fast` 0…1 lifts the glints at full
+    /// speed; `fine` false hides them (the fold-blur guard).
+    func animate(zoom z: CGFloat, time t: Double, visibleLo: Double, visibleHi: Double, originX: Double,
+                 sunSeaX: Double, reach: CGFloat, fast: CGFloat, fine: Bool) {
         guard pts.count >= 3 else {
             root.isHidden = true
             return
@@ -157,22 +216,32 @@ final class SceneSeaView {
         root.isHidden = false
         if lineZoom <= 0 || abs(z / lineZoom - 1) > 0.04 { setLineWidths(z) }
         let inv = 1 / max(z, 0.01)
+        let peak = SceneLook.glintAlpha + (SceneLook.glintAlphaFast - SceneLook.glintAlpha) * fast
         for i in 0..<crestActive {
             let s = crests[i]
-            let seaX = Double(s.position.x) + originX
+            let dx = CGFloat(abs(crestSeaX[i] - sunSeaX)) * z
+            let k = 1 - dx / max(reach, 1)
+            if !fine || k <= 0 {
+                s.isHidden = true
+                continue
+            }
+            s.isHidden = false
             s.setScale(inv)
-            s.alpha = CGFloat(0.42 + 0.22 * sin(t * 2.6 + seaX * 0.011))
+            s.alpha = peak * k * CGFloat(0.85 + 0.15 * sin(t * 2.6 + crestSeaX[i] * 0.011))
         }
-        updateTwinkles(zoom: z, time: t, visibleLo: visibleLo, visibleHi: visibleHi, originX: originX)
+        updateTwinkles(zoom: z, time: t, visibleLo: visibleLo, visibleHi: visibleHi, originX: originX,
+                       sunSeaX: sunSeaX, reach: reach * 1.5, fine: fine)
     }
 
     private func setLineWidths(_ z: CGFloat) {
         lineZoom = z
         fill.lineWidth = SceneLook.foamLineWidth / z
         band.lineWidth = SceneLook.bandWidth / z
+        litWide.lineWidth = SceneLook.litFaceWidth / z
+        litNarrow.lineWidth = SceneLook.litFaceWidth * 0.44 / z
     }
 
-    /// A glint on every crest: a sample that is the highest within ±40 pt.
+    /// Glint positions on every crest (a sample that is the highest within ±40 pt); shown per frame near the sun.
     private func placeCrests() {
         let n = pts.count
         let w = max(2, Int((40 / step).rounded(.up)))
@@ -193,9 +262,9 @@ final class SceneSeaView {
                 }
                 if isTop {
                     let s = crests[used]
-                    used += 1
-                    s.isHidden = false
                     s.position = CGPoint(x: b.x, y: b.y - 1.5 / builtZoom)
+                    crestSeaX[used] = Double(b.x) + (builtOrigin.isNaN ? 0 : builtOrigin)
+                    used += 1
                     i += w
                     continue
                 }
@@ -209,10 +278,14 @@ final class SceneSeaView {
         }
     }
 
-    /// Twinkles at stable pseudo-random spots in the water (one per 150-pt cell), each flashing on its own beat.
+    /// Dash glints at stable pseudo-random spots in the water (one per 150-pt cell) on the sun's side, each flashing
+    /// on its own beat.
     private func updateTwinkles(zoom z: CGFloat, time t: Double, visibleLo: Double, visibleHi: Double,
-                                originX: Double) {
-        guard let first = pts.first else { return }
+                                originX: Double, sunSeaX: Double, reach: CGFloat, fine: Bool) {
+        guard let first = pts.first, fine else {
+            for s in twinkles where !s.isHidden { s.isHidden = true }
+            return
+        }
         let cell = SceneLook.seaSparkleCell
         var ci = Int((max(visibleLo, Double(first.x) + originX) / cell).rounded(.down))
         var g = 0
@@ -221,6 +294,7 @@ final class SceneSeaView {
             let h2 = SceneRNG.hash(ci, 23)
             let seaX = (Double(ci) + Double(h1)) * cell
             ci += 1
+            if CGFloat(abs(seaX - sunSeaX)) * z > reach { continue }
             let lx = CGFloat(seaX - originX)
             let idx = (lx - first.x) / step
             if idx < 0 || idx >= CGFloat(pts.count - 1) { continue }
@@ -229,12 +303,12 @@ final class SceneSeaView {
             let y = pts[i0].y + (pts[i0 + 1].y - pts[i0].y) * f
             let beat = sin(t * (2.0 + Double(h2) * 2.2) + Double(h1) * 6.283)
             let a = CGFloat(max(0, beat))
-            let alpha = a * a * a * 0.85
+            let alpha = a * a * a * 0.8
             let s = twinkles[g]
             g += 1
             s.isHidden = alpha < 0.02
             s.position = CGPoint(x: lx, y: y - (4 + h2 * 26) / z)
-            s.setScale((0.6 + 0.6 * h2) / z)
+            s.setScale((0.7 + 0.5 * h2) / z)
             s.alpha = alpha
         }
         while g < twinkles.count {

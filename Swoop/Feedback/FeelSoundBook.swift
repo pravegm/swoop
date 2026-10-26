@@ -237,7 +237,7 @@ enum FeelSoundBook {
         return commands
     }
 
-    /// The chain breaks (a splash after a chain of 2+): never harsh, a soft "oh well". Two quiet, dull chime notes
+    /// The chain breaks (a splash after a chain of 3+, with the HUD's "×N lost"): never harsh, a soft "oh well". Two quiet, dull chime notes
     /// falling a fourth from the chain's current scale degree (in the base octave), after the splash has had its moment.
     /// Longer chains sound a little more rueful (a touch longer), never louder.
     static func chainBreak(previousChain: Int, dice: inout FeelDice) -> [FeelSynthCommand] {
@@ -412,6 +412,81 @@ enum FeelSoundBook {
             .noise(FeelNoiseSpec(.bandPass, cutoff: 600, to: 2200, sweep: 0.3, q: 0.8, attack: 0.04, decay: 0.12,
                                  gain: 0.05)),
         ]
+    }
+
+    // MARK: Round 3: Duo poses, the restart and Home (UX-SPEC §2, §9; F1)
+    //
+    // All of these are breaths of air and small wooden or bell notes, quieter than any flight moment: the UI settles,
+    // the world eases like air (ART §5). None is longer than ~0.8 s.
+
+    /// The first fold on Home: a soft swell of wind under the title bird sweeping into a dart.
+    static func homeFold() -> [FeelSynthCommand] {
+        [
+            .noise(FeelNoiseSpec(.lowPass, cutoff: 300, to: 1400, sweep: 0.5, q: 0.7, attack: 0.25, decay: 0.35,
+                                 gain: 0.07)),
+            .noise(FeelNoiseSpec(.bandPass, cutoff: 900, to: 2200, sweep: 0.6, q: 0.8, attack: 0.3, decay: 0.3,
+                                 gain: 0.03, delay: 0.05)),
+        ]
+    }
+
+    /// Fold-to-fly fired (on top of `uiConfirm`): the wings throw the bird back up, a short rising rush of air.
+    static func foldFired() -> [FeelSynthCommand] {
+        [.noise(FeelNoiseSpec(.bandPass, cutoff: 500, to: 2600, sweep: 0.3, q: 0.8, attack: 0.05, decay: 0.14,
+                              gain: 0.06, delay: 0.04))]
+    }
+
+    /// The closing pause (< 95°): a soft falling breath, like wings settling (Brim's pause whoosh).
+    static func closing() -> [FeelSynthCommand] {
+        [
+            .noise(FeelNoiseSpec(.bandPass, cutoff: 1900, to: 520, sweep: 0.34, q: 0.8, attack: 0.07, decay: 0.16,
+                                 gain: 0.07)),
+            .noise(FeelNoiseSpec(.lowPass, cutoff: 700, to: 260, sweep: 0.3, q: 0.7, attack: 0.05, decay: 0.14,
+                                 gain: 0.05, delay: 0.04)),
+        ]
+    }
+
+    /// The Ready ring after a pause or reopening ("Spread your wings"): a rising breath and one low marimba note.
+    static func reopened() -> [FeelSynthCommand] {
+        [
+            .noise(FeelNoiseSpec(.bandPass, cutoff: 500, to: 1800, sweep: 0.45, q: 0.8, attack: 0.15, decay: 0.2,
+                                 gain: 0.05)),
+            .ring(FeelRingSpec(.marimba, fundamental: 493.88, partials: 3, decay: 0.16, brightness: 0.3, gain: 0.07,
+                               delay: 0.1)),
+        ]
+    }
+
+    /// The Ready ring lets go and the bird flies on: a lighter cousin of `started`.
+    static func go() -> [FeelSynthCommand] {
+        [
+            .ring(FeelRingSpec(.marimba, fundamental: 987.77, partials: 3, decay: 0.15, brightness: 0.3, gain: 0.12)),
+            .noise(FeelNoiseSpec(.bandPass, cutoff: 600, to: 2200, sweep: 0.25, q: 0.8, attack: 0.03, decay: 0.1,
+                                 gain: 0.04)),
+        ]
+    }
+
+    /// Entering the seated split deck (and the cover's "Keep flying here"): the deck clicks into place, two wood ticks.
+    static func splitDeck() -> [FeelSynthCommand] {
+        [
+            .ring(FeelRingSpec(.wood, fundamental: 900, partials: 3, decay: 0.014, brightness: 0.35, gain: 0.09)),
+            .ring(FeelRingSpec(.wood, fundamental: 1200, partials: 3, decay: 0.014, brightness: 0.35, gain: 0.08,
+                               delay: 0.07)),
+        ]
+    }
+
+    /// "Fly with the fold?" (back in book pose): a soft rising two-note question (D5 → A5).
+    static func bookPrompt() -> [FeelSynthCommand] {
+        [
+            .ring(FeelRingSpec(.chime, fundamental: 587.33, partials: 3, decay: 0.3, brightness: 0.25, gain: 0.07)),
+            .ring(FeelRingSpec(.chime, fundamental: 880.0, partials: 3, decay: 0.4, brightness: 0.25, gain: 0.065,
+                               delay: 0.12)),
+        ]
+    }
+
+    /// The results distance count-up (ART §5: a tick every 0.5 km): a tiny wood tick that climbs a little per step.
+    static func resultsTick(step: Int) -> [FeelSynthCommand] {
+        let climb = Float(min(max(step, 0), 24)) * 45
+        return [.ring(FeelRingSpec(.wood, fundamental: 1400 + climb, partials: 2, decay: 0.01, brightness: 0.35,
+                                   gain: 0.05))]
     }
 
     // MARK: UI

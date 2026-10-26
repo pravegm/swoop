@@ -63,6 +63,12 @@ struct RecordOutcome: Equatable {
     /// Daily: this run is the day's one counted try.
     var dailyCounted = false
     var dailyStreak = 0
+    /// The grace bridged a missed day ("Calm sea: streak kept").
+    var dailyGraceKept = false
+    /// A star flock was finished past the top rank (its ★ count is `ProgressData.starFlocks`).
+    var starEarned = false
+    /// Lighthouses entered in the logbook for the first time by this run.
+    var newLogbook: [String] = []
     /// Achievements this run earned for the first time.
     var newAchievements: [String] = []
 
@@ -72,7 +78,8 @@ struct RecordOutcome: Equatable {
 
 /// Everything the game remembers. JSON under `ProgressStore.key`, versioned, decoded tolerantly.
 struct ProgressData: Codable, Equatable {
-    static let currentVersion = 1
+    /// v2 (R2): 15 ranks and new goal targets under reused ids, so v1 saves are migrated (QA-2 P2-1).
+    static let currentVersion = 2
 
     var version = ProgressData.currentVersion
     var bestMeters: Double = 0
@@ -102,15 +109,31 @@ struct ProgressData: Codable, Equatable {
     var sky: SkyID = .goldenHour
     /// The chosen trail colour's id (Core's `TrailID` raw value); "" or "natural" = the bird's own trail.
     var trail = ""
-    /// The first-run hints ("Fold on the way down", "Open to fly") are learned after the first Perfect.
+    /// R1/R2 flag (kept so old saves decode): true = the first-run hints were done. Migrated into `learnedHints`.
     var hintsLearned = false
-
+    /// Hints retired by success (UX-A5): "fold", "open", "land", "storm".
+    var learnedHints: Set<String> = []
+    /// Home destinations opened at least once (the gold dot leaves): "daily", "goals", "birds".
+    var seenDestinations: Set<String> = []
+    /// Lighthouse names ever passed (the logbook, UX §4).
+    var logbook: Set<String> = []
+    /// The latest day a Daily was played (QA-2 P2-8: a clock set back never gives another scored try).
+    var lastDailyDay = Int.min
+    /// Results that showed "or fold and open" (UX-A3: the first 5).
+    var foldToFlyShown = 0
+    /// The long-flight line (UX §9): hinge seconds flown on `hingeDay`, and the day the line last showed.
+    var hingeDay = Int.min
+    var hingeSeconds: Double = 0
+    var restLineDay = Int.min
+    /// Star flocks finished past the top rank (UX §4: "Storm Rider ★2").
+    var starFlocks = 0
     init() {}
 
     /// Tolerant: unknown or missing fields fall back to their defaults, never wiping the rest.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        version = (try? c.decodeIfPresent(Int.self, forKey: .version)) ?? ProgressData.currentVersion
+        let storedVersion = (try? c.decodeIfPresent(Int.self, forKey: .version)) ?? 1
+        version = ProgressData.currentVersion
         bestMeters = (try? c.decodeIfPresent(Double.self, forKey: .bestMeters)) ?? 0
         bestScore = (try? c.decodeIfPresent(Int.self, forKey: .bestScore)) ?? 0
         bestChain = (try? c.decodeIfPresent(Int.self, forKey: .bestChain)) ?? 0
@@ -133,13 +156,26 @@ struct ProgressData: Codable, Equatable {
         sky = (try? c.decodeIfPresent(SkyID.self, forKey: .sky)) ?? .goldenHour
         trail = (try? c.decodeIfPresent(String.self, forKey: .trail)) ?? ""
         hintsLearned = (try? c.decodeIfPresent(Bool.self, forKey: .hintsLearned)) ?? false
+        learnedHints = (try? c.decodeIfPresent(Set<String>.self, forKey: .learnedHints)) ?? []
+        seenDestinations = (try? c.decodeIfPresent(Set<String>.self, forKey: .seenDestinations)) ?? []
+        logbook = (try? c.decodeIfPresent(Set<String>.self, forKey: .logbook)) ?? []
+        lastDailyDay = (try? c.decodeIfPresent(Int.self, forKey: .lastDailyDay)) ?? Int.min
+        foldToFlyShown = (try? c.decodeIfPresent(Int.self, forKey: .foldToFlyShown)) ?? 0
+        hingeDay = (try? c.decodeIfPresent(Int.self, forKey: .hingeDay)) ?? Int.min
+        hingeSeconds = (try? c.decodeIfPresent(Double.self, forKey: .hingeSeconds)) ?? 0
+        restLineDay = (try? c.decodeIfPresent(Int.self, forKey: .restLineDay)) ?? Int.min
+        starFlocks = max((try? c.decodeIfPresent(Int.self, forKey: .starFlocks)) ?? 0, 0)
+        ProgressRules.migrate(&self, fromVersion: storedVersion)
     }
 
     // MARK: Derived
 
     func dailyStreak(today: Int) -> Int { ProgressRules.streak(days: Set(daily.keys), today: today) }
+    func hasLearned(_ hint: String) -> Bool { learnedHints.contains(hint) }
     func dailyRecord(day: Int) -> DailyRecord? { daily[day] }
     func goalProgress(for goal: Goal) -> Double { min(max(goalProgress[goal.id] ?? 0, 0), 1) }
+    /// The goals in play: the rank's three, or the current star flock past the top.
+    var currentGoals: [Goal] { ProgressRules.currentGoals(rank: rank, starFlocks: starFlocks) }
 }
 
 // MARK: - Trail colours (rank rewards, ROUND-2)
@@ -172,6 +208,69 @@ extension ProgressRules {
 // MARK: - The rules (pure, tested)
 
 enum ProgressRules {
+    /// Brings an older save up to `ProgressData.currentVersion` (QA-2 P2-1). v1 → v2: the rank is clamped to the
+    /// 15-rank ladder and goal progress is cleared (R2 reused goal ids with new targets); bests, Dailies and cosmetics
+    /// stay. The old "hints learned" flag becomes the learned-hint set. Every version: the rank is clamped.
+    static func migrate(_ data: inout ProgressData, fromVersion stored: Int, maxRank: Int = GoalCatalog.maxRank) {
+        if stored < 2 {
+            data.goalProgress = [:]
+        }
+        if data.hintsLearned && data.learnedHints.isEmpty {
+            data.learnedHints = [AppHint.fold.rawValue, AppHint.open.rawValue]
+        }
+        data.rank = min(max(data.rank, 0), max(maxRank, 0))
+        data.version = ProgressData.currentVersion
+    }
+
+    /// The goals in play (Home's "1 of 3", the Flocks card): the rank's, or the star flock past the top. Tested.
+    static func currentGoals(rank: Int, starFlocks: Int, maxRank: Int = GoalCatalog.maxRank) -> [Goal] {
+        rank >= maxRank ? GoalCatalog.starGoals(n: max(starFlocks, 0)) : GoalCatalog.goals(forRank: rank)
+    }
+
+    /// Home's Goals line: "1 of 3 · Fledgling"; past the top "Storm Rider ★2" (no stars yet: "Storm Rider ★"). Tested.
+    static func goalsLine(rank: Int, done: Int, total: Int, starFlocks: Int, maxRank: Int = GoalCatalog.maxRank)
+        -> String {
+        let title = GoalCatalog.rankTitle(rank)
+        if rank >= maxRank { return starFlocks > 0 ? "\(title) ★\(starFlocks)" : "\(title) ★" }
+        return "\(min(max(done, 0), total)) of \(total) · \(title)"
+    }
+
+    /// QA-2 P2-8: a scored Daily only on a day at or after the latest Daily played (a clock turned back can't replay a
+    /// past sea as scored).
+    static func dailyMayScore(day: Int, lastDailyDay: Int) -> Bool { day >= lastDailyDay }
+
+    /// UX §9 fatigue: 20 minutes of hinge flying in a day.
+    static let longFlightSeconds: Double = 20 * 60
+
+    /// The streak with UX §4's grace: one missed day per rolling 7 doesn't break it ("Calm sea: streak kept").
+    /// Counts back from today (or yesterday while today's isn't flown yet). Returns the streak and whether the most
+    /// recent gap was bridged by the grace.
+    static func streakWithGrace(days: Set<Int>, today: Int) -> (streak: Int, graceKept: Bool) {
+        var day = days.contains(today) ? today : today - 1
+        var count = 0
+        var lastGrace = Int.max
+        var graceKept = false
+        var steps = 0
+        while steps < 4000 {
+            steps += 1
+            if days.contains(day) {
+                count += 1
+                day -= 1
+                continue
+            }
+            // A single missing day, bridged only if the day before it was flown and no grace was used in the 7 days
+            // after it.
+            if count > 0 && days.contains(day - 1) && (lastGrace == Int.max || lastGrace - day >= 7) {
+                if lastGrace == Int.max { graceKept = true }
+                lastGrace = day
+                day -= 1
+                continue
+            }
+            break
+        }
+        return (count, graceKept)
+    }
+
     /// Every achievement id (Game Center, docs/appstore style `swoop.ach.*`).
     static let achievementFirstFlight = "swoop.ach.first"
     static let achievementKm1 = "swoop.ach.km1"
@@ -194,13 +293,7 @@ enum ProgressRules {
 
     /// Consecutive days with a scored Daily ending today, or yesterday when today's isn't flown yet (still alive).
     static func streak(days: Set<Int>, today: Int) -> Int {
-        var day = days.contains(today) ? today : today - 1
-        var count = 0
-        while days.contains(day) {
-            count += 1
-            day -= 1
-        }
-        return count
+        streakWithGrace(days: days, today: today).streak
     }
 
     /// The achievements `data` holds. `allBirdsRank` = the rank that unlocks the last bird.
@@ -234,7 +327,8 @@ enum ProgressRules {
                        },
                        trailUnlocks: (Int, Int) -> [String] = { from, to in
                            ProgressRules.trailUnlocks(from: from, to: to)
-                       }) -> RecordOutcome {
+                       },
+                       stars: (Int) -> [Goal] = { GoalCatalog.starGoals(n: $0) }) -> RecordOutcome {
         var outcome = RecordOutcome()
         if case .attract = result.mode { return outcome }
         let meters = result.meters.isFinite ? max(result.meters, 0) : 0
@@ -264,6 +358,7 @@ enum ProgressRules {
         var dailyPlayed = false
         if case let .daily(day, scored) = result.mode {
             dailyPlayed = true
+            data.lastDailyDay = max(data.lastDailyDay, day)
             if scored {
                 data.daily[day] = DailyRecord(meters: meters, perfects: result.perfects, lighthouses: result.lighthouses,
                                               lastLighthouseName: result.lastLighthouseName, finished: true)
@@ -271,13 +366,27 @@ enum ProgressRules {
                 outcome.dailyCounted = true
             }
         }
-        let currentStreak = Self.streak(days: Set(data.daily.keys), today: today)
+        let streakInfo = Self.streakWithGrace(days: Set(data.daily.keys), today: today)
+        let currentStreak = streakInfo.streak
         outcome.dailyStreak = currentStreak
+        outcome.dailyGraceKept = outcome.dailyCounted && streakInfo.graceKept
+
+        // The logbook: every lighthouse this run passed, by name.
+        if result.lighthouses > 0 {
+            for i in 0..<min(result.lighthouses, 200) {
+                let name = Lighthouses.name(index: i, seed: result.seed)
+                if !data.logbook.contains(name) {
+                    data.logbook.insert(name)
+                    outcome.newLogbook.append(name)
+                }
+            }
+        }
         data.bestDailyStreak = max(data.bestDailyStreak, currentStreak)
 
         // Goals → rank up
         let rankBefore = data.rank
-        let active = data.rank < maxRank ? goals(data.rank) : []
+        let atTop = data.rank >= maxRank
+        let active = atTop ? stars(data.starFlocks) : goals(data.rank)
         var rows: [GoalRowOutcome] = []
         for goal in active {
             let before = min(max(data.goalProgress[goal.id] ?? 0, 0), 1)
@@ -288,7 +397,12 @@ enum ProgressRules {
             rows.append(GoalRowOutcome(goal: goal, before: before, after: after))
         }
         outcome.goals = rows
-        if !rows.isEmpty && rows.allSatisfy({ $0.isMet }) {
+        if atTop && !rows.isEmpty && rows.allSatisfy({ $0.isMet }) {
+            // A star flock: one more ★, and the next three goals.
+            for row in rows { data.goalProgress.removeValue(forKey: row.goal.id) }
+            data.starFlocks += 1
+            outcome.starEarned = true
+        } else if !rows.isEmpty && rows.allSatisfy({ $0.isMet }) {
             data.rank = min(rankBefore + 1, maxRank)
             // The finished rank's goal ids are done with; the next rank starts fresh.
             for row in rows { data.goalProgress.removeValue(forKey: row.goal.id) }
@@ -418,6 +532,11 @@ final class ProgressStore: ObservableObject {
 
     func hasDailyAttempt(day: Int) -> Bool { data.dailyAttempted.contains(day) || data.daily[day] != nil }
 
+    /// Today's Daily would be scored: no try yet, and the clock isn't behind the latest Daily played (QA-2 P2-8).
+    func dailyIsScorable(day: Int) -> Bool {
+        !hasDailyAttempt(day: day) && ProgressRules.dailyMayScore(day: day, lastDailyDay: data.lastDailyDay)
+    }
+
     // MARK: Writing
 
     func replace(with newData: ProgressData) {
@@ -436,8 +555,9 @@ final class ProgressStore: ObservableObject {
 
     /// The scored Daily's drop happened: from now on the day's try is spent.
     func markDailyAttempt(day: Int) {
-        guard !data.dailyAttempted.contains(day) else { return }
+        guard !data.dailyAttempted.contains(day) || data.lastDailyDay < day else { return }
         data.dailyAttempted.insert(day)
+        data.lastDailyDay = max(data.lastDailyDay, day)
         save()
     }
 
@@ -479,12 +599,50 @@ final class ProgressStore: ObservableObject {
         save()
     }
 
+    /// UX-A5: a hint retired by success ("fold", "open", "land", "storm").
+    func learnHint(_ hint: String) {
+        guard !data.learnedHints.contains(hint) else { return }
+        data.learnedHints.insert(hint)
+        save()
+    }
+
+    /// Home: a destination opened (its gold dot leaves).
+    func markSeen(_ destination: String) {
+        guard !data.seenDestinations.contains(destination) else { return }
+        data.seenDestinations.insert(destination)
+        save()
+    }
+
+    func noteFoldToFlyShown() {
+        data.foldToFlyShown += 1
+        save()
+    }
+
+    /// Adds hinge flying time for the long-flight line; returns whether the line should show now (≥ 20 min today,
+    /// once a day).
+    func addHingeSeconds(_ seconds: Double, day: Int) -> Bool {
+        guard seconds.isFinite, seconds > 0 else { return false }
+        if data.hingeDay != day {
+            data.hingeDay = day
+            data.hingeSeconds = 0
+        }
+        data.hingeSeconds += seconds
+        var show = false
+        if data.hingeSeconds >= ProgressRules.longFlightSeconds && data.restLineDay != day {
+            data.restLineDay = day
+            show = true
+        }
+        save()
+        return show
+    }
+
     /// Settings › Reset progress: bests, ranks, goals, cosmetics and hints go; the Daily history stays (so a reset is
     /// never a free Daily retry).
     func resetProgress() {
         var fresh = ProgressData()
         fresh.daily = data.daily
         fresh.dailyAttempted = data.dailyAttempted
+        fresh.lastDailyDay = data.lastDailyDay
         data = fresh
         save()
     }

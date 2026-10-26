@@ -45,8 +45,114 @@ struct FeelHapticCue: Sendable, Equatable {
     }
 }
 
+/// Settings "Haptics: Off | Normal | Strong" (UX-SPEC §3, §9; Round 3 F2). Strong is the Duo default: the founder found
+/// the Duo's Taptic Engine weak, so Strong turns every tap into a short, rounder burst the actuator can actually push.
+enum HapticProfile: String, Codable, CaseIterable, Sendable {
+    case off, normal, strong
+
+    /// The default before the player chooses: Strong on a phone with a fold (a hinge was seen), Normal elsewhere.
+    static func defaultFor(hasFold: Bool) -> HapticProfile {
+        hasFold ? .strong : .normal
+    }
+
+    /// The Settings label.
+    var label: String {
+        switch self {
+        case .off: return "Off"
+        case .normal: return "Normal"
+        case .strong: return "Strong"
+        }
+    }
+}
+
 /// The haptic vocabulary of Swoop (GAME-DESIGN §7). Pure data, so it is testable.
 enum FeelHapticBook {
+    // MARK: The Strong profile (UX-SPEC §9 "The weak taptic engine")
+
+    /// Strong: continuous intensity × 1.4 (clamped), at least `strongSkimFloor` while skimming.
+    static let strongContinuousGain: Float = 1.4
+    static let strongSkimFloor: Float = 0.3
+    /// Strong: every transient becomes a continuous burst this long, at this sharpness (rounder = more energy on a
+    /// small actuator), with its intensity × `strongTapGain` (clamped).
+    static let strongBurst: Double = 0.055
+    static let strongBurstSharpness: Float = 0.4
+    static let strongTapGain: Float = 1.15
+    /// Strong Perfect: 2 × 60 ms bursts, 80 ms apart. Strong launch: one 80 ms burst.
+    static let strongPerfectBurst: Double = 0.06
+    static let strongPerfectGap: Double = 0.08
+    static let strongLaunchBurst: Double = 0.08
+
+    /// A cue in the given profile: Normal (and Off, which never plays) unchanged; Strong as above. The curve is kept.
+    static func adapt(_ cue: FeelHapticCue, to profile: HapticProfile) -> FeelHapticCue {
+        guard profile == .strong else { return cue }
+        let notes: [FeelHapticNote] = cue.notes.map { (note: FeelHapticNote) -> FeelHapticNote in
+            switch note.kind {
+            case .transient:
+                return .buzz(min(note.intensity * strongTapGain, 1), strongBurstSharpness, at: note.time,
+                             duration: strongBurst)
+            case .continuous:
+                return .buzz(min(note.intensity * strongContinuousGain, 1), note.sharpness, at: note.time,
+                             duration: note.duration)
+            }
+        }
+        return FeelHapticCue(notes: notes, curve: cue.curve)
+    }
+
+    /// The Perfect cue for a profile (Normal: `perfect`, the two taps on the hit-stop).
+    static func perfect(for profile: HapticProfile) -> FeelHapticCue {
+        guard profile == .strong else { return perfect }
+        return FeelHapticCue(notes: [.buzz(1.0, strongBurstSharpness, duration: strongPerfectBurst),
+                                     .buzz(0.85, strongBurstSharpness, at: strongPerfectGap,
+                                           duration: strongPerfectBurst)])
+    }
+
+    /// The launch cue for a profile.
+    static func launch(speed: Double, profile: HapticProfile) -> FeelHapticCue {
+        guard profile == .strong else { return launch(speed: speed) }
+        let s = Float(FeelSoundBook.speedUnit(speed))
+        return FeelHapticCue(notes: [.buzz(min(0.65 + 0.35 * s, 1), strongBurstSharpness,
+                                           duration: strongLaunchBurst)])
+    }
+
+    /// The continuous rumble for a profile.
+    static func rumbleLevel(speed: Double, playing: Bool, skimming: Bool, profile: HapticProfile) -> Float {
+        let level = rumbleLevel(speed: speed, playing: playing)
+        switch profile {
+        case .off: return 0
+        case .normal: return level
+        case .strong:
+            guard level > 0 else { return 0 }
+            let strong = min(level * strongContinuousGain, 1)
+            return skimming ? max(strong, strongSkimFloor) : strong
+        }
+    }
+
+    /// The skim texture for a profile.
+    static func skimLevel(speed: Double, skimming: Bool, playing: Bool, profile: HapticProfile) -> Float {
+        let level = skimLevel(speed: speed, skimming: skimming, playing: playing)
+        switch profile {
+        case .off: return 0
+        case .normal: return level
+        case .strong: return min(level * strongContinuousGain, 1)
+        }
+    }
+
+    /// iPhone touch-down (UX-SPEC §10, F4): a light, crisp click as the finger lands, the "fold" the iPhone's strong
+    /// Taptic Engine can sell. Haptic only, iPhone only.
+    static let touchDown = FeelHapticCue(notes: [.tap(0.42, 0.78)])
+    /// The Home fold (F1): a soft swell under the title bird's first sweep into a dart.
+    static let homeFold = FeelHapticCue(
+        notes: [.buzz(0.4, 0.3, duration: 0.35)],
+        curve: [FeelHapticPoint(time: 0, value: 0.2), FeelHapticPoint(time: 0.2, value: 1),
+                FeelHapticPoint(time: 0.35, value: 0)]
+    )
+    /// The closing pause: a soft settling thump. Reopened: a light lift. Go: a crisp single tap.
+    static let closing = FeelHapticCue(notes: [.tap(0.35, 0.3), .buzz(0.2, 0.2, at: 0.02, duration: 0.12)])
+    static let reopened = FeelHapticCue(notes: [.tap(0.25, 0.6)])
+    static let go = FeelHapticCue(notes: [.tap(0.5, 0.8)])
+    /// Results count-up tick (every 0.5 km): the faintest tick.
+    static let resultsTick = FeelHapticCue(notes: [.tap(0.18, 0.9)])
+
     // MARK: The continuous rumble
 
     /// Rumble intensity for a speed (0…1): `rumbleRest` at the minimum speed up to `rumbleTop` at full speed; 0 when
@@ -145,6 +251,19 @@ final class FeelHaptics {
                 perfectPlayer = nil
                 if let engine, isRunning { engine.stop(completionHandler: nil) }
                 isRunning = false
+            }
+        }
+    }
+
+    /// Normal or Strong (Off is `enabled = false`, set by the director). Changing it rebuilds the prebuilt Perfect.
+    var profile: HapticProfile = .normal {
+        didSet {
+            guard oldValue != profile, let engine, isRunning else { return }
+            do {
+                perfectPlayer = try engine.makePlayer(with: try Self.pattern(for: FeelHapticBook.perfect(for: profile)))
+            } catch {
+                perfectPlayer = nil
+                record("Couldn't prebuild the Perfect haptic", error)
             }
         }
     }
@@ -256,7 +375,7 @@ final class FeelHaptics {
         skimPlayer = nil
         perfectPlayer = nil
         do {
-            perfectPlayer = try engine.makePlayer(with: try Self.pattern(for: FeelHapticBook.perfect))
+            perfectPlayer = try engine.makePlayer(with: try Self.pattern(for: FeelHapticBook.perfect(for: profile)))
         } catch {
             record("Couldn't prebuild the Perfect haptic", error)
         }
@@ -307,10 +426,14 @@ final class FeelHaptics {
 
     /// The continuous feel: call every frame; sends at most ~30 times a second, ramping between values (no zipper).
     func update(telemetry: FlightTelemetry, now: CFTimeInterval) {
-        let rumble = enabled ? FeelHapticBook.rumbleLevel(speed: telemetry.speed, playing: telemetry.playing) : 0
-        let skim = enabled
-            ? FeelHapticBook.skimLevel(speed: telemetry.speed, skimming: telemetry.skimming, playing: telemetry.playing)
-            : 0
+        var rumble: Float = 0
+        var skim: Float = 0
+        if enabled {
+            rumble = FeelHapticBook.rumbleLevel(speed: telemetry.speed, playing: telemetry.playing,
+                                                skimming: telemetry.skimming, profile: profile)
+            skim = FeelHapticBook.skimLevel(speed: telemetry.speed, skimming: telemetry.skimming,
+                                            playing: telemetry.playing, profile: profile)
+        }
         setContinuous(rumble: rumble, sharpness: FeelHapticBook.rumbleSharpness(tuck: telemetry.tuck), skim: skim,
                       now: now, force: false)
     }
@@ -371,7 +494,7 @@ final class FeelHaptics {
             }
         }
         guard let engine, isRunning else { return }
-        if cue == FeelHapticBook.perfect, let player = perfectPlayer {
+        if cue == FeelHapticBook.perfect(for: profile), let player = perfectPlayer {
             do {
                 try player.start(atTime: CHHapticTimeImmediate)
                 return

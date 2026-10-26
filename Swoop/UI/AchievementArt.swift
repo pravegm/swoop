@@ -75,16 +75,21 @@ enum BadgePainter {
         let all = Path(CGRect(x: 0, y: 0, width: 1024, height: 1024))
         ctx.fill(all, with: .linearGradient(Gradient(colors: [night, deep, night]),
                                             startPoint: CGPoint(x: 512, y: 0), endPoint: CGPoint(x: 512, y: 1024)))
-        ctx.fill(all, with: .radialGradient(Gradient(colors: [glow.opacity(0.35), glow.opacity(0)]),
+        // ART A9: no gold glow over navy; a cool lift only.
+        ctx.fill(all, with: .radialGradient(Gradient(colors: [tide.opacity(0.35), tide.opacity(0)]),
                                             center: CGPoint(x: 512, y: 760), startRadius: 0, endRadius: 600))
     }
 
     static func medallion(_ ctx: inout GraphicsContext, tier: Tier) {
         let ring: Gradient
         switch tier {
-        case .glass: ring = Gradient(colors: [Color(swoopHex: 0x7FC4DE), tide])
-        case .silver: ring = Gradient(colors: [Color(swoopHex: 0xE8F0F6), Color(swoopHex: 0x8EA3B4)])
-        case .gold: ring = Gradient(colors: [goldLight, gold, goldDeep])
+        // ART badges P2: the rim by tier, bronze `#C98A5A`, silver `#C9D3DC`, gold `#F7C75B` (lit top, deeper bottom).
+        case .glass: ring = Gradient(colors: [Color(swoopHex: 0xE2AE85), Color(swoopHex: 0xC98A5A),
+                                              Color(swoopHex: 0x8F5E38)])
+        case .silver: ring = Gradient(colors: [Color(swoopHex: 0xEEF2F5), Color(swoopHex: 0xC9D3DC),
+                                               Color(swoopHex: 0x8E9AA6)])
+        case .gold: ring = Gradient(colors: [Color(swoopHex: 0xFFE39A), Color(swoopHex: 0xF7C75B),
+                                             Color(swoopHex: 0xC98A2A)])
         }
         let outer = CGRect(x: 512 - 400, y: 512 - 400, width: 800, height: 800)
         ctx.fill(Path(ellipseIn: outer.offsetBy(dx: 0, dy: 16)), with: .color(Color.black.opacity(0.3)))
@@ -196,7 +201,10 @@ enum BadgePainter {
         beam.addLine(to: CGPoint(x: 900, y: lampY - 160))
         beam.addLine(to: CGPoint(x: 900, y: lampY + 40))
         beam.closeSubpath()
-        ctx.fill(beam, with: .linearGradient(Gradient(colors: [goldLight.opacity(0.85), goldLight.opacity(0)]),
+        // The beam stays inside the disc (ART badges P2).
+        var disc = ctx
+        disc.clip(to: Path(ellipseIn: CGRect(x: 512 - 348, y: 512 - 348, width: 696, height: 696)))
+        disc.fill(beam, with: .linearGradient(Gradient(colors: [goldLight.opacity(0.85), goldLight.opacity(0)]),
                                              startPoint: CGPoint(x: 512, y: lampY), endPoint: CGPoint(x: 900, y: lampY)))
         for base in bases {
             ctx.fill(lighthouseShape(at: base, height: height), with: .color(white))

@@ -35,32 +35,54 @@ struct SettingsView: View {
         }
     }
 
+    private var c: Bool { info.isCompact }
+
+    /// The copy for "Bird on the other side" (UX §3).
+    static let mirroredFootnote = "The bird flies on the right half. Try it if you're left-handed, or if one half "
+        + "blurs when you fold."
+
+    // UX-A14: CONTROLS first, then SOUND & FEEL.
     private var leftPage: some View {
         VStack(alignment: .leading, spacing: 10) {
-            PageHeading(text: "Sound & feel")
-            VStack(alignment: .leading, spacing: 4) {
-                toggleRow("Sound", icon: "speaker.wave.2.fill", isOn: $settings.soundOn)
-                divider
-                toggleRow("Haptics", icon: "hand.tap.fill", isOn: $settings.hapticsOn)
-                divider
-                toggleRow("Respect silent switch", icon: "bell.slash.fill", isOn: $settings.respectSilentSwitch,
-                          footnote: "Off: Swoop plays sound even in Silent Mode.")
-            }
-            .swoopCard(padding: 14, radius: 22)
-            PageHeading(text: "Controls")
+            PageHeading(text: "Controls", compact: c)
             VStack(alignment: .leading, spacing: 4) {
                 toggleRow("Play with touch", icon: "hand.point.up.left.fill", isOn: $settings.playWithTouch,
                           footnote: controller.hasHinge
                             ? "Hold the screen to tuck instead of folding your Duo."
                             : "On iPhones without a fold you always play with touch.")
                 divider
+                segmentRow("Tuck by", icon: "hand.tap.fill", options: ["Holding", "Tapping"],
+                           selected: settings.tuckByTapping ? 1 : 0,
+                           footnote: "Tapping: one tap tucks, the next opens. Made for Switch Control and VoiceOver.") { i in
+                    settings.tuckByTapping = i == 1
+                    settings.tapOfferAnswered = true
+                }
+                divider
                 toggleRow("Bird on the other side", icon: "arrow.left.and.right", isOn: $settings.mirrored,
-                          footnote: "Fly right to left, with the bird on the right half.")
+                          footnote: Self.mirroredFootnote)
                 divider
                 infoRow("Reduce Motion", icon: "figure.walk.motion", value: reduceMotion ? "On" : "Off",
                         footnote: "Follows iOS: no camera shake or screen bloom when on.")
             }
-            .swoopCard(padding: 14, radius: 22)
+            .swoopCard(padding: 14, radius: SwoopTheme.cardRadius(c))
+            PageHeading(text: "Sound & feel", compact: c)
+            VStack(alignment: .leading, spacing: 4) {
+                toggleRow("Sound", icon: "speaker.wave.2.fill", isOn: $settings.soundOn)
+                divider
+                segmentRow("Haptics", icon: "waveform", options: AppHapticLevel.allCases.map(\.label),
+                           selected: AppHapticLevel.allCases.firstIndex(of: settings.hapticLevel) ?? 1,
+                           footnote: controller.hasHinge ? "Strong suits the Duo's gentle taptic engine." : nil) { i in
+                    let levels = AppHapticLevel.allCases
+                    if levels.indices.contains(i) {
+                        settings.hapticLevel = levels[i]
+                        FeedbackDirector.shared.uiConfirm()
+                    }
+                }
+                divider
+                toggleRow("Respect silent switch", icon: "bell.slash.fill", isOn: $settings.respectSilentSwitch,
+                          footnote: "Off: Swoop plays sound even in Silent Mode.")
+            }
+            .swoopCard(padding: 14, radius: SwoopTheme.cardRadius(c))
         }
     }
 
@@ -70,10 +92,10 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
                     BirdGlyph()
-                        .fill(SwoopTheme.gold)
+                        .fill(SwoopTheme.foam)
                         .frame(width: 30, height: 14)
                     Text("Made for iPhone Duo: the two halves are your wings.")
-                        .font(SwoopTheme.text(16, .heavy))
+                        .font(SwoopType.body(c).weight(.heavy))
                         .foregroundStyle(SwoopTheme.foam)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -89,7 +111,7 @@ struct SettingsView: View {
                     .font(SwoopTheme.text(13, .bold))
                     .foregroundStyle(SwoopTheme.haze)
             }
-            .swoopCard(padding: 16, radius: 22)
+            .swoopCard(padding: 16, radius: SwoopTheme.cardRadius(c))
             PageHeading(text: "Privacy")
             VStack(alignment: .leading, spacing: 10) {
                 Button {
@@ -99,9 +121,9 @@ struct SettingsView: View {
                     HStack(spacing: 12) {
                         Image(systemName: "hand.raised.fill")
                             .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(SwoopTheme.ink)
+                            .foregroundStyle(SwoopTheme.foam)
                             .frame(width: 32, height: 32)
-                            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(SwoopTheme.gold))
+                            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(SwoopTheme.surfaceRaised))
                         Text("Swoop collects no data")
                             .font(SwoopTheme.text(17, .bold))
                             .foregroundStyle(SwoopTheme.foam)
@@ -122,7 +144,7 @@ struct SettingsView: View {
                         .transition(.opacity)
                 }
             }
-            .swoopCard(padding: 14, radius: 22)
+            .swoopCard(padding: 14, radius: SwoopTheme.cardRadius(c))
             // REVIEW-1 P1-11: progress last, and Reset as a plain destructive row behind its confirmation.
             PageHeading(text: "Progress")
             VStack(alignment: .leading, spacing: 4) {
@@ -150,7 +172,7 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .swoopCard(padding: 14, radius: 22)
+            .swoopCard(padding: 14, radius: SwoopTheme.cardRadius(c))
         }
     }
 
@@ -177,12 +199,41 @@ struct SettingsView: View {
         Rectangle().fill(SwoopTheme.foam.opacity(0.08)).frame(height: 1)
     }
 
+    /// ART A6: `surfaceRaised` tiles with foam glyphs (no gold in Settings).
     private func rowIcon(_ name: String) -> some View {
         Image(systemName: name)
             .font(.system(size: 15, weight: .bold))
-            .foregroundStyle(SwoopTheme.ink)
+            .foregroundStyle(SwoopTheme.foam)
             .frame(width: 32, height: 32)
-            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(SwoopTheme.gold))
+            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(SwoopTheme.surfaceRaised))
+    }
+
+    /// A row with a segmented choice ("Tuck by: Holding | Tapping", "Haptics: Off | Normal | Strong").
+    private func segmentRow(_ title: String, icon: String, options: [String], selected: Int, footnote: String?,
+                            onSelect: @escaping (Int) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                rowIcon(icon)
+                Text(title)
+                    .font(SwoopType.body(c).weight(.bold))
+                    .foregroundStyle(SwoopTheme.foam)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .frame(minHeight: 40)
+            SwoopSegmented(options: options, selected: selected, compact: c) { i in
+                FeedbackDirector.shared.uiTap()
+                onSelect(i)
+            }
+            .accessibilityLabel(title)
+            if let footnote {
+                Text(footnote)
+                    .font(SwoopType.caption(c))
+                    .foregroundStyle(SwoopTheme.haze)
+                    .padding(.bottom, 6)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     private func toggleRow(_ title: String, icon: String, isOn: Binding<Bool>, footnote: String? = nil) -> some View {
@@ -200,7 +251,7 @@ struct SettingsView: View {
                         .minimumScaleFactor(0.8)
                 }
             }
-            .tint(SwoopTheme.goldDeep)
+            .tint(SwoopTheme.accentOn)
             .frame(minHeight: AppCanvas.minTap)
             if let footnote {
                 Text(footnote)
@@ -232,5 +283,42 @@ struct SettingsView: View {
                 .padding(.leading, 44)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+/// A segmented choice with 48 pt segments (56 pt tap), `surfaceRaised` with the chosen one in `accentOn`.
+struct SwoopSegmented: View {
+    let options: [String]
+    let selected: Int
+    var compact: Bool = false
+    let onSelect: (Int) -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(Array(options.enumerated()), id: \.offset) { item in
+                let on = item.offset == selected
+                Button {
+                    onSelect(item.offset)
+                } label: {
+                    Text(item.element)
+                        .font(SwoopType.body(compact).weight(on ? .heavy : .semibold))
+                        .foregroundStyle(on ? SwoopTheme.ink : SwoopTheme.foam)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(RoundedRectangle(cornerRadius: SwoopTheme.buttonRadius(true), style: .continuous)
+                            .fill(on ? SwoopTheme.accentOn : Color.clear))
+                        .frame(minHeight: AppCanvas.minTap)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(item.element)
+                .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+            }
+        }
+        .padding(4)
+        .background(RoundedRectangle(cornerRadius: SwoopTheme.buttonRadius(true) + 4, style: .continuous)
+            .fill(SwoopTheme.surfaceRaised))
+        .accessibilityElement(children: .contain)
     }
 }

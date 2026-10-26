@@ -28,8 +28,8 @@ struct SceneCamera: Equatable {
     static let birdTopFraction: Double = 0.78
     /// …nor lower than this one.
     static let birdBottomFraction: Double = 0.12
-    /// Spring rate of the zoom (rad/s, critically damped). Higher = snappier zoom.
-    static let zoomOmega: Double = 2.6
+    /// Spring rate of the zoom (rad/s, critically damped): τ 0.35 s (ART §5).
+    static let zoomOmega: Double = 2.86
     /// Spring rate of the water-line follow (rad/s). Low, so the frame doesn't bob with every swell.
     static let groundOmega: Double = 2.2
 

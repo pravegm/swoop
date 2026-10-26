@@ -4,247 +4,61 @@ import SpriteKit
 import SwiftUI
 import UIKit
 
-/// The app's screens (inside the play pose; the pose cards sit above these).
-enum AppRoute: String, Equatable {
-    case home, playing, results, goals, birds, settings
-}
-
-/// Where the tuck comes from this run.
-enum AppInputKind: String, Equatable {
-    case hinge, touch, autopilot
-}
-
-/// First-run hints (GAME-DESIGN §9): shown once each per run until the first Perfect, then never again.
-enum AppHint: String, Equatable {
-    case fold, open
-}
-
-/// A short message over the far half (milestones, new best) or the lighthouse name card.
-struct HUDToast: Equatable {
-    enum Kind: Equatable { case milestone, newBest, lighthouse }
-    var kind: Kind
-    var title: String
-    var detail: String
-    var serial: Int
-}
-
-/// "Perfect ×N" near the bird (REVIEW-1 P0-3). `serial` changes with every Perfect so the same text re-animates.
-struct HUDCallout: Equatable {
-    var chain: Int
-    var serial: Int
-}
-
-/// HUD values, published at ≤ 15 Hz (toasts at once). Separate from GameController so only the HUD redraws.
-@MainActor
-final class HUDState: ObservableObject {
-    @Published var meters = 0
-    /// The Perfect callout on screen now (nil = none).
-    @Published var callout: HUDCallout?
-    /// A demo freeze holds the frame: transient HUD art (the callout) stays fully on screen for the capture.
-    @Published var holdFrame = false
-    @Published var lead = 1.0
-    @Published var chain = 0
-    @Published var perfects = 0
-    /// Tailwind seconds left (0.1 s steps; 0 = none).
-    @Published var tailwind = 0.0
-    /// 3, 2, 1 during the countdown; nil after the drop.
-    @Published var countdown: Int?
-    @Published var flying = false
-    @Published var stormClose = false
-    @Published var caught = false
-    @Published var toast: HUDToast?
-    @Published var lighthouse: HUDToast?
-    @Published var hint: AppHint?
-    /// The "Ready" hold after a resume: seconds left (0.1 s steps); nil = none.
-    @Published var ready: Double?
-
-    // Setters that publish only on a change (explicit, no key paths: nothing to trip Swift 6-style isolation checks).
-    func setMeters(_ v: Int) { if meters != v { meters = v } }
-    func setLead(_ v: Double) { if lead != v { lead = v } }
-    func setChain(_ v: Int) { if chain != v { chain = v } }
-    func setPerfects(_ v: Int) { if perfects != v { perfects = v } }
-    func setTailwind(_ v: Double) { if tailwind != v { tailwind = v } }
-    func setCountdown(_ v: Int?) { if countdown != v { countdown = v } }
-    func setFlying(_ v: Bool) { if flying != v { flying = v } }
-    func setStormClose(_ v: Bool) { if stormClose != v { stormClose = v } }
-    func setCaught(_ v: Bool) { if caught != v { caught = v } }
-    func setToast(_ v: HUDToast?) { if toast != v { toast = v } }
-    func setLighthouse(_ v: HUDToast?) { if lighthouse != v { lighthouse = v } }
-    func setHint(_ v: AppHint?) { if hint != v { hint = v } }
-    func setReady(_ v: Double?) { if ready != v { ready = v } }
-    func setCallout(_ v: HUDCallout?) { if callout != v { callout = v } }
-
-    func reset() {
-        if holdFrame { holdFrame = false }
-        let noCallout: HUDCallout? = nil
-        setCallout(noCallout)
-        setMeters(0)
-        setLead(1.0)
-        setChain(0)
-        setPerfects(0)
-        setTailwind(0.0)
-        let none: Int? = nil
-        setCountdown(none)
-        setFlying(false)
-        setStormClose(false)
-        setCaught(false)
-        let noToast: HUDToast? = nil
-        setToast(noToast)
-        setLighthouse(noToast)
-        let noHint: AppHint? = nil
-        setHint(noHint)
-        let noReady: Double? = nil
-        setReady(noReady)
-    }
-}
-
-/// The controller's pure rules (no actor isolation, so tests call them directly).
-enum AppRules {
-    /// The driver clamps every frame step to this (ARCHITECTURE).
-    static let maxStep: Double = 1.0 / 30.0
-
-    /// dt clamped to 0…1/30 s (a hitch never becomes a teleport). Pure; tested.
-    static func clampStep(_ dt: Double) -> Double {
-        guard dt.isFinite else { return 0 }
-        return min(max(dt, 0), maxStep)
-    }
-
-    /// Feedback's continuous inputs for this frame.
-    static func telemetry(_ s: FlightSnapshot, playing: Bool) -> FlightTelemetry {
-        var flying = false
-        if case .flying = s.phase { flying = true }
-        return FlightTelemetry(speed: s.speed, tuck: s.tuck, skimming: s.skimming, altitude: s.altitude,
-                               tailwind: s.tailwindRemaining > 0, lead: s.lead, playing: playing && flying)
-    }
-
-    /// The input for a run (tested): autopilot for the Home loop and demo pilots; touch when forced; the hinge on a Duo
-    /// unless the player asked for touch; touch everywhere else.
-    static func chooseInput(homeLoop: Bool, demoAutopilot: Bool, demoTouch: Bool, hasHinge: Bool,
-                            playWithTouch: Bool, touchOverride: Bool) -> AppInputKind {
-        if homeLoop || demoAutopilot { return .autopilot }
-        if demoTouch { return .touch }
-        if hasHinge && !playWithTouch && !touchOverride { return .hinge }
-        return .touch
-    }
-
-    /// The lead meter shows the gap against this many full leads, so the 2400 pt start reads ~60 % and a Tailwind or a
-    /// lighthouse visibly fills it (REVIEW-1 P1-7: it sat pinned at full).
-    static let meterHeadroom: Double = 1.3
-
-    /// The lead meter's fill, 0…1: gap / (headroom × fullLead). Tested.
-    static func meterLead(gap: Double, fullLead: Double = Tuning.fullLead) -> Double {
-        guard gap.isFinite, fullLead > 0 else { return 0 }
-        return min(max(gap / (meterHeadroom * fullLead), 0), 1)
-    }
-
-    /// No km toast this close to a lighthouse (m): the lighthouse card wins (REVIEW-1 P0-8, ROUND-2 App 4).
-    static let milestoneLighthouseClearance: Double = 500
-
-    /// Whether the `km` milestone falls within the clearance of any lighthouse. Tested.
-    static func milestoneNearLighthouse(km: Int) -> Bool {
-        let m = Double(km) * 1000
-        for i in 0..<200 {
-            let lighthouseMeters = Lighthouses.x(index: i) / Tuning.pointsPerMeter
-            if !lighthouseMeters.isFinite { return false }
-            if abs(lighthouseMeters - m) <= milestoneLighthouseClearance { return true }
-            if lighthouseMeters > m + milestoneLighthouseClearance { return false }
-        }
-        return false
-    }
-
-    /// Hint words: the touch wording unless the hinge flies the bird (or a Duo's autopilot demo). Tested.
-    static func touchWording(input: AppInputKind, hasHinge: Bool) -> Bool {
-        switch input {
-        case .hinge: return false
-        case .touch: return true
-        case .autopilot: return !hasHinge
-        }
-    }
-
-    /// The results hook: "0.6 km short of Saltlight" (the next lighthouse after this run), nil past the catalogue.
-    static func nextLighthouseLine(meters: Double, lighthousesPassed: Int, seed: UInt64) -> String? {
-        guard meters.isFinite, lighthousesPassed >= 0 else { return nil }
-        let x = Lighthouses.x(index: lighthousesPassed) / Tuning.pointsPerMeter
-        guard x.isFinite, x > meters else { return nil }
-        let name = Lighthouses.name(index: lighthousesPassed, seed: seed)
-        return "\(ShareText.km(x - meters + 99.999)) short of \(name)"
-    }
-
-    /// The milestone toast's second line.
-    static func milestoneLine(_ km: Int) -> String {
-        switch km {
-        case 1: return "Keep the rhythm"
-        case 2: return "The swells are growing"
-        case 3: return "A lighthouse ahead"
-        default: return km % 5 == 0 ? "Outflying the storm" : "Still ahead of the storm"
-        }
-    }
-
-    #if DEBUG
-    /// Whether an event is the demo `freezeOn` moment (tested).
-    static func demoMatches(_ target: DemoConfig.Freeze, _ event: FlightEvent) -> Bool {
-        switch (target, event) {
-        case (.launch, .launched): return true
-        case (.perfect, .touchdown(.perfect, _, _)): return true
-        case (.splash, .touchdown(.splash, _, _)): return true
-        case (.tailwind, .tailwindStarted): return true
-        case (.lighthouse, .lighthouse): return true
-        case (.stormclose, .stormClose): return true
-        case (.caught, .caught): return true
-        case (.finished, .finished): return true
-        default: return false
-        }
-    }
-    #endif
-}
-
-/// What the results card shows.
-struct ResultSummary: Equatable {
-    var result: RunResult
-    var outcome: RecordOutcome
-    var title: String
-    var dailyDay: Int?
-    var practice: Bool
-    var share: String
-}
-
 /// The hub of the frame loop (ARCHITECTURE "The frame loop"): FlightScene.update → advance(dt:now:) → tuck source →
-/// FlightSession.step → FeedbackDirector → HUD. Owns the session, the scene, the tuck sources and the app's route.
+/// FlightSession.step → FeedbackDirector → HUD. Owns the session, the scene, the tuck sources, the app's route and the
+/// Duo states (UX-SPEC §9).
 @MainActor
 final class GameController: ObservableObject, SceneDriver {
     private enum PauseReason: Hashable { case user, closing, background, pose }
 
     // MARK: Tuning (named so they're easy to find and tune)
 
-    /// HUD publishing rate cap.
+    /// HUD publishing rate cap, and the slower one for the km hundredths (QA-2 P2-6).
     static let hudInterval: Double = 1.0 / 15.0
-    /// After any resume (reopening the Duo, the pause card, the app coming back) the bird holds this long under a
-    /// "Ready" ring, so the flight never restarts by surprise.
+    static let kmInterval: Double = 0.25
+    /// After any resume the bird holds this long under a "Ready" ring, and up to `readyStillGrace` more while the
+    /// hinge still moves.
     static let readyHold: Double = 1.5
-    /// …extended while the hinge is still moving, by at most this much.
     static let readyStillGrace: Double = 1.0
-    /// Caught → finished takes 1.8 s in Core; the card then follows after this short beat.
-    static let resultsDelay: Double = 0.45
+    /// Caught → finished takes 1.8 s in Core; the card then follows after this beat (UX-A2: 0.45 → 0.2).
+    static let resultsDelay: Double = 0.2
+    /// Caught can be skipped (a tap, or a fold u ≥ 0.6) this long after the catch (UX-A2).
+    static let caughtSkipAfter: Double = 0.6
+    static let caughtSkipTuck: Double = 0.6
+    /// The countdown: 3 s for the first run of a launch (it calibrates), 1.5 s ("Ready · Go") after (UX-A2).
+    static let firstCountdown: Double = 3.0
+    static let shortCountdown: Double = 1.5
+    /// The countdown holds while the Duo lies flat (≥ `flatAngle`), for at most this long (UX-A4).
+    static let flatHoldMax: Double = 4.0
+    static let flatAngle: Double = 175
+    /// Home's flat caption: flat this long shows it; bent (130–170°) this long clears it (UX §2).
+    static let homeFlatAfter: Double = 1.0
+    static let homeBentAfter: Double = 0.5
+    /// Mid-run flat: after this long, once per run, "Keep a little bend" (UX §9), and the blur guard: new toasts wait
+    /// this long after leaving flat.
+    static let midRunFlatAfter: Double = 2.0
+    static let blurGuard: Double = 2.2
     /// The Duo counts as shut (cover display) at or below this hinge angle, and open again from the release angle.
     static let shutBelow: Double = 10
     static let shutReleaseAbove: Double = 15
-    /// Home: a fold this far below the calibrated open angle counts as "they folded" (caption changes).
-    static let homeFoldDegrees: Double = 18
-    /// The Perfect hit-stop (wall seconds) and how long "Perfect ×N" stays up (session seconds).
+    /// Home: a fold this far into the stroke counts as "they folded" (caption changes); back under this, a stroke.
+    static let homeFoldTuck: Double = 0.5
+    static let homeOpenTuck: Double = 0.2
+    /// Hit-stops (ART §5): 35 ms on a Perfect, 60 ms when a Tailwind starts; a splash runs at 0.85× for 80 ms.
     static let hitStopSeconds: Double = 0.035
+    static let tailwindStopSeconds: Double = 0.060
+    static let splashSlowSeconds: Double = 0.080
+    static let splashSlowRate: Double = 0.85
+    /// How long the callout, the chain-lost pill, the lighthouse card, toasts and the teach line stay up (session s).
     static let calloutSeconds: Double = 0.7
-    /// How long the lighthouse card and the toasts stay up (session seconds).
+    static let chainLostSeconds: Double = 0.8
     static let lighthouseCardSeconds: Double = 2.8
     static let toastSeconds: Double = 1.8
-    /// First-run hints: "Open to fly" waits at least this long after "Fold on the way down", and shows by this time at
-    /// the latest; each hint then stays up for `hintSeconds`.
-    static let openHintMinDelay: Double = 1.2
-    static let openHintMaxDelay: Double = 6.0
-    static let hintSeconds: Double = 3.0
-    /// Climbing a swell's face faster than this slope (dh/dx) while skimming is "the first crest".
-    static let crestSlope: Double = 0.06
+    static let teachSeconds: Double = 2.5
     /// The lead meter's storm-close threshold (GAME-DESIGN §6: 15 %).
     static let stormCloseLead: Double = 0.15
+    /// VoiceOver announcements at most this often (UX §6).
+    static let announceGap: Double = 1.5
 
     // MARK: Published state (changes rarely; the HUD lives in `hud`)
 
@@ -262,22 +76,35 @@ final class GameController: ObservableObject, SceneDriver {
     @Published private(set) var summary: ResultSummary?
     /// Home: the player has folded the Duo (or held the screen) at least once: "Fold to dive. Open to soar."
     @Published private(set) var homeFolded = false
-    /// "Play with touch" chosen on the pose card (this app session only).
+    /// Home: the Duo has lain flat ≥ 1 s: "Bend it a little, like a book."
+    @Published private(set) var homeFlat = false
+    /// Home: Fly glows once after the first full stroke (fold, then open).
+    @Published private(set) var flyGlowSerial = 0
+    /// "Play with touch" / "Switch to touch" / "Keep touch" (this app session only).
     @Published private(set) var touchOverride = false
     @Published private(set) var mode: RunMode = .attract
-    /// The Home attract loop is running (Home, Flocks, Birds, Settings sit over it).
+    /// The Home attract loop is running (Home, Goals, Birds, Settings sit over it).
     @Published private(set) var homeLoop = true
     @Published private(set) var pose: AppPose = .play
-    /// Demo `screen=pose` forces the pose card.
+    /// Demo `screen=pose|cover|deck` forces a pose.
     @Published private(set) var forcedPose: AppPose?
     /// Demo `screen=icon` shows the app icon full screen.
     @Published private(set) var showsIconExport = false
+    /// The run left the split deck for book pose: "Fly with the fold?" (UX-D2).
+    @Published private(set) var deckReturnPrompt = false
+    /// "Keep flying here" on the cover display (UX-D1).
+    @Published private(set) var coverFlying = false
+    /// The paused run, for the cover display (UX-D1).
+    @Published private(set) var pausedRun: PausedRun?
 
     let hud: HUDState
     let store: ProgressStore
     let settings: SettingsStore
     let hinge: HingeTuckSource
     let touch: TouchTuckSource
+    /// The VoiceOver / Switch Control wing in a hinge run (QA-2 P2-7), paired with the hinge (the larger tuck wins).
+    let accessibleTouch: TouchTuckSource
+    private var assistedHinge: CombinedTuckSource?
     private let feedback: FeedbackDirector
     private var autopilot: AutopilotTuckSource?
 
@@ -285,36 +112,56 @@ final class GameController: ObservableObject, SceneDriver {
     private var layout: ScreenLayout?
     private var pauseReasons: Set<PauseReason> = []
     private var readyUntil: TimeInterval?
-    /// The Perfect hit-stop's end (wall clock, `CACurrentMediaTime`).
     private var hitStopUntil: TimeInterval?
-    /// The last lighthouse passed this run (the Daily partial's name).
-    private var runLastLighthouse = ""
-    private var calloutSerial = 0
-    private var calloutUntil = 0.0
-    /// QA-1 P2-3: "Resume" on the closing card ignores a stale closing latch until the next fresh hinge sample.
-    private var closingIgnoredUntilSample = false
+    private var slowUntil: TimeInterval?
     private var reduceMotion = false
+    /// The scene's last reported bird centre (view points, y down; Scene R3 `onBirdPoint`).
+    private var reportedBirdPoint: CGPoint?
+    /// Thermal / Low Power effects quality pushed to the scene (UX-D5).
+    private var effectsQuality: CGFloat = 1
 
     // Loop bookkeeping
-    private var frameCount = 0
     private var lastHUDPublish: TimeInterval = -1
+    private var lastKmPublish: TimeInterval = -1
     private var recordedFinish = false
     /// Session time of the drop (`started`); nil before it.
     private var flightStart: Double?
+    private var countdownTotal: Double = 3
+    private var flatHoldUsed: Double = 0
+    private var caughtAt: Double?
+    private var runsStartedThisLaunch = 0
     private var toastSerial = 0
     private var toastUntil = 0.0
+    private var pendingToast: HUDToast?
     private var lighthouseUntil = 0.0
-    private var hintsActive = false
-    private var foldHintAt: Double?
-    private var openHintAt: Double?
+    private var calloutSerial = 0
+    private var calloutUntil = 0.0
+    private var chainLostUntil = 0.0
+    private var teachUntil = 0.0
+    private var coach = HintCoach(learned: [])
+    private var coachOn = false
+    private var keepBendShown = false
+    private var tally = RunTally()
+    private var runLastLighthouse = ""
+    /// QA-1 P2-3: "Resume" on the closing card ignores a stale closing latch until the next fresh hinge sample.
+    private var closingIgnoredUntilSample = false
+    private var foldToFly = FoldToFly()
+    private var resultsShownAt: TimeInterval = 0
     private var resultsTask: Task<Void, Never>?
     private var screenKeptAwake = false
     private var scoredDailyDay: Int?
     private var runBird: BirdID = .gull
     private var runSky: SkyID = .goldenHour
-    /// The chosen trail colour for this run (nil = the bird's own).
     private var runTrail: RGBA?
     private var lastCanvasLine = ""
+    private var homeFlatSince: TimeInterval?
+    private var homeBentSince: TimeInterval?
+    private var homeStrokeFolded = false
+    private var flyGlowed = false
+    /// Home: the title bird's tuck through play's filters (hinge.tuck(at:) once per frame, Feel NEEDS).
+    private var homeHingeTuck: Double = 0
+    private var lastAnnounce: TimeInterval = -100
+    private var lastAnnouncePriority = 0
     /// Demo freeze: the session no longer steps (the scene keeps drawing the held frame).
     private(set) var frozen = false
 
@@ -329,6 +176,7 @@ final class GameController: ObservableObject, SceneDriver {
         self.hud = HUDState()
         self.hinge = HingeTuckSource()
         self.touch = TouchTuckSource()
+        self.accessibleTouch = TouchTuckSource()
         self.feedback = FeedbackDirector.shared
         #if DEBUG
         self.demo = DemoConfig.current
@@ -340,6 +188,7 @@ final class GameController: ObservableObject, SceneDriver {
         self.hingeSeen = trusted
         self.runBird = store.activeBird
         self.runSky = store.activeSky
+        settings.isDuo = trusted
     }
 
     // MARK: - Derived
@@ -380,15 +229,27 @@ final class GameController: ObservableObject, SceneDriver {
         return true
     }
 
+    /// A run or its results is on screen (the split deck applies, UX-D2).
+    var inRun: Bool { !homeLoop && (route == .playing || route == .results) }
+
     /// The run is today's one scored Daily try (the pause card offers no Restart).
     var isScoredDaily: Bool {
         if case let .daily(_, scored) = mode { return scored }
         return false
     }
 
+    /// The scored Daily's countdown banner title (UX §3 "Daily"): "Daily Flight #298"; nil otherwise.
+    var dailyBannerTitle: String? {
+        if case let .daily(day, scored) = mode, scored { return "Daily Flight #\(day)" }
+        return nil
+    }
+
     var usesTouch: Bool { input == .touch }
 
-    /// The hints say "Hold…/Let go…" unless the hinge flies the bird (ROUND-2 App 7).
+    /// The hinge is plugged into a real Duo and readable (copy: "Fold" vs "Hold").
+    var hasHinge: Bool { hingeSeen || hinge.hasHinge }
+
+    /// The hints say "Hold…/Let go…" unless the hinge flies the bird.
     var hintTouchWording: Bool { AppRules.touchWording(input: input, hasHinge: hasHinge) }
 
     /// The HUD's run tag: "DAILY #298" (· PRACTICE once today's try is spent); nil for a Flight.
@@ -397,15 +258,26 @@ final class GameController: ObservableObject, SceneDriver {
         return nil
     }
 
-    /// The hinge is plugged into a real Duo and readable (for copy: "Fold" vs "Hold").
-    var hasHinge: Bool { hingeSeen || hinge.hasHinge }
+    /// The current distance (the pause card, the closing card).
+    var currentMeters: Double {
+        guard let s = session?.snapshot, s.distanceMeters.isFinite else { return 0 }
+        return max(s.distanceMeters, 0)
+    }
 
-    /// The title bird's tuck on Home: live from the hinge, else the idle beat / press-and-hold.
+    /// The title bird's tuck on Home: live from the hinge (play's mapping and calibration), else the idle beat or
+    /// press-and-hold.
     func titleTuck(now: Double, heldSince: Double?, releasedAt: Double?) -> Double {
-        if hinge.hasHinge, let angle = hinge.angle {
-            return TitleTuck.fromHinge(angle: angle, openAngle: hinge.openAngle)
-        }
+        #if DEBUG
+        if let t = demo?.titleTuck { return t }
+        #endif
+        if hinge.hasHinge { return homeHingeTuck }
         return TitleTuck.touch(now: now, heldSince: heldSince, releasedAt: releasedAt)
+    }
+
+    /// The touch control's tuck now (the iPhone wing glyph and vignette, ART A13 / UX §10).
+    func touchTuck(now: TimeInterval) -> Double {
+        guard input == .touch else { return 0 }
+        return touch.tuck(at: now)
     }
 
     // MARK: - SceneDriver
@@ -421,9 +293,12 @@ final class GameController: ObservableObject, SceneDriver {
 
     func advance(dt: TimeInterval, now: TimeInterval) -> (FlightSnapshot, [FlightEvent]) {
         // `SWOOP-T frame 120` is printed by FlightScene itself (it counts drawn frames).
-        frameCount += 1
         guard let session else { return (FlightSnapshot(), []) }
+        if homeLoop && hinge.hasHinge { homeHingeTuck = hinge.tuck(at: now) }
+        // UX-D3: no fine sparkle while a fold blur may still be on screen.
+        SceneAdapter.setFineDetail(scene, !(hinge.hasHinge && hinge.inFlatBlurGuard(at: now, window: Self.blurGuard)))
         if input == .hinge { checkClosing() }
+        if route == .results { updateFoldToFly(now: now) }
         if isPausedByReason || frozen {
             return (session.snapshot, [])
         }
@@ -434,22 +309,19 @@ final class GameController: ObservableObject, SceneDriver {
         }
         if let until = readyUntil {
             var left = until - now
-            // Feel NEEDS (QA-1 P1-4): a slow reopen finishes before the bird moves. The ring stays up while the hinge
-            // is still moving, at most `readyStillGrace` s past the hold.
+            // A slow reopen finishes before the bird moves: the ring stays up while the hinge still moves.
             if left <= 0 && input == .hinge && !hinge.isStill(at: now) && now < until + Self.readyStillGrace {
                 left = 0.05
             }
             if left > 0 {
-                let shown: Double? = (left * 10).rounded(.up) / 10
-                hud.setReady(shown)
+                hud.setReady((left * 10).rounded(.up) / 10)
                 return (session.snapshot, [])
             }
             readyUntil = nil
-            let none: Double? = nil
-            hud.setReady(none)
+            hud.setReady(nil)
+            if !homeLoop { feedback.cue(.go) }
         }
-        // The Perfect hit-stop (ROUND-2 App 2): the session skips its steps for 35 ms of wall time; the scene's FX keep
-        // animating on wall time, Feedback keeps its bed. Kept under Reduce Motion (it isn't motion).
+        // Hit-stops: the session skips its steps; the scene's FX keep animating on wall time, Feedback keeps its bed.
         if let stop = hitStopUntil {
             if now < stop {
                 if !homeLoop { feedback.handle([], telemetry: AppRules.telemetry(session.snapshot, playing: true)) }
@@ -457,21 +329,46 @@ final class GameController: ObservableObject, SceneDriver {
             }
             hitStopUntil = nil
         }
-        let step = AppRules.clampStep(dt)
+        var step = AppRules.clampStep(dt)
+        // UX-A4: the countdown holds while the Duo lies flat (fold-blur risk), 4 s at most.
+        if case .countdown = session.snapshot.phase, !homeLoop, countdownWantsFlatHold(step, now: now) {
+            hud.setFlatHold(true)
+            feedback.handle([], telemetry: AppRules.telemetry(session.snapshot, playing: false))
+            publishHUD(session.snapshot, now: now, force: false)
+            return (session.snapshot, [])
+        }
+        hud.setFlatHold(false)
+        if let slow = slowUntil {
+            if now < slow { step *= Self.splashSlowRate } else { slowUntil = nil }
+        }
+        let prevChain = session.snapshot.chain
         let tuck = activeSource.tuck(at: now)
         let events = session.step(dt: step, tuck: tuck)
         let snapshot = session.snapshot
         if !homeLoop {
+            tally.note(events, snapshot: snapshot)
             feedback.handle(events, telemetry: AppRules.telemetry(snapshot, playing: true))
-            process(events, snapshot: snapshot)
-            // `SWOOP-T tuck <u> angle <θ>` (≤ 4/s, from the hinge) is printed by HingeTuckSource itself.
-            updateHints(snapshot)
+            process(events, snapshot: snapshot, prevChain: prevChain, now: now)
+            updateCoach(snapshot, events: events)
+            watchMidRunFlat(snapshot, now: now)
+            if input == .hinge && tuck >= Self.caughtSkipTuck { skipCaught() }
             publishHUD(snapshot, now: now, force: false)
         }
         #if DEBUG
         demoAfterStep(snapshot, events: events)
         #endif
         return (snapshot, events)
+    }
+
+    private func countdownWantsFlatHold(_ step: Double, now: TimeInterval) -> Bool {
+        var flat = false
+        if input == .hinge && hinge.flatDuration(at: now) > 0 { flat = true }
+        #if DEBUG
+        if demo?.flat == true { flat = true }
+        #endif
+        guard flat, flatHoldUsed < Self.flatHoldMax else { return false }
+        flatHoldUsed += step
+        return true
     }
 
     private func chooseInput() -> AppInputKind {
@@ -483,16 +380,22 @@ final class GameController: ObservableObject, SceneDriver {
             demoTouch = demo.touch
         }
         #endif
-        // QA-1 P2-2: only a LIVE hinge reading picks the hinge (the stored flag is for orientation only);
-        // `refreshInput` upgrades touch → hinge on this launch's first sample.
+        // QA-1 P2-2: only a LIVE hinge reading picks the hinge; `refreshInput` upgrades touch → hinge on the first one.
         return AppRules.chooseInput(homeLoop: homeLoop, demoAutopilot: demoAutopilot, demoTouch: demoTouch,
-                                     hasHinge: hinge.hasHinge, playWithTouch: settings.playWithTouch,
-                                     touchOverride: touchOverride)
+                                    hasHinge: hinge.hasHinge, playWithTouch: settings.playWithTouch,
+                                    touchOverride: touchOverride, deck: pose == .deck)
     }
 
     private var activeSource: TuckSource {
         switch input {
-        case .hinge: return hinge
+        case .hinge:
+            if Self.assistiveTechRunning {
+                if let assistedHinge { return assistedHinge }
+                let combined = CombinedTuckSource(primary: hinge, assist: accessibleTouch)
+                assistedHinge = combined
+                return combined
+            }
+            return hinge
         case .touch: return touch
         case .autopilot:
             if let autopilot { return autopilot }
@@ -501,7 +404,10 @@ final class GameController: ObservableObject, SceneDriver {
     }
 
     private func setInput(_ kind: AppInputKind) {
-        if input != kind { input = kind }
+        if input != kind {
+            input = kind
+            releaseTouches()
+        }
         AppTrace.t("SWOOP-T input \(kind.rawValue)")
     }
 
@@ -541,6 +447,9 @@ final class GameController: ObservableObject, SceneDriver {
         newScene.scaleMode = .aspectFill
         newScene.reduceMotion = reduceMotion
         newScene.driver = self
+        // UX-A1: the callout anchors to where the bird really is (Scene R3, view points, y down).
+        SceneAdapter.watchBird(newScene) { [weak self] p in self?.reportedBirdPoint = p }
+        SceneAdapter.setEffects(newScene, quality: effectsQuality)
         scene = newScene
         sceneGeneration += 1
         newScene.reset()
@@ -553,31 +462,60 @@ final class GameController: ObservableObject, SceneDriver {
             setPause(.background, false)
         } else {
             // QA-1 P1-1: caught = over; finish it now so a lock or a kill never loses the run.
-            finishCaughtRunHeadless()
-            // QA-1 P1-2: a kill after the Daily drop must not lose the day's score: file the distance so far now (a
-            // finished run overwrites it; the larger distance always wins).
+            finishCaughtRunHeadless(immediate: false)
+            // QA-1 P1-2: a kill after the Daily drop must not lose the day's score.
             fileDailyProgress()
             if isLiveRun && !isDemo { setUserPaused(true) }
             setPause(.background, true)
         }
     }
 
-    /// The display's pose changed. Portrait mid-run shows the pause card when it comes back; the cover display (shut)
-    /// pauses like closing, and reopening resumes behind the Ready hold.
+    /// The display's pose changed (UX-SPEC §9).
     func setPose(_ newPose: AppPose) {
         guard newPose != pose else { return }
+        let old = pose
         pose = newPose
-        if newPose == .play {
+        switch newPose {
+        case .play:
             setPause(.pose, false)
-        } else {
-            if newPose == .turn && isLiveRun && !isDemo { setUserPaused(true) }
+            // Back in book pose from the split deck mid-run: ask before handing the run to the hinge (UX-D2, QA-2 P2-3).
+            if old == .deck && isLiveRun && hinge.hasHinge && input == .touch && !isDemo {
+                deckReturnPrompt = true
+                setUserPaused(true)
+                feedback.cue(.bookPrompt)
+            }
+            coverFlying = false
+        case .deck:
+            setPause(.pose, false)
+            if isLiveRun && input != .touch {
+                // Into the seated deck mid-run: touch flies it, behind the pause card (never a silent swap).
+                if !isDemo && old == .play { setUserPaused(true) }
+                setInput(.touch)
+            }
+            if inRun { feedback.cue(.splitDeck) }
+        case .turn:
+            if isLiveRun && !isDemo { setUserPaused(true) }
             setPause(.pose, true)
+        case .closed:
+            setPause(.pose, true)
+            if !isDemo { UIAccessibility.post(notification: .screenChanged, argument: nil) }
         }
+    }
+
+    /// Thermal state or Low Power changed (RootView observes both; UX-D4/D5).
+    func setPowerState(thermalHot: Bool, lowPower: Bool) {
+        effectsQuality = SceneAdapter.effectsQuality(thermalHot: thermalHot, lowPower: lowPower)
+        SceneAdapter.setEffects(scene, quality: effectsQuality)
     }
 
     func setReduceMotion(_ on: Bool) {
         reduceMotion = on
         scene?.reduceMotion = on
+    }
+
+    /// The inner display is back (the canvas is large again): "Keep flying here" on the cover is over.
+    func innerDisplayBack() {
+        if coverFlying { coverFlying = false }
     }
 
     // MARK: - Hinge
@@ -587,6 +525,7 @@ final class GameController: ObservableObject, SceneDriver {
         closingIgnoredUntilSample = false
         if !hingeSeen {
             hingeSeen = true
+            settings.isDuo = true
             UserDefaults.standard.set(true, forKey: OrientationLock.hingeKey)
             OrientationLock.hingeArrived()
         }
@@ -595,12 +534,50 @@ final class GameController: ObservableObject, SceneDriver {
         } else if angle <= Self.shutBelow {
             isShut = true
         }
-        if route == .home && !homeFolded, let filtered = hinge.angle,
-           filtered < hinge.openAngle - Self.homeFoldDegrees {
-            homeFolded = true
-        }
+        if homeLoop { watchHomeHinge(time: time) }
         refreshInput()
         checkClosing()
+    }
+
+    /// Home: the flat caption, the first fold, and the first full stroke (UX §2).
+    private func watchHomeHinge(time: TimeInterval) {
+        #if DEBUG
+        // Demo `flat` holds the bend caption although the simulator's hinge reads 150°.
+        if demo?.flat == true { return }
+        #endif
+        guard let a = hinge.angle else { return }
+        if a >= Self.flatAngle {
+            homeBentSince = nil
+            let since = homeFlatSince ?? time
+            homeFlatSince = since
+            if time - since >= Self.homeFlatAfter && !homeFlat { homeFlat = true }
+        } else {
+            homeFlatSince = nil
+            if homeFlat {
+                if a >= 130 && a <= 170 {
+                    let since = homeBentSince ?? time
+                    homeBentSince = since
+                    if time - since >= Self.homeBentAfter {
+                        homeFlat = false
+                        homeBentSince = nil
+                    }
+                } else {
+                    homeBentSince = nil
+                }
+            }
+        }
+        let u = homeHingeTuck
+        if u >= Self.homeFoldTuck {
+            if !homeFolded { homeFolded = true }
+            if !homeStrokeFolded { feedback.cue(.homeFold) }
+            homeStrokeFolded = true
+        } else if homeStrokeFolded && u <= Self.homeOpenTuck {
+            homeStrokeFolded = false
+            if !flyGlowed {
+                flyGlowed = true
+                flyGlowSerial += 1
+            }
+        }
     }
 
     /// After a hinge has been seen, a nil is a display handover, never "no hinge" (Brim research 02 §7).
@@ -618,15 +595,24 @@ final class GameController: ObservableObject, SceneDriver {
             guard !isClosingPaused, input == .hinge, isLiveRun else { return }
             isClosingPaused = true
             setPause(.closing, true)
+            feedback.cue(.closing)
             AppTrace.t("SWOOP-T paused closing")
-        } else if isClosingPaused {
+        } else if isClosingPaused && !demoHoldsClosing {
             isClosingPaused = false
             setPause(.closing, false)
         }
     }
 
-    /// QA-1 P2-3: the closing card's Resume. If the Duo was reopened while suspended and iOS sent no fresh sample, the
-    /// latch is stale: ignore it until the next sample (which re-pauses at once if the Duo really is closing).
+    /// Demo `closing`: the closing card stays up although the simulator's hinge reads open.
+    private var demoHoldsClosing: Bool {
+        #if DEBUG
+        return demo?.closing == true
+        #else
+        return false
+        #endif
+    }
+
+    /// QA-1 P2-3: the closing card's Resume ignores a stale closing latch until the next fresh sample.
     func resumeFromClosing() {
         guard isClosingPaused else { return }
         closingIgnoredUntilSample = true
@@ -635,36 +621,84 @@ final class GameController: ObservableObject, SceneDriver {
         setPause(.closing, false)
     }
 
-    /// The input may change mid-run only from touch to the hinge (the first hinge sample of a launch); a run never
-    /// swaps the hinge away under the player.
+    /// The input may change mid-run only from touch to the hinge (the first hinge sample of a launch).
     func refreshInput() {
         guard session != nil, !homeLoop else { return }
         let kind = chooseInput()
         guard kind != input else { return }
         if input == .hinge && isLiveRun { return }
-        if kind == .touch { touch.ended(at: CACurrentMediaTime()) }
+        if kind == .hinge && pose == .deck { return }
         setInput(kind)
     }
 
-    // MARK: - Touch (the play layer's hold-anywhere)
+    // MARK: - Touch (the play layer's hold-anywhere; tap-to-tuck in Settings)
 
-    func touchBegan() { touch.began(at: CACurrentMediaTime()) }
-    func touchEnded() { touch.ended(at: CACurrentMediaTime()) }
+    func touchBegan() {
+        touch.tapToggles = settings.tuckByTapping
+        touch.began(at: CACurrentMediaTime())
+        feedback.cue(.touchDown)
+    }
+
+    /// Holding: release. Tapping: nothing (Feel's `tapToggles`).
+    func touchEnded() {
+        touch.ended(at: CACurrentMediaTime())
+    }
+
+    /// VoiceOver or Switch Control is running (the accessible wing, UX §10).
+    static var assistiveTechRunning: Bool {
+        UIAccessibility.isVoiceOverRunning || UIAccessibility.isSwitchControlRunning
+    }
+
+    /// Releases every touch tuck (a pause, a run's end, an input change): a toggled tuck never carries over.
+    private func releaseTouches() {
+        let now = CACurrentMediaTime()
+        touch.setTucked(false, at: now)
+        accessibleTouch.setTucked(false, at: now)
+    }
+
+    /// VoiceOver's adjustable "Wings" (QA-2 P2-7): in a hinge run it switches the run to touch first.
+    func accessibleTuck(_ down: Bool) {
+        let now = CACurrentMediaTime()
+        if input == .hinge {
+            accessibleTouch.setTucked(down, at: now)
+        } else {
+            touch.setTucked(down, at: now)
+        }
+    }
+
+    /// Switch Control "select" on the wings: toggles the tuck.
+    func accessibleToggle() {
+        let now = CACurrentMediaTime()
+        if input == .hinge { accessibleTouch.toggle(at: now) } else { touch.toggle(at: now) }
+    }
 
     // MARK: - Commands
 
     func fly() { start(mode: .flight) }
 
-    func playDaily() {
-        let day = DailySeed.dayNumber(for: Date())
-        start(mode: .daily(day: day, scored: !store.hasDailyAttempt(day: day)))
+    /// Fly with a bird (Birds › "Fly as Tern").
+    func fly(as id: BirdID) {
+        chooseBird(id)
+        start(mode: .flight)
     }
 
-    /// "Fly again" (results) and "Restart" (pause card): the same kind of run, in under a second.
+    func playDaily() {
+        let day = DailySeed.dayNumber(for: Date())
+        store.markSeen("daily")
+        start(mode: .daily(day: day, scored: store.dailyIsScorable(day: day)))
+    }
+
+    /// "Practise today's sea" (the Daily card): never scored.
+    func practiseDaily() {
+        let day = DailySeed.dayNumber(for: Date())
+        start(mode: .daily(day: day, scored: false))
+    }
+
+    /// "Fly again" (results), "Restart" (pause card), and fold-to-fly: the same kind of run, behind the short countdown.
     func flyAgain() {
         switch mode {
         case .daily:
-            // QA-1 P2-7: after midnight "Fly again" is today's Daily (scored if today's try is unspent).
+            // After midnight "Fly again" is today's Daily (scored if today's try is unspent); a spent Daily is practice.
             playDaily()
         case .flight:
             start(mode: .flight)
@@ -673,13 +707,47 @@ final class GameController: ObservableObject, SceneDriver {
         }
     }
 
+    /// The scored Daily's "Free flight": a Flight, never a silent practice.
+    func freeFlight() { start(mode: .flight) }
+
     func pause() {
         guard isLiveRun else { return }
         setUserPaused(true)
     }
 
     func resume() {
+        deckReturnPrompt = false
         setUserPaused(false)
+    }
+
+    /// Pause › "Switch to touch" (UX-D7): one tap for tired or one-handed players.
+    func switchToTouch() {
+        touchOverride = true
+        setInput(.touch)
+        resume()
+    }
+
+    /// The split deck's return prompt: "Fly with the fold".
+    func flyWithFold() {
+        touchOverride = false
+        deckReturnPrompt = false
+        setInput(chooseInput())
+        resume()
+    }
+
+    /// The split deck's return prompt: "Keep touch".
+    func keepTouch() {
+        touchOverride = true
+        deckReturnPrompt = false
+        setInput(.touch)
+        resume()
+    }
+
+    /// Caught → results now (UX-A2): a tap or a fold, 0.6 s after the catch.
+    func skipCaught() {
+        guard !homeLoop, !recordedFinish, let session, let at = caughtAt else { return }
+        guard case .caught = session.snapshot.phase, session.snapshot.time - at >= Self.caughtSkipAfter else { return }
+        finishCaughtRunHeadless(immediate: true)
     }
 
     func goHome() {
@@ -695,30 +763,84 @@ final class GameController: ObservableObject, SceneDriver {
         case .home: goHome()
         case .playing: fly()
         case .results: break
+        case .daily: openDailyCard()
         case .goals, .birds, .settings:
+            if newRoute == .goals { store.markSeen("goals") }
+            if newRoute == .birds { store.markSeen("birds") }
             if !homeLoop { startAttract() }
             setRoute(newRoute)
         }
     }
 
-    /// "Play with touch" on the portrait card: the game plays in a landscape band of the portrait canvas, by touch, until
-    /// the Duo is held like a book again (then `clearTouchOverride`, QA-1 P2-8). No rotation request: a turned interface
-    /// on a Duo standing in tabletop would hand the run to the hinge at a closing angle.
+    /// Home's Daily button once today's Daily is flown or spent: the Daily card (UX-A10).
+    func openDailyCard() {
+        let day = DailySeed.dayNumber(for: Date())
+        store.markSeen("daily")
+        if !homeLoop { startAttract() }
+        let record = store.data.dailyRecord(day: day)
+        let result = RunResult(mode: .daily(day: day, scored: true), seed: DailySeed.seed(day: day),
+                               meters: record?.meters ?? 0, score: 0, seconds: 0, perfects: record?.perfects ?? 0,
+                               goods: 0, splashes: 0, bestChain: 0, tailwinds: 0, lighthouses: record?.lighthouses ?? 0,
+                               lastLighthouseName: record?.lastLighthouseName ?? "", cloudTouches: 0, maxSpeed: 0,
+                               maxAltitude: 0, longestCleanMeters: 0, birdID: runBird)
+        var outcome = RecordOutcome()
+        outcome.best = store.data.bestMeters
+        outcome.previousBest = store.data.bestMeters
+        outcome.dailyCounted = true
+        outcome.dailyStreak = store.data.dailyStreak(today: day)
+        var card = ResultSummary(result: result, outcome: outcome, title: "Daily Flight #\(day)", dailyDay: day,
+                                 practice: false, share: ShareText.line(for: result, streak: outcome.dailyStreak))
+        card.isDailyCard = true
+        card.dailySpentUnfiled = record == nil
+        summary = card
+        setRoute(.daily)
+    }
+
+    /// "Play with touch" on the portrait card: a split-deck Flight (UX-D2).
     func chooseTouchFromPoseCard() {
         touchOverride = true
-        // The player asked for touch: this one swap may happen mid-run (the run is paused behind the card).
-        if session != nil && !homeLoop {
+        if homeLoop {
+            start(mode: .flight)
+        } else if session != nil {
             let kind = chooseInput()
             if kind != input { setInput(kind) }
         }
     }
 
-    /// QA-1 P2-8: back in landscape (the book pose) the pose card's "Play with touch" is no longer needed, so the hinge
-    /// takes over again (`refreshInput` only ever upgrades touch → hinge).
+    /// QA-1 P2-8: the pose card's touch override ends once the canvas is landscape. A live run keeps touch until the
+    /// player answers the return prompt (QA-2 P2-3), so only an idle override is cleared here.
     func clearTouchOverride() {
-        guard touchOverride else { return }
+        guard touchOverride, !isLiveRun else { return }
         touchOverride = false
         refreshInput()
+    }
+
+    /// The cover's "Keep flying here" (UX-D1): a split-deck touch run on the cover, behind the Ready ring.
+    func keepFlyingHere() {
+        guard session != nil, !homeLoop, !recordedFinish else { return }
+        coverFlying = true
+        touchOverride = true
+        setInput(.touch)
+        feedback.cue(.splitDeck)
+        closingIgnoredUntilSample = true
+        if isClosingPaused {
+            isClosingPaused = false
+            setPause(.closing, false)
+        }
+        setUserPaused(false)
+    }
+
+    /// The cover's "End flight" (UX-D1): records the run as it stands and shows its results on the cover.
+    func endFlightHere() {
+        guard let session, !homeLoop, !recordedFinish else { return }
+        guard flightStart != nil else {
+            startAttract()
+            return
+        }
+        let result = tally.result(mode: mode, seed: session.seed, snapshot: session.snapshot, bird: runBird)
+        recordedFinish = true
+        clearRunPauses()
+        record(result, immediate: true)
     }
 
     func chooseBird(_ id: BirdID) {
@@ -759,12 +881,16 @@ final class GameController: ObservableObject, SceneDriver {
     // MARK: - Runs
 
     private func start(mode newMode: RunMode) {
-        finishCaughtRunHeadless()
+        let fromHome = route == .home && homeLoop
+        let morphTuck = titleTuck(now: CACurrentMediaTime(), heldSince: nil, releasedAt: nil)
+        finishCaughtRunHeadless(immediate: false)
         resultsTask?.cancel()
         closeOutDaily()
         homeLoop = false
         mode = newMode
         summary = nil
+        pausedRun = nil
+        deckReturnPrompt = false
         if case let .daily(day, scored) = newMode, scored {
             scoredDailyDay = day
         } else {
@@ -773,16 +899,21 @@ final class GameController: ObservableObject, SceneDriver {
         clearRunPauses()
         setRoute(.playing)
         buildSession()
+        // UX-S3 / ART §7: the title bird flies down into the play bird (Home hides its own title bird on `.playing`).
+        if fromHome { SceneAdapter.playTitleMorph(scene, tuck: morphTuck) }
         syncIdleTimer()
     }
 
     private func startAttract() {
-        finishCaughtRunHeadless()
+        finishCaughtRunHeadless(immediate: false)
         resultsTask?.cancel()
         closeOutDaily()
         homeLoop = true
         mode = .attract
         summary = nil
+        pausedRun = nil
+        deckReturnPrompt = false
+        coverFlying = false
         clearRunPauses()
         setRoute(.home)
         buildSession()
@@ -802,21 +933,46 @@ final class GameController: ObservableObject, SceneDriver {
         }
         #endif
         let runSeed = self.seed(for: mode)
-        let newSession = FlightSession(mode: mode, seed: runSeed, bestMeters: best, bird: runBird)
+        var countdown = Self.firstCountdown
+        if !homeLoop {
+            if runsStartedThisLaunch > 0 { countdown = Self.shortCountdown }
+            runsStartedThisLaunch += 1
+            #if DEBUG
+            if demo?.shortCountdown == true { countdown = Self.shortCountdown }
+            #endif
+        }
+        let newSession = CoreAdapter.makeSession(mode: mode, seed: runSeed, bestMeters: best, bird: runBird,
+                                                 countdown: countdown)
         session = newSession
+        if case let .countdown(remaining) = newSession.snapshot.phase, remaining.isFinite, remaining > 0 {
+            countdownTotal = remaining
+        } else {
+            countdownTotal = countdown
+        }
         recordedFinish = false
         flightStart = nil
         frozen = false
         readyUntil = nil
         hitStopUntil = nil
-        runLastLighthouse = ""
+        slowUntil = nil
+        flatHoldUsed = 0
+        caughtAt = nil
         calloutUntil = 0
+        chainLostUntil = 0
+        teachUntil = 0
         lastHUDPublish = -1
+        lastKmPublish = -1
         toastUntil = 0
+        pendingToast = nil
         lighthouseUntil = 0
-        foldHintAt = nil
-        openHintAt = nil
-        hintsActive = !homeLoop && hintsWanted
+        keepBendShown = false
+        tally = RunTally()
+        runLastLighthouse = ""
+        touch.tapToggles = settings.tuckByTapping
+        releaseTouches()
+        coachOn = !homeLoop && hintsWanted
+        coach = HintCoach(learned: coachOn ? coachLearned : Set([AppHint.fold.rawValue, AppHint.open.rawValue,
+                                                                  AppHint.land.rawValue]))
         hud.reset()
 
         let kind = chooseInput()
@@ -832,7 +988,6 @@ final class GameController: ObservableObject, SceneDriver {
         } else {
             autopilot = nil
         }
-        touch.ended(at: CACurrentMediaTime())
         setInput(kind)
 
         if homeLoop { newSession.skipCountdown() }
@@ -848,7 +1003,14 @@ final class GameController: ObservableObject, SceneDriver {
         #if DEBUG
         if let demo { return demo.hintsFresh }
         #endif
-        return !store.data.hintsLearned
+        return true
+    }
+
+    private var coachLearned: Set<String> {
+        #if DEBUG
+        if demo != nil { return [] }
+        #endif
+        return store.data.learnedHints
     }
 
     private func seed(for mode: RunMode) -> UInt64 {
@@ -862,18 +1024,16 @@ final class GameController: ObservableObject, SceneDriver {
         }
     }
 
-    /// Leaving today's scored Daily after the drop (Home, Restart, another run) files the distance so far as the day's
-    /// score: one counted try, no free retries.
+    /// Leaving today's scored Daily after the drop (Home, Restart, another run) files the distance so far.
     private func closeOutDaily() {
         guard scoredDailyDay != nil else { return }
         if fileDailyProgress(), let day = scoredDailyDay {
-            AppTrace.t("SWOOP-T daily left day=\(day) meters=\(AppTrace.int(session?.snapshot.distanceMeters ?? 0))")
+            AppTrace.t("SWOOP-T daily left day=\(day) meters=\(AppTrace.int(currentMeters))")
         }
         scoredDailyDay = nil
     }
 
-    /// Files the scored Daily's distance so far (after the drop, before the finish). The store keeps the larger
-    /// distance, and Game Center gets it too (QA-1 P2-10), with the day as the score context. Returns whether it filed.
+    /// Files the scored Daily's distance so far (after the drop, before the finish). The store keeps the larger one.
     @discardableResult
     private func fileDailyProgress() -> Bool {
         guard let day = scoredDailyDay, !recordedFinish, flightStart != nil, let s = session?.snapshot else {
@@ -886,23 +1046,20 @@ final class GameController: ObservableObject, SceneDriver {
         return true
     }
 
-    /// QA-1 P1-1: a run in its `caught` window is over. Leaving it (Home, a new run, the background) steps it headless
-    /// to `.finished` and records it, so no run is ever lost.
-    private func finishCaughtRunHeadless() {
+    /// QA-1 P1-1: a run in its `caught` window is over. Leaving it steps it headless to `.finished` and records it.
+    private func finishCaughtRunHeadless(immediate: Bool) {
         guard !homeLoop, !recordedFinish, let session else { return }
         guard case .caught = session.snapshot.phase else { return }
-        var steps = 0
-        while !session.isFinished && steps < 600 {
-            _ = session.step(dt: 1.0 / 60.0, tuck: 0)
-            steps += 1
-        }
-        AppTrace.t("SWOOP-T caught finished headless steps=\(steps)")
-        handleFinished()
+        // Core R3: `finishCaught()` skips the calm ending with the same result.
+        let events = session.finishCaught()
+        AppTrace.t("SWOOP-T caught finished headless events=\(events.count)")
+        handleFinished(immediate: immediate)
     }
 
     // MARK: - Events
 
-    private func process(_ events: [FlightEvent], snapshot s: FlightSnapshot) {
+    private func process(_ events: [FlightEvent], snapshot s: FlightSnapshot, prevChain: Int, now: TimeInterval) {
+        let tailwindNow = events.contains(.tailwindStarted)
         for event in events {
             AppTrace.t("SWOOP-T event " + AppTrace.describe(event))
             switch event {
@@ -911,135 +1068,191 @@ final class GameController: ObservableObject, SceneDriver {
                 if let day = scoredDailyDay { store.markDailyAttempt(day: day) }
             case let .touchdown(quality, _, chain):
                 if quality == .perfect {
-                    // "Perfect ×N" near the bird + the 35 ms hit-stop (ROUND-2 App 2).
                     calloutSerial += 1
-                    hud.setCallout(HUDCallout(chain: max(chain, 1), serial: calloutSerial))
+                    let text = tailwindNow ? "Tailwind!" : (chain >= 2 ? "Perfect ×\(chain)" : "Perfect")
+                    let anchor = SceneAdapter.birdPoint(scene, layout: layout, reported: reportedBirdPoint)
+                    hud.setCallout(HUDCallout(text: text, chain: max(chain, 1),
+                                              point: anchor?.point ?? .zero,
+                                              radius: anchor?.radius ?? SceneAdapter.birdRadius, serial: calloutSerial))
                     calloutUntil = s.time + Self.calloutSeconds
-                    hitStopUntil = CACurrentMediaTime() + Self.hitStopSeconds
-                }
-                if quality == .perfect && hintsActive {
-                    hintsActive = false
-                    let none: AppHint? = nil
-                    hud.setHint(none)
-                    if !isDemo { store.learnHints() }
+                    hitStopUntil = now + (tailwindNow ? Self.tailwindStopSeconds : Self.hitStopSeconds)
+                    announce(chain >= 2 ? "Perfect, chain \(chain)" : "Perfect", priority: 1)
+                } else if quality == .splash {
+                    slowUntil = now + Self.splashSlowSeconds
+                    if prevChain >= 3 {
+                        calloutSerial += 1
+                        hud.setChainLost(HUDChainLost(chain: prevChain, serial: calloutSerial))
+                        chainLostUntil = s.time + Self.chainLostSeconds
+                    }
                 }
             case let .lighthouse(index, name):
                 toastSerial += 1
                 runLastLighthouse = name
-                hud.lighthouse = HUDToast(kind: .lighthouse, title: name, detail: "Lighthouse \(index + 1)",
-                                          serial: toastSerial)
+                hud.setLighthouse(HUDToast(kind: .lighthouse, title: name,
+                                           detail: "\(Self.ordinal(index + 1)) lighthouse · the storm falls back",
+                                           serial: toastSerial))
                 lighthouseUntil = s.time + Self.lighthouseCardSeconds
-                // The card wins over a km toast that is already up.
-                if hud.toast?.kind == .milestone {
-                    let none: HUDToast? = nil
-                    hud.setToast(none)
-                }
+                if hud.toast?.kind == .milestone { hud.setToast(nil) }
+                announce(name, priority: 2)
             case let .milestone(km):
-                // No km toast within 0.5 km of a lighthouse, nor over its card (REVIEW-1 P0-8).
-                if AppRules.milestoneNearLighthouse(km: km) || hud.lighthouse != nil { break }
-                toastSerial += 1
-                hud.toast = HUDToast(kind: .milestone, title: "\(km) km", detail: AppRules.milestoneLine(km),
-                                     serial: toastSerial)
-                toastUntil = s.time + Self.toastSeconds
+                if AppRules.milestoneToasts(km: km) && hud.lighthouse == nil {
+                    toastSerial += 1
+                    showToast(HUDToast(kind: .milestone, title: "\(km) km", detail: AppRules.milestoneLine(km),
+                                       serial: toastSerial), now: now, sessionTime: s.time)
+                }
             case .newBest:
                 toastSerial += 1
-                hud.toast = HUDToast(kind: .newBest, title: "New best!", detail: "Every metre now is a record",
-                                     serial: toastSerial)
-                toastUntil = s.time + Self.toastSeconds
+                showToast(HUDToast(kind: .newBest, title: "New best!", detail: "Every metre now is a record",
+                                   serial: toastSerial), now: now, sessionTime: s.time)
+            case .stormClose:
+                announce("Storm close", priority: 3)
+                if coachOn && !coach.learned.contains(AppHint.storm.rawValue) {
+                    coach.learned.insert(AppHint.storm.rawValue)
+                    if !isDemo { store.learnHint(AppHint.storm.rawValue) }
+                    hud.setTeachLine(AppRules.hintText(.storm, touch: false, mirrored: false))
+                    teachUntil = s.time + Self.teachSeconds
+                }
             case .caught:
-                touch.ended(at: CACurrentMediaTime())
+                releaseTouches()
+                caughtAt = s.time
                 hud.setCaught(true)
+                announce("Caught at \(ShareText.km(s.distanceMeters))", priority: 3)
             case .finished:
-                handleFinished()
-            case .countdownTick, .launched, .tailwindStarted, .tailwindEnded, .cloudTouched, .stormClose:
+                handleFinished(immediate: false)
+            case .countdownTick, .launched, .tailwindStarted, .tailwindEnded, .cloudTouched:
                 break
             }
         }
     }
 
-    /// "Fold on the way down" at the drop; "Open to fly" on the first climb toward a crest (GAME-DESIGN §9).
-    private func updateHints(_ s: FlightSnapshot) {
-        guard hintsActive, case .flying = s.phase else { return }
-        let t = s.time
-        if foldHintAt == nil {
-            foldHintAt = t
-            let fold: AppHint? = .fold
-            hud.setHint(fold)
+    static func ordinal(_ n: Int) -> String {
+        let tens = n % 100
+        if tens >= 11 && tens <= 13 { return "\(n)th" }
+        switch n % 10 {
+        case 1: return "\(n)st"
+        case 2: return "\(n)nd"
+        case 3: return "\(n)rd"
+        default: return "\(n)th"
+        }
+    }
+
+    /// New toasts wait out the fold-blur guard (2.2 s after leaving flat, UX §9).
+    private func showToast(_ toast: HUDToast, now: TimeInterval, sessionTime: Double) {
+        if hinge.hasHinge && hinge.inFlatBlurGuard(at: now, window: Self.blurGuard) {
+            pendingToast = toast
             return
         }
-        if let shown = openHintAt {
-            if t - shown > Self.hintSeconds {
-                let none: AppHint? = nil
-                hud.setHint(none)
-                hintsActive = false
-            }
-            return
-        }
-        guard let foldAt = foldHintAt else { return }
-        let since = t - foldAt
-        if since > Self.hintSeconds && hud.hint == .fold {
-            let none: AppHint? = nil
-            hud.setHint(none)
-        }
-        var climbing = false
-        if s.skimming, let sea = session?.sea {
-            climbing = sea.slope(at: Double(s.position.x)) > Self.crestSlope
-        }
-        if (since >= Self.openHintMinDelay && climbing) || since >= Self.openHintMaxDelay {
-            openHintAt = t
-            let open: AppHint? = .open
-            hud.setHint(open)
+        hud.setToast(toast)
+        toastUntil = sessionTime + Self.toastSeconds
+    }
+
+    private func updateCoach(_ s: FlightSnapshot, events: [FlightEvent]) {
+        guard coachOn else { return }
+        var flying = false
+        if case .flying = s.phase { flying = true }
+        var slope = 0.0
+        if let sea = session?.sea { slope = sea.slope(at: Double(s.position.x)) }
+        if !slope.isFinite { slope = 0 }
+        let learned = coach.step(time: s.time, flying: flying, slope: slope, skimming: s.skimming, tuck: s.tuck,
+                                 events: events)
+        if !isDemo { for h in learned { store.learnHint(h) } }
+        hud.setHint(coach.current)
+        hud.setHintDone(coach.done)
+    }
+
+    /// Mid-run flat (UX §9): "Keep a little bend" once per run after 2 s flat; leaving flat starts the blur guard.
+    private func watchMidRunFlat(_ s: FlightSnapshot, now: TimeInterval) {
+        guard input == .hinge else { return }
+        if hinge.flatDuration(at: now) >= Self.midRunFlatAfter && !keepBendShown, case .flying = s.phase {
+            keepBendShown = true
+            coach.showKeepBend(time: s.time)
+            hud.setHint(coach.current)
         }
     }
 
     private func publishHUD(_ s: FlightSnapshot, now: TimeInterval, force: Bool) {
         guard force || lastHUDPublish < 0 || now - lastHUDPublish >= Self.hudInterval else { return }
         lastHUDPublish = now
-        hud.setMeters(s.distanceMeters.isFinite ? Int(max(s.distanceMeters, 0)) : 0)
+        let meters = s.distanceMeters.isFinite ? Int(max(s.distanceMeters, 0)) : 0
+        // QA-2 P2-6: past 1 km the hundredths change at ≤ 4 Hz (10 m steps), so the digits don't roll constantly.
+        if meters < 1000 {
+            hud.setMeters(meters)
+        } else if force || lastKmPublish < 0 || now - lastKmPublish >= Self.kmInterval {
+            lastKmPublish = now
+            hud.setMeters((meters / 10) * 10)
+        }
         hud.setLead((AppRules.meterLead(gap: s.gap) * 100).rounded() / 100)
         hud.setChain(s.chain)
         hud.setPerfects(s.perfects)
         hud.setTailwind((max(s.tailwindRemaining, 0) * 10).rounded() / 10)
         var countdown: Int?
+        var word: String?
         var flying = false
         var caught = false
         switch s.phase {
         case let .countdown(remaining):
-            countdown = remaining.isFinite ? min(max(Int(remaining.rounded(.up)), 1), 3) : 3
+            let r = remaining.isFinite ? remaining : countdownTotal
+            if countdownTotal <= 2.0 {
+                word = AppRules.shortCountdownWord(remaining: r, total: countdownTotal)
+            } else {
+                countdown = min(max(Int(r.rounded(.up)), 1), 3)
+            }
         case .flying: flying = true
         case .caught, .finished: caught = true
         }
         hud.setCountdown(countdown)
+        hud.setCountdownWord(word)
         hud.setFlying(flying)
         hud.setCaught(caught)
         hud.setStormClose(flying && s.lead < Self.stormCloseLead)
-        if hud.toast != nil && s.time > toastUntil {
-            let none: HUDToast? = nil
-            hud.setToast(none)
+        var isFlight = false
+        if case .flight = mode { isFlight = true }
+        let bestIn = AppRules.bestIn(meters: s.distanceMeters, best: s.bestMeters, isFlight: isFlight)
+        hud.setBestIn(bestIn.map { ($0 / 100).rounded(.up) * 100 })
+        if let anchor = SceneAdapter.birdPoint(scene, layout: layout, reported: reportedBirdPoint) {
+            hud.setBirdPoint(CGPoint(x: (anchor.point.x / 2).rounded() * 2, y: (anchor.point.y / 2).rounded() * 2))
+            hud.setBirdRadius((anchor.radius / 2).rounded() * 2)
         }
-        if hud.lighthouse != nil && s.time > lighthouseUntil {
-            let none: HUDToast? = nil
-            hud.setLighthouse(none)
+        if hud.toast != nil && s.time > toastUntil { hud.setToast(nil) }
+        if hud.toast == nil, let pending = pendingToast,
+           !(hinge.hasHinge && hinge.inFlatBlurGuard(at: now, window: Self.blurGuard)) {
+            pendingToast = nil
+            hud.setToast(pending)
+            toastUntil = s.time + Self.toastSeconds
         }
-        if hud.callout != nil && s.time > calloutUntil {
-            let none: HUDCallout? = nil
-            hud.setCallout(none)
-        }
+        if hud.lighthouse != nil && s.time > lighthouseUntil { hud.setLighthouse(nil) }
+        if hud.callout != nil && s.time > calloutUntil { hud.setCallout(nil) }
+        if hud.chainLost != nil && s.time > chainLostUntil { hud.setChainLost(nil) }
+        if hud.teachLine != nil && s.time > teachUntil { hud.setTeachLine(nil) }
     }
 
-    private func handleFinished() {
+    private func handleFinished(immediate: Bool) {
         guard !recordedFinish, let session, let result = session.result else { return }
         recordedFinish = true
         if homeLoop { return }
         if case .attract = result.mode { return }
+        record(result, immediate: immediate)
+    }
+
+    /// Records a finished (or ended) run and shows its results.
+    private func record(_ result: RunResult, immediate: Bool) {
         let today = DailySeed.dayNumber(for: Date())
+        let wasHinge = input == .hinge
         let outcome = store.record(result, today: today)
         scoredDailyDay = nil
         GameCenterManager.shared.report(result: result, outcome: outcome, progress: store.data)
         AppTrace.t("SWOOP-T run meters=\(AppTrace.int(result.meters)) perfects=\(result.perfects) "
                    + "seconds=\(String(format: "%.1f", result.seconds))")
-        let built = makeSummary(result, outcome: outcome)
-        var delay = Self.resultsDelay
+        var built = makeSummary(result, outcome: outcome)
+        built.hingeRun = wasHinge
+        if wasHinge && store.data.foldToFlyShown < 5 {
+            built.showsFoldHelper = true
+            if !isDemo { store.noteFoldToFlyShown() }
+        }
+        if wasHinge && !isDemo {
+            built.showsRestLine = store.addHingeSeconds(result.seconds, day: today)
+        }
+        var delay = immediate ? 0 : Self.resultsDelay
         #if DEBUG
         if demo?.freezeOn == .finished { delay = 0 }
         #endif
@@ -1054,12 +1267,17 @@ final class GameController: ObservableObject, SceneDriver {
 
     private func showResults(_ built: ResultSummary) {
         summary = built
+        pausedRun = nil
+        foldToFly = FoldToFly()
+        hud.setFoldFill(0)
+        resultsShownAt = CACurrentMediaTime()
         setRoute(.results)
         if built.outcome.rankUp != nil || built.outcome.showsNewBest { feedback.celebrate() }
+        if UIAccessibility.isVoiceOverRunning { UIAccessibility.post(notification: .screenChanged, argument: nil) }
     }
 
     private func makeSummary(_ result: RunResult, outcome: RecordOutcome) -> ResultSummary {
-        var title = "Flight"
+        var title = outcome.isNewBest && outcome.previousBest <= 0 ? "First flight" : "Flight"
         var day: Int?
         var practice = false
         if case let .daily(d, scored) = result.mode {
@@ -1069,6 +1287,42 @@ final class GameController: ObservableObject, SceneDriver {
         }
         return ResultSummary(result: result, outcome: outcome, title: title, dailyDay: day, practice: practice,
                              share: ShareText.line(for: result, streak: outcome.dailyStreak))
+    }
+
+    /// Fold to fly again (UX-A3): on Results, a hinge run's player folds and opens the wings.
+    private func updateFoldToFly(now: TimeInterval) {
+        guard let summary, summary.hingeRun, !summary.isDailyCard, hinge.hasHinge else { return }
+        let u = hinge.tuck(at: now)
+        let out = foldToFly.update(u: u, now: now, cardAge: now - resultsShownAt, closing: hinge.isClosing || isShut)
+        hud.setFoldFill((out.fill * 50).rounded() / 50)
+        if out.armedNow { feedback.cue(.foldArmed) }
+        if out.fired {
+            feedback.cue(.foldFired)
+            AppTrace.t("SWOOP-T fold to fly again")
+            flyAgain()
+        }
+    }
+
+    /// The paused run for the cover display (UX-D1).
+    private func makePausedRun() -> PausedRun? {
+        guard let s = session?.snapshot else { return nil }
+        var day: Int?
+        if case let .daily(d, _) = mode { day = d }
+        let gap = s.gap.isFinite ? max(s.gap, 0) / Tuning.pointsPerMeter : 0
+        return PausedRun(meters: max(s.distanceMeters, 0), stormMeters: gap, perfects: s.perfects, chain: s.chain,
+                         bestMeters: store.data.bestMeters, isScoredDaily: isScoredDaily, day: day)
+    }
+
+    // MARK: - VoiceOver
+
+    /// `.announcement` at most every 1.5 s, priority storm (3) > lighthouse (2) > Perfect (1) (UX §6).
+    private func announce(_ text: String, priority: Int) {
+        guard UIAccessibility.isVoiceOverRunning else { return }
+        let now = CACurrentMediaTime()
+        if now - lastAnnounce < Self.announceGap && priority <= lastAnnouncePriority { return }
+        lastAnnounce = now
+        lastAnnouncePriority = priority
+        UIAccessibility.post(notification: .announcement, argument: text)
     }
 
     // MARK: - Routes, pauses, the idle timer
@@ -1092,21 +1346,23 @@ final class GameController: ObservableObject, SceneDriver {
         if on { pauseReasons.insert(reason) } else { pauseReasons.remove(reason) }
         let now = isPausedByReason
         if !was && now {
-            touch.ended(at: CACurrentMediaTime())
+            releaseTouches()
             feedback.silence()
+            if isLiveRun { pausedRun = makePausedRun() }
         } else if was && !now {
             resumed()
         }
         syncIdleTimer()
     }
 
-    /// Every resume of a live run holds under the "Ready" ring for `readyHold` s.
+    /// Every resume of a live run holds under the "Ready" ring.
     private func resumed() {
         guard isLiveRun else { return }
+        pausedRun = nil
         let until = CACurrentMediaTime() + Self.readyHold
         readyUntil = until
-        let shown: Double? = Self.readyHold
-        hud.setReady(shown)
+        hud.setReady(Self.readyHold)
+        feedback.cue(.reopened)
         AppTrace.t("SWOOP-T resumed")
     }
 
@@ -1132,27 +1388,80 @@ final class GameController: ObservableObject, SceneDriver {
     #if DEBUG
     private func launchDemo(_ demo: DemoConfig) {
         let today = DailySeed.dayNumber(for: Date())
-        store.replace(with: DemoPresets.progress(demo.progress, today: today))
+        var data = DemoPresets.progress(demo.progress, today: today)
+        if demo.dailyToday {
+            data.daily[today] = DailyRecord(meters: 7_480, perfects: 23, lighthouses: 1,
+                                            lastLighthouseName: Lighthouses.name(index: 0, seed: DailySeed.seed(day: today)),
+                                            finished: true)
+            data.dailyAttempted.insert(today)
+        }
+        if demo.rankUp {
+            for goal in GoalCatalog.goals(forRank: data.rank) { data.goalProgress[goal.id] = 1 }
+        }
+        store.replace(with: data)
         if demo.screen == .pose { forcedPose = .turn }
+        // `cover=midrun` flies 1.2 s first, so the paused run has a distance (the pose is forced at the pause).
+        if demo.screen == .cover && demo.coverState != .midrun { forcedPose = .closed }
         if demo.screen == .icon { showsIconExport = true }
+        if demo.folded { homeFolded = true }
+        if demo.flat { homeFlat = true }
         if demo.badges {
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
                 BadgeExport.renderAll()
             }
         }
+        if demo.orientPortrait { DemoOrientation.requestPortrait() }
         switch demo.effectiveScreen {
         case .home, .icon, .badges:
             startAttract()
         case .pose:
             if let m = demo.runMode(today: today) { start(mode: m) } else { startAttract() }
+        case .cover:
+            switch demo.coverState {
+            case .home:
+                startAttract()
+            case .midrun:
+                start(mode: demo.runMode(today: today) ?? .flight)
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: 1_200_000_000)
+                    guard let self else { return }
+                    self.setUserPaused(true)
+                    if self.pausedRun == nil { self.pausedRun = self.makePausedRun() }
+                    self.forcedPose = .closed
+                    AppTrace.t("SWOOP-T cover midrun paused")
+                }
+            case .results:
+                presentDemoResults(demo, today: today)
+            }
         case .goals, .birds, .settings:
             startAttract()
             let target: AppRoute = demo.effectiveScreen == .goals ? .goals
                 : (demo.effectiveScreen == .birds ? .birds : .settings)
             setRoute(target)
+        case .daily:
+            startAttract()
+            openDailyCard()
         case .play:
             start(mode: demo.runMode(today: today) ?? .flight)
+            if demo.closing {
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    guard let self, self.isLiveRun else { return }
+                    self.isClosingPaused = true
+                    self.setPause(.closing, true)
+                    AppTrace.t("SWOOP-T paused closing")
+                }
+            }
+            if demo.holdReady {
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    guard let self, self.isLiveRun else { return }
+                    self.readyUntil = CACurrentMediaTime() + 3600
+                    self.hud.setReady(1.0)
+                    AppTrace.t("SWOOP-T resumed")
+                }
+            }
         case .results:
             presentDemoResults(demo, today: today)
         }
@@ -1207,7 +1516,13 @@ final class GameController: ObservableObject, SceneDriver {
         let outcome = store.record(result, today: today)
         AppTrace.t("SWOOP-T run meters=\(AppTrace.int(result.meters)) perfects=\(result.perfects) "
                    + "seconds=\(String(format: "%.1f", result.seconds))")
-        showResults(makeSummary(result, outcome: outcome))
+        var built = makeSummary(result, outcome: outcome)
+        if demo.duo || hasHinge || demo.foldFill != nil {
+            built.hingeRun = true
+            built.showsFoldHelper = true
+        }
+        showResults(built)
+        if let fill = demo.foldFill { hud.setFoldFill(fill) }
     }
 
     /// Demo `freezeOn=countdown`: session seconds into the 3 s countdown (the "2").
@@ -1223,7 +1538,6 @@ final class GameController: ObservableObject, SceneDriver {
         }
         guard let target = demo.freezeOn else { return }
         if target == .countdown {
-            // The 3-2-1 held at "2", after the UI has had time to turn landscape (R1's countdown frame was blank).
             if case .countdown = s.phase, s.time >= Self.demoCountdownFreezeAt { freeze(target.rawValue, s) }
             return
         }

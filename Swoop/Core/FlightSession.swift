@@ -18,7 +18,10 @@ public final class FlightSession {
     // Phase and clocks
     private var phase: FlightPhase = .countdown(remaining: Tuning.countdownDuration)
     private var countdownLeft: Double = Tuning.countdownDuration
-    private var lastTick: Int = 4
+    /// The countdown this session was built with (s) and its tick schedule (UX-C1).
+    public let countdownDuration: Double
+    private let tickSchedule: [(tick: Int, at: Double)]
+    private var nextTickIndex: Int = 0
     private var time: Double = 0
     private var flightTime: Double = 0
     private var caughtElapsed: Double = 0
@@ -67,7 +70,15 @@ public final class FlightSession {
     private var endSeconds: Double = 0
     private var runResult: RunResult? = nil
 
-    public init(mode: RunMode, seed: UInt64, bestMeters: Double, bird: BirdID) {
+    /// `countdown`: 3.0 for the first run of a launch (it calibrates the hinge), `Tuning.restartCountdownDuration`
+    /// (1.5) for "Fly again" (UX-C1). Any value 0…10 works; 0 starts on the first step with no ticks.
+    public init(mode: RunMode, seed: UInt64, bestMeters: Double, bird: BirdID,
+                countdown: Double = Tuning.countdownDuration) {
+        let cd: Double = countdown.isFinite ? min(max(countdown, 0), 10) : Tuning.countdownDuration
+        self.countdownDuration = cd
+        self.tickSchedule = FlightSession.countdownTicks(duration: cd)
+        self.countdownLeft = cd
+        self.phase = .countdown(remaining: cd)
         var s: UInt64 = seed
         if case .daily(let day, _) = mode {
             s = DailySeed.seed(day: day)
@@ -106,8 +117,38 @@ public final class FlightSession {
     public func skipCountdown() {
         if case .countdown = phase {
             countdownLeft = 0
+            nextTickIndex = tickSchedule.count
             phase = .countdown(remaining: 0)
         }
+    }
+
+    /// When the countdown ticks fire, in seconds after the session starts (UX-C1; the App and Feel align their beats
+    /// with these). A countdown of 2.5 s or more ticks n…1 on the whole seconds before the drop: 3.0 → 3 at 0 s,
+    /// 2 at 1 s, 1 at 2 s, `started` at 3 s. A shorter one (the 1.5 s restart) has two beats, matching UX-SPEC's
+    /// "Ready · Go": `countdownTick(2)` = Ready at 0 s and `countdownTick(1)` = Go at duration / 2 (0.75 s), then
+    /// `started` at the duration.
+    public static func countdownTicks(duration: Double) -> [(tick: Int, at: Double)] {
+        if !(duration > 0) { return [] }
+        if duration < 2.5 {
+            return [(tick: 2, at: 0), (tick: 1, at: duration / 2)]
+        }
+        let n: Int = Int((duration - 1e-9).rounded(.up))
+        var out: [(tick: Int, at: Double)] = []
+        var k: Int = n
+        while k >= 1 {
+            out.append((tick: k, at: max(0, duration - Double(k))))
+            k -= 1
+        }
+        return out
+    }
+
+    /// The caught → finished jump for a skipped ending (UX A2): finishes the run now and returns `[.finished]`
+    /// (empty unless the bird is in its `caught` phase). The result is the same as letting the 1.8 s play out.
+    public func finishCaught() -> [FlightEvent] {
+        guard case .caught = phase else { return [] }
+        phase = .finished
+        finishRun()
+        return [.finished]
     }
 
     public var snapshot: FlightSnapshot {
@@ -172,10 +213,10 @@ public final class FlightSession {
         switch phase {
         case .countdown:
             if countdownLeft > 0 {
-                let n: Int = Int((countdownLeft - 1e-9).rounded(.up))
-                if n < lastTick && n >= 1 {
-                    lastTick = n
-                    events.append(.countdownTick(n))
+                let elapsed: Double = countdownDuration - countdownLeft
+                while nextTickIndex < tickSchedule.count && tickSchedule[nextTickIndex].at <= elapsed + 1e-9 {
+                    events.append(.countdownTick(tickSchedule[nextTickIndex].tick))
+                    nextTickIndex += 1
                 }
                 countdownLeft -= dt
             }
@@ -230,7 +271,8 @@ public final class FlightSession {
         if isAttract {
             stormX = x - Tuning.attractStormLag
         } else {
-            stormX += Tuning.stormSpeed(atFlightTime: flightTime) * dt
+            let gapNow: Double = x - stormX
+            stormX += (Tuning.stormSpeed(atFlightTime: flightTime) + Tuning.stormLeashSpeed(gap: gapNow)) * dt
         }
 
         // Lighthouses.

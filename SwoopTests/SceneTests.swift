@@ -44,7 +44,7 @@ struct SceneTests {
             let open = BirdArt.path(for: b, tuck: 0, flap: 0).nearWing.boundingBoxOfPath
             let shut = BirdArt.path(for: b, tuck: 1, flap: 0).nearWing.boundingBoxOfPath
             // Spread: raised high above the back. Tucked: a slim wing lying along the body, swept back past the tail.
-            #expect(shut.height < open.height * 0.5)
+            #expect(shut.height < open.height * 0.6)
             #expect(shut.maxY < open.maxY)
             #expect(shut.minX < -0.3)
         }
@@ -65,6 +65,19 @@ struct SceneTests {
         #expect(swift.minX < gull.minX)
     }
 
+    /// ART §4: the spread wings are a long, shallow check-mark lifted up and back, never "rabbit ears".
+    @Test func spreadWingsNeverPointStraightUp() {
+        for b in SceneTests.allBirds() {
+            let open = BirdArt.path(for: b, tuck: 0, flap: 0).nearWing.boundingBoxOfPath
+            #expect(open.width > open.height)
+            let back = BirdArt.backLinePath(for: b).boundingBoxOfPath
+            let belly = BirdArt.bellyPath(for: b).boundingBoxOfPath
+            let body = BirdArt.path(for: b, tuck: 0, flap: 0).body.boundingBoxOfPath
+            #expect(back.minY > body.midY - 0.01 && belly.maxY < body.midY)
+            #expect(!BirdArt.nearWingLeadingEdge(for: b, tuck: 0.5, flap: 0).isEmpty)
+        }
+    }
+
     @Test func flapPhaseZeroIsTheRestPose() {
         let b = SceneDefaults.bird
         let rest = BirdArt.path(for: b, tuck: 0, flap: 0).nearWing.boundingBoxOfPath
@@ -79,7 +92,8 @@ struct SceneTests {
         for b in SceneTests.allBirds() {
             let open = BirdArt.titlePath(for: b, tuck: 0, width: w, height: h)
             let spread = open.leftWing.boundingBoxOfPath.union(open.rightWing.boundingBoxOfPath)
-            #expect(spread.width >= w * 0.93)
+            // A 92 % span (ART §7).
+            #expect(spread.width >= w * 0.90 && spread.width <= w * 0.95)
             #expect(open.leftWing.boundingBoxOfPath.midX < w * 0.5)
             #expect(open.rightWing.boundingBoxOfPath.midX > w * 0.5)
             #expect(open.leftWing.boundingBoxOfPath.minX < w * 0.05)
@@ -92,8 +106,9 @@ struct SceneTests {
             let folded = shut.leftWing.boundingBoxOfPath.union(shut.rightWing.boundingBoxOfPath)
             #expect(folded.width <= w * 0.6)
             #expect(folded.width < spread.width * 0.7)
-            // A dart, not a speck: the App only refits the title when it is narrower than a quarter of the width.
-            #expect(folded.width >= w * 0.25)
+            // A dart, not a speck: the App only refits the title when it is narrower than a quarter of the width;
+            // and within ±0.17 w of the fold (ART §8), never onto the menu card.
+            #expect(folded.width >= w * 0.25 && folded.width <= w * 0.345)
             // The tucked tips sweep down and back past the tail (y down), and each wing stays on its own side.
             let shutBody = shut.body.boundingBoxOfPath
             #expect(shut.leftWing.boundingBoxOfPath.maxY > shutBody.maxY)
@@ -104,6 +119,16 @@ struct SceneTests {
             let mid = half.leftWing.boundingBoxOfPath.union(half.rightWing.boundingBoxOfPath)
             #expect(mid.width < spread.width && mid.width > folded.width)
 
+            // The detail layers sit on the wings.
+            let detail = BirdArt.titleDetail(for: b, tuck: 0, width: w, height: h)
+            let wings = open.leftWing.boundingBoxOfPath.union(open.rightWing.boundingBoxOfPath)
+            for path in [detail.leftBand, detail.rightBand, detail.leftPrimaries, detail.rightPrimaries,
+                         detail.leftMirrors, detail.rightMirrors] {
+                #expect(!path.isEmpty)
+                #expect(wings.insetBy(dx: -2, dy: -2).contains(path.boundingBoxOfPath))
+            }
+            #expect(detail.leftPrimaries.boundingBoxOfPath.maxX < w * 0.25)
+            #expect(!detail.beak.isEmpty && !detail.beakSpot.isEmpty)
             for path in [open.leftWing, open.rightWing, open.body, shut.leftWing, shut.rightWing] {
                 let r = path.boundingBox
                 #expect(r.minX >= -1 && r.maxX <= w + 1 && r.minY >= -1 && r.maxY <= h + 1)
@@ -241,6 +266,93 @@ struct SceneTests {
         #expect(scene.seaRebuilds < 350 / 3)
     }
 
+    /// ART-S6/S7/S15: caught, the storm sweeps past the fold band (≥ 0.6 w), the sun dims by about half; in flight
+    /// its edge never rests inside the fold band.
+    @Test @MainActor func caughtStormSweepsPastTheFold() {
+        let scene = FlightScene(layout: SceneTests.duo)
+        let driver = SceneTestsDriver()
+        scene.driver = driver
+        scene.reset()
+        driver.snap.phase = .flying
+        driver.snap.stormX = -150
+        var now: TimeInterval = 20
+        for _ in 0..<120 {
+            scene.update(now)
+            now += 1.0 / 120.0
+            let e = scene.stormEdgeU
+            #expect(e < 447 || e > 503)
+        }
+        driver.snap.phase = .caught(elapsed: 0)
+        for _ in 0..<240 {
+            scene.update(now)
+            now += 1.0 / 120.0
+        }
+        #expect(scene.stormEdgeU >= 952 * 0.6)
+        #expect(scene.sunBrightness <= 0.55)
+    }
+
+    /// UX-S1: the bird's screen point reaches the App at most 30 times a second, and sits at 30 % of the width.
+    @Test @MainActor func birdPointIsReportedAtThirtyHertz() {
+        let scene = FlightScene(layout: SceneTests.duo)
+        let driver = SceneTestsDriver()
+        scene.driver = driver
+        scene.reset()
+        driver.snap.phase = .flying
+        var calls = 0
+        var last = CGPoint.zero
+        scene.onBirdPoint = { p in
+            calls += 1
+            last = p
+        }
+        var now: TimeInterval = 5
+        for _ in 0..<120 {
+            scene.update(now)
+            now += 1.0 / 120.0
+        }
+        #expect(calls >= 20 && calls <= 31)
+        #expect(abs(last.x - 952 * 0.30) < 1)
+        #expect(abs(scene.birdCanvasPoint.x - 952 * 0.30) < 1)
+    }
+
+    /// UX-S3: the title morph runs for 0.6 s and hands over to the play bird.
+    @Test @MainActor func titleMorphHandsOverToThePlayBird() {
+        let scene = FlightScene(layout: SceneTests.duo)
+        let driver = SceneTestsDriver()
+        scene.driver = driver
+        scene.reset()
+        scene.playTitleMorph(tuck: 0)
+        #expect(scene.morphProgress == 0)
+        var now: TimeInterval = 1
+        for _ in 0..<36 {
+            scene.update(now)
+            now += 1.0 / 120.0
+        }
+        #expect(scene.morphProgress > 0.3 && scene.morphProgress < 1)
+        for _ in 0..<60 {
+            scene.update(now)
+            now += 1.0 / 120.0
+        }
+        #expect(scene.morphProgress == 1)
+    }
+
+    /// QA-2 P2-2: a close, fast storm whose chop zone is off screen does not force sea rebuilds.
+    @Test @MainActor func closeStormDoesNotForceSeaRebuilds() {
+        let scene = FlightScene(layout: SceneTests.duo)
+        let driver = SceneTestsDriver()
+        scene.driver = driver
+        scene.reset()
+        driver.snap.phase = .flying
+        driver.snap.speed = 1500
+        driver.snap.stormX = -1200
+        driver.stormSpeed = 1500
+        var now: TimeInterval = 30
+        for _ in 0..<240 {
+            scene.update(now)
+            now += 1.0 / 120.0
+        }
+        #expect(scene.seaRebuilds <= 10)
+    }
+
     /// REVIEW-1 P0-7: at the pass (and 0.25 s later, when the frames are frozen) the lighthouse is on screen beside the
     /// bird.
     @Test @MainActor func lighthouseIsOnScreenAtThePass() {
@@ -315,6 +427,8 @@ final class SceneTestsDriver: SceneDriver {
     var pending: [FlightEvent] = []
     /// A hit-stop: hand back the same snapshot.
     var hold = false
+    /// The storm's speed while flying (pt/s).
+    var stormSpeed: Double = 700
 
     func advance(dt: TimeInterval, now: TimeInterval) -> (FlightSnapshot, [FlightEvent]) {
         if hold {
@@ -329,7 +443,7 @@ final class SceneTestsDriver: SceneDriver {
             let water = sea?.height(at: Double(snap.position.x)) ?? 0
             snap.position.y = CGFloat(water + (snap.skimming ? 0 : 140))
             snap.velocity = CGVector(dx: vx, dy: 0)
-            snap.stormX += 700 * dt
+            snap.stormX += stormSpeed * dt
             snap.gap = Double(snap.position.x) - snap.stormX
             snap.lead = min(max(snap.gap / 3000, 0), 1)
             snap.tuck = 0.5 + 0.5 * sin(snap.time * 3)

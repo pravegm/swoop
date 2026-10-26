@@ -260,7 +260,9 @@ struct ProgressRulesTests {
                                        lastLighthouseName: "", today: 301)
         #expect(data.daily[301]?.finished == false)
         #expect(data.dailyAttempted.contains(301))
-        #expect(ProgressRules.streak(days: [1, 2, 4, 5], today: 5) == 2)
+        // UX §4 grace: one missed day per rolling 7 keeps the streak (the missed day itself doesn't count).
+        #expect(ProgressRules.streak(days: [1, 2, 4, 5], today: 5) == 4)
+        #expect(ProgressRules.streak(days: [1, 3, 5], today: 5) == 2)
     }
 
     @Test func achievementsFollowTheProgress() {
@@ -340,7 +342,7 @@ struct PoseRuleTests {
         let phonePortrait = CGSize(width: 402, height: 874)
         #expect(AppPoseRule.pose(canvas: book, hingeSeen: true, isShut: false, touchOverride: false) == .play)
         #expect(AppPoseRule.pose(canvas: tabletop, hingeSeen: true, isShut: false, touchOverride: false) == .turn)
-        #expect(AppPoseRule.pose(canvas: tabletop, hingeSeen: true, isShut: false, touchOverride: true) == .play)
+        #expect(AppPoseRule.pose(canvas: tabletop, hingeSeen: true, isShut: false, touchOverride: true) == .deck)
         #expect(AppPoseRule.pose(canvas: cover, hingeSeen: true, isShut: false, touchOverride: false) == .closed)
         #expect(AppPoseRule.pose(canvas: book, hingeSeen: true, isShut: true, touchOverride: false) == .closed)
         #expect(AppPoseRule.pose(canvas: phoneLandscape, hingeSeen: false, isShut: false, touchOverride: false) == .play)
@@ -364,13 +366,10 @@ struct PoseRuleTests {
                                   divisionSeen: false))
     }
 
-    @Test func playRectIsALandscapeBandInPortrait() {
-        let full = AppPoseRule.playRect(in: CGSize(width: 951, height: 669))
-        #expect(full == CGRect(x: 0, y: 0, width: 951, height: 669))
-        let band = AppPoseRule.playRect(in: CGSize(width: 669, height: 951))
-        #expect(band.width == 669)
-        #expect(band.height < band.width)
-        #expect(abs(band.midY - 951 / 2) <= 1)
+    @Test func playRectIsTheWholeCanvas() {
+        // R3: portrait play is the split deck (DeckLayout), so the play rect is always the full canvas.
+        #expect(AppPoseRule.playRect(in: CGSize(width: 951, height: 669)) == CGRect(x: 0, y: 0, width: 951, height: 669))
+        #expect(AppPoseRule.playRect(in: CGSize(width: 669, height: 951)) == CGRect(x: 0, y: 0, width: 669, height: 951))
     }
 
     @Test func orientationMask() {
@@ -422,13 +421,19 @@ struct PoseRuleTests {
     }
 
     @Test func hintCopy() {
-        #expect(HintBubble.text(.fold, touch: false) == "Fold on the way down")
-        #expect(HintBubble.text(.open, touch: false) == "Open to fly")
-        #expect(HintBubble.text(.fold, touch: true) == "Hold on the way down")
+        #expect(HintBubble.text(.fold, touch: false) == "↘ Fold on the way down")
+        #expect(HintBubble.text(.open, touch: false) == "↗ Open on the way up")
+        #expect(HintBubble.text(.fold, touch: true) == "↘ Hold on the way down")
+        #expect(HintBubble.text(.open, touch: true, mirrored: true) == "↖ Let go on the way up")
+        #expect(HintBubble.text(.fold, touch: false, mirrored: true) == "↙ Fold on the way down")
+        #expect(HintBubble.text(.land, touch: true) == "Land on the way down")
+        #expect(HintBubble.text(.keepBend, touch: false) == "Keep a little bend")
         #expect(RankUpBanner.unlockLine(birds: ["Tern"], skies: ["Rose Dusk"]) == "New: Tern, Rose Dusk")
         #expect(RankUpBanner.unlockLine(birds: [], skies: []) == "")
-        #expect(HomeView.dailyStatus(record: nil, attempted: false, streak: 0) == "Everyone's sea today · one try")
-        #expect(HomeView.dailyStatus(record: nil, attempted: true, streak: 0) == "Tried · practice")
+        #expect(HomeView.dailyStatus(record: nil, attempted: false, nextIn: "6 h") == "Everyone's sea · one try")
+        #expect(HomeView.dailyStatus(record: nil, attempted: true, nextIn: "6 h") == "Tried · next in 6 h")
+        let flown = DailyRecord(meters: 7_480, perfects: 23, lighthouses: 1, lastLighthouseName: "", finished: true)
+        #expect(HomeView.dailyStatus(record: flown, attempted: true, nextIn: "6 h") == "Flown 7.4 km · next in 6 h")
     }
 }
 
@@ -504,7 +509,8 @@ struct RoundTwoTests {
     }
 
     @Test func leadMeterHasHeadroom() {
-        #expect(abs(AppRules.meterLead(gap: 2_400, fullLead: 3_000) - 2_400 / 3_900) < 1e-9)
+        #expect(abs(AppRules.meterLead(gap: 2_400, fullLead: 3_000) - 2_400 / (3_000 * Tuning.leadMeterScale)) < 1e-9)
+        #expect(AppRules.meterHeadroom == Tuning.leadMeterScale)
         #expect(AppRules.meterLead(gap: 99_999, fullLead: 3_000) == 1)
         #expect(AppRules.meterLead(gap: -5, fullLead: 3_000) == 0)
         #expect(AppRules.meterLead(gap: .nan, fullLead: 3_000) == 0)
@@ -521,12 +527,23 @@ struct RoundTwoTests {
 
     @Test func nearMissHook() {
         let first = Lighthouses.x(index: 0) / Tuning.pointsPerMeter
-        let line = AppRules.nextLighthouseLine(meters: first - 550, lighthousesPassed: 0, seed: 7)
-        #expect(line?.hasPrefix("0.6 km short of ") == true)
-        #expect(ResultsView.hookText(past: "Gull Point", next: "0.6 km short of Saltlight")
-                == "Past Gull Point · 0.6 km short of Saltlight")
-        #expect(ResultsView.hookText(past: "", next: nil) == "")
-        #expect(ResultsView.inlineStatsText(perfects: 1, chain: 4, lighthouses: 2) == "1 Perfect · chain 4 · 2 lighthouses")
+        let name = Lighthouses.name(index: 0, seed: 7)
+        // First flight: the first lighthouse is named.
+        let firstLine = AppRules.hookLine(meters: first - 550, best: first - 550, previousBest: 0, lighthousesPassed: 0,
+                                          lastLighthouse: "", seed: 7, firstFlight: true)
+        #expect(firstLine == "0.6 km short of \(name), the first lighthouse")
+        // Within 10 % of the best, the best wins.
+        let nearBest = AppRules.hookLine(meters: 9_600, best: 10_000, previousBest: 10_000, lighthousesPassed: 2,
+                                         lastLighthouse: "Gull Point", seed: 7, firstFlight: false)
+        #expect(nearBest == "0.4 km short of your best")
+        // Past one, short of the next.
+        let next = Lighthouses.x(index: 1) / Tuning.pointsPerMeter
+        let past = AppRules.hookLine(meters: next - 1_550, best: 50_000, previousBest: 50_000, lighthousesPassed: 1,
+                                     lastLighthouse: "Gull Point", seed: 7, firstFlight: false)
+        #expect(past == "Past Gull Point · 1.6 km short of \(Lighthouses.name(index: 1, seed: 7))")
+        #expect(AppRules.statsLine(perfects: 1, chain: 4, lighthouses: 2) == "1 Perfect · chain 4 · 2 lighthouses")
+        #expect(AppRules.statsLine(perfects: 0, chain: 1, lighthouses: 0) == "")
+        #expect(AppRules.statsLine(perfects: 5, chain: 3, lighthouses: 1) == "5 Perfects · chain 3 · 1 lighthouse")
     }
 
     @Test func hudDistanceAndWording() {
@@ -557,10 +574,19 @@ struct RoundTwoTests {
     }
 
     @Test func calloutIsOnTheBirdsHalfAndClearOfTheFold() {
+        let size = CGSize(width: 240, height: 52)    // PerfectCalloutView.size
         for c in testCanvases {
-            let p = PlayLayout.make(c)
-            #expect(c.isFoldClear(p.callout))
-            #expect(c.birdPage.contains(CGPoint(x: p.callout.midX, y: c.size.height / 2)))
+            let bp = c.birdPage
+            // Birds anywhere on their page, high and low.
+            for fy in [0.15, 0.5, 0.85] {
+                let bird = CGPoint(x: bp.minX + bp.width * 0.6, y: c.size.height * fy)
+                let p = CalloutPlacement.center(bird: bird, birdRadius: 44, size: size, canvas: c)
+                let box = CGRect(x: p.x - size.width / 2, y: p.y - size.height / 2, width: size.width,
+                                 height: size.height)
+                #expect(c.isFoldClear(box), "callout \(box) on the fold of \(c.size)")
+                #expect(box.minX >= bp.minX - 0.5 && box.maxX <= bp.maxX + 0.5, "callout off the bird page")
+                #expect(box.minY >= c.top - 0.5 && box.maxY <= c.bottom + 0.5)
+            }
             let h = HomeLayout.make(c)
             #expect(c.isFoldClear(h.textBlock))
         }
@@ -574,4 +600,326 @@ struct RoundTwoTests {
         #expect(DemoConfig.parse("").freezeDelay == DemoConfig.defaultFreezeDelay)
     }
     #endif
+}
+
+// MARK: - Round 3
+
+struct RoundThreeRuleTests {
+    @Test func hintCoachRetiresHintsBySuccess() {
+        var coach = HintCoach(learned: [])
+        _ = coach.step(time: 0, flying: true, slope: -0.1, skimming: false, tuck: 0, events: [])
+        #expect(coach.current == .fold)
+        _ = coach.step(time: 0.1, flying: true, slope: -0.1, skimming: false, tuck: 0.7, events: [])
+        let learned = coach.step(time: 0.45, flying: true, slope: -0.1, skimming: false, tuck: 0.7, events: [])
+        #expect(learned == ["fold"])
+        #expect(coach.done)
+        _ = coach.step(time: 1.1, flying: true, slope: 0, skimming: false, tuck: 0, events: [])
+        #expect(coach.current == nil)
+        _ = coach.step(time: 1.2, flying: true, slope: 0.1, skimming: true, tuck: 0.6, events: [])
+        #expect(coach.current == .open)
+        let open = coach.step(time: 1.3, flying: true, slope: 0.1, skimming: false, tuck: 0.1,
+                              events: [.launched(speed: 900)])
+        #expect(open == ["open"])
+        #expect(coach.learned == ["fold", "open"])
+    }
+
+    @Test func hintCoachTimesOutAndGivesUpAfterThreeTries() {
+        var coach = HintCoach(learned: [])
+        var shown = 0
+        var t = 0.0
+        for _ in 0..<6 {
+            _ = coach.step(time: t, flying: true, slope: -0.1, skimming: false, tuck: 0, events: [])
+            if coach.current == .fold { shown += 1 }
+            t += HintCoach.timeout + 0.1
+            _ = coach.step(time: t, flying: true, slope: -0.1, skimming: false, tuck: 0, events: [])
+            #expect(coach.current == nil)
+            t += 0.1
+        }
+        #expect(shown == HintCoach.maxTries)
+        // A splash before any Perfect teaches landing, once.
+        var land = HintCoach(learned: ["fold", "open"])
+        let first = land.step(time: 0, flying: true, slope: 0, skimming: false, tuck: 0,
+                              events: [.touchdown(.splash, speed: 400, chain: 0)])
+        #expect(land.current == .land)
+        #expect(first == ["land"])
+    }
+
+    @Test func foldToFlyArmsFillsAndFires() {
+        var f = FoldToFly()
+        #expect(!f.update(u: 0, now: 0, cardAge: 0.2, closing: false).armedNow)     // the card is too new
+        _ = f.update(u: 0, now: 0.0, cardAge: 1, closing: false)
+        #expect(f.update(u: 0, now: 0.5, cardAge: 1.5, closing: false).armedNow)
+        #expect(abs(f.update(u: 0.35, now: 0.6, cardAge: 1.6, closing: false).fill - 0.5) < 1e-9)
+        _ = f.update(u: 0.8, now: 0.7, cardAge: 1.7, closing: false)
+        _ = f.update(u: 0.8, now: 0.96, cardAge: 1.96, closing: false)
+        #expect(f.phase == .folded)
+        #expect(f.update(u: 0.1, now: 1.2, cardAge: 2.2, closing: false).fired)
+        #expect(f.phase == .idle)
+        // Closing disarms.
+        var g = FoldToFly()
+        _ = g.update(u: 0, now: 0, cardAge: 1, closing: false)
+        _ = g.update(u: 0, now: 0.6, cardAge: 1.6, closing: false)
+        #expect(g.phase == .armed)
+        #expect(g.update(u: 0.9, now: 0.7, cardAge: 1.7, closing: true).fill == 0)
+        #expect(g.phase == .idle)
+    }
+
+    @Test func splitDeckAndCoverPoses() {
+        let tabletop = CGSize(width: 669, height: 951)
+        let cover = CGSize(width: 466, height: 678)
+        #expect(AppPoseRule.pose(canvas: tabletop, hingeSeen: true, isShut: false, inRun: true) == .deck)
+        #expect(AppPoseRule.pose(canvas: tabletop, hingeSeen: true, isShut: false, inRun: false) == .turn)
+        #expect(AppPoseRule.pose(canvas: cover, hingeSeen: true, isShut: false, inRun: true, coverFlying: true) == .deck)
+        #expect(AppPoseRule.pose(canvas: cover, hingeSeen: true, isShut: false, inRun: true) == .closed)
+        #expect(AppPoseRule.pose(canvas: cover, hingeSeen: true, isShut: false, inRun: false, coverFlying: true)
+                == .closed)
+        #expect(AppPoseRule.pose(canvas: CGSize(width: 402, height: 874), hingeSeen: false, isShut: false,
+                                 inRun: true) == .turn)
+        // The deck keeps the seated fold band (y 456–496) clear.
+        let inner = DeckLayout.make(canvas: tabletop)
+        #expect(inner.band.minY == 8)
+        #expect(inner.band.maxY <= 456)
+        #expect(inner.deck.minY >= 496)
+        #expect(inner.deck.maxY == 951)
+        let small = DeckLayout.make(canvas: cover)
+        #expect(small.band.height == 328)
+        #expect(small.deck.minY == 336)
+        #expect(small.deck.height == 678 - 336)
+    }
+
+    @Test func countdownWordsSitOnCoresTicks() {
+        let total = Tuning.restartCountdownDuration
+        let goAt = AppRules.shortCountdownGoAt(total: total)
+        let ticks = FlightSession.countdownTicks(duration: total)
+        #expect(ticks.count >= 2)
+        if ticks.count >= 2 { #expect(goAt == ticks[1].at) }
+        #expect(AppRules.shortCountdownWord(remaining: total, total: total) == "Ready")
+        #expect(AppRules.shortCountdownWord(remaining: total - goAt + 0.01, total: total) == "Ready")
+        #expect(AppRules.shortCountdownWord(remaining: total - goAt, total: total) == "Go")
+        #expect(AppRules.shortCountdownWord(remaining: 0.05, total: total) == "Go")
+    }
+
+    @Test func hudRules() {
+        #expect(AppRules.bestIn(meters: 5_700, best: 6_000, isFlight: true) == 300)
+        #expect(AppRules.bestIn(meters: 4_000, best: 6_000, isFlight: true) == nil)
+        #expect(AppRules.bestIn(meters: 5_700, best: 6_000, isFlight: false) == nil)
+        #expect(AppRules.bestIn(meters: 500, best: 900, isFlight: true) == nil)
+        #expect(AppRules.bestIn(meters: 6_100, best: 6_000, isFlight: true) == nil)
+        for km in [0, 1, 2, 3, 4, 6, 7] { #expect(!AppRules.milestoneToasts(km: km)) }
+        #expect(ChainPill.text(chain: 1, tailwind: false) == nil)
+        #expect(ChainPill.text(chain: 5, tailwind: false) == "×5")
+        #expect(ChainPill.text(chain: 5, tailwind: true) == "×5 · TAILWIND")
+        #expect(AppRules.countdownLine(touch: true, flat: true) == "Hold to dive · let go to soar")
+        #expect(AppRules.countdownLine(touch: false, flat: true) == "Bend it a little, like a book")
+        #expect(AppRules.countdownLine(touch: false, flat: false) == "Wings open, hold steady")
+    }
+
+    @Test func frameRateAndEffects() {
+        #expect(RootView.framesPerSecond(playing: true, thermalHot: false, lowPower: false) == 120)
+        #expect(RootView.framesPerSecond(playing: false, thermalHot: false, lowPower: false) == 60)
+        #expect(RootView.framesPerSecond(playing: true, thermalHot: true, lowPower: false) == 60)
+        #expect(RootView.framesPerSecond(playing: true, thermalHot: false, lowPower: true) == 60)
+        #expect(SceneAdapter.effectsQuality(thermalHot: false, lowPower: false) == 1)
+        #expect(SceneAdapter.effectsQuality(thermalHot: true, lowPower: false) == 0.7)
+        #expect(SceneAdapter.effectsQuality(thermalHot: false, lowPower: true) == 0.7)
+        #expect(AppHapticLevel.defaultLevel(isDuo: true) == .strong)
+        #expect(AppHapticLevel.defaultLevel(isDuo: false) == .normal)
+    }
+
+    @Test func designToScreenPoints() {
+        let c = canvas(951, 669, fold: true)
+        let top = c.screenPoint(CGPoint(x: 0, y: c.layout.size.height))
+        #expect(abs(top.y - (c.size.height - c.layout.size.height * c.scale) / 2) < 0.5)
+        let bottom = c.screenPoint(CGPoint(x: 0, y: 0))
+        #expect(bottom.y > top.y)
+        #expect(abs(c.screenPoint(CGPoint(x: c.layout.size.width / 2, y: 0)).x - c.size.width / 2) < 1)
+        // The deck canvas is one page: everything is fold-clear.
+        let deck = AppCanvas(size: CGSize(width: 669, height: 447), insets: EdgeInsets(),
+                             layout: ScreenLayout.make(canvas: CGSize(width: 669, height: 447), hasFold: false,
+                                                       mirrored: false), singlePage: true)
+        #expect(deck.leftPage == deck.rightPage)
+        #expect(deck.isFoldClear(CGRect(x: 300, y: 0, width: 100, height: 100)))
+    }
+
+    @Test func homeCopy() {
+        #expect(HomeView.captionText(duo: true, folded: false, flat: false)
+                == "Hold your Duo like a book. These are your wings.")
+        #expect(HomeView.captionText(duo: true, folded: true, flat: false) == "Fold to dive. Open to soar.")
+        #expect(HomeView.captionText(duo: true, folded: true, flat: true) == "Bend it a little, like a book.")
+        #expect(HomeView.captionText(duo: false, folded: false, flat: true) == "Press and hold the bird. That's a tuck.")
+        #expect(HomeView.captionText(duo: false, folded: true, flat: false) == "Hold to dive. Let go to soar.")
+        #expect(HomeView.flySubtitle(best: 0) == "Outfly the storm")
+        #expect(HomeView.flySubtitle(best: 6_420) == "Best 6.4 km")
+        #expect(ProgressRules.goalsLine(rank: 0, done: 1, total: 3, starFlocks: 0) == "1 of 3 · Fledgling")
+        #expect(ProgressRules.goalsLine(rank: GoalCatalog.maxRank, done: 0, total: 3, starFlocks: 2)
+                == "Storm Rider ★2")
+        #expect(ShareText.nextIn(seconds: 6 * 3600 + 12 * 60) == "6 h 12 m")
+        #expect(ShareText.nextIn(seconds: 59) == "1 m")
+        #expect(ShareText.nextIn(seconds: 0) == "1 m")
+        #expect(ShareText.nextInShort(seconds: 6 * 3600 + 59 * 60) == "6 h")
+        #expect(ShareText.nextInShort(seconds: 600) == "10 m")
+        let midnight = DailySeed.utc.startOfDay(for: Date()).addingTimeInterval(86_400 - 90)
+        #expect(abs(ShareText.secondsToNextDaily(now: midnight) - 90) < 0.5)
+    }
+
+    @Test func resultsCopy() {
+        #expect(ResultsView.classify(isDailyCard: true, dailyDay: 3, practice: false, title: "") == .dailyCard)
+        #expect(ResultsView.classify(isDailyCard: false, dailyDay: 3, practice: false, title: "") == .scoredDaily)
+        #expect(ResultsView.classify(isDailyCard: false, dailyDay: 3, practice: true, title: "") == .practiceDaily)
+        #expect(ResultsView.classify(isDailyCard: false, dailyDay: nil, practice: false, title: "First flight")
+                == .firstFlight)
+        #expect(ResultsView.overline(.scoredDaily, day: 298) == "Daily Flight #298")
+        #expect(ResultsView.overline(.firstFlight, day: nil) == "First flight")
+        #expect(ResultsView.bestLine(.firstFlight, showsNewBest: false, best: 2_100, previousBest: 0) == nil)
+        #expect(ResultsView.bestLine(.flight, showsNewBest: true, best: 7_000, previousBest: 6_420)
+                == "Previous best 6.4 km")
+        #expect(ResultsView.bestLine(.flight, showsNewBest: false, best: 6_420, previousBest: 6_420) == "Best 6.4 km")
+        #expect(ResultsView.countUp(meters: 4_000, t: 0, duration: 0.8) == 0)
+        #expect(ResultsView.countUp(meters: 4_000, t: 0.8, duration: 0.8) == 4_000)
+        let mid = ResultsView.countUp(meters: 4_000, t: 0.4, duration: 0.8)
+        #expect(mid > 3_000 && mid < 4_000)                  // ease-out expo: most of it early
+        #expect(ResultsView.countUp(meters: 4_000, t: 0.1, duration: 0) == 4_000)
+        #expect(ResultsView.streakText(streak: 3, nextIn: "6 h 12 m") == "3-day streak · next Daily in 6 h 12 m")
+        #expect(ResultsView.streakText(streak: 1, nextIn: "2 h 0 m") == "Next Daily in 2 h 0 m")
+        var summary = ResultSummary(result: makeRun(mode: .daily(day: 298, scored: true), perfects: 23,
+                                                    lastLighthouse: "Saltlight"),
+                                    outcome: RecordOutcome(), title: "Daily Flight #298", dailyDay: 298,
+                                    practice: false, share: "")
+        #expect(ShareCardView.subtitle(summary) == "Daily Flight #298 · 23 Perfects · past Saltlight")
+        #expect(ResultsView.smallLines(summary).isEmpty)
+        summary.outcome.newLogbook = ["Saltlight"]
+        summary.outcome.dailyGraceKept = true
+        summary.showsRestLine = true
+        #expect(ResultsView.smallLines(summary) == ["New in the logbook: Saltlight", "Calm sea: streak kept",
+                                                    "Long flight. Your wings can rest; the Daily will wait."])
+        #expect(RankUpBanner.newGoalsLine(rank: 1).hasPrefix("New goals: "))
+    }
+
+    @Test func pagesCopy() {
+        #expect(FlocksView.rankLine(rank: 1) == "Rank 2 of 15")
+        #expect(FlocksView.nextRankLine(rank: GoalCatalog.maxRank, unlocks: []) == nil)
+        #expect(FlocksView.nextRankLine(rank: 0, unlocks: ["Tern"]) == "Next rank: Tern")
+        #expect(FlocksView.logbookLine(count: 12, total: 40) == "Logbook 12 of 40")
+        #expect(BirdsView.nextUnlockRank([0, 1, 1, 3, 5], current: 1) == 3)
+        #expect(BirdsView.nextUnlockRank([0, 1], current: 4) == nil)
+        #expect(BirdsView.lockedLabel(unlockRank: 3, next: 3) == "Rank 4")
+        #expect(BirdsView.lockedLabel(unlockRank: 5, next: 3) == nil)
+        #expect(ClosedCard.dartWidth(.home) == 150)
+        #expect(ClosedCard.heroDistance(18_574) == "18.57 km")
+        #expect(ClosedCard.heroDistance(842) == "842 m")
+        #expect(ClosedCard.stormFill(1_500) == 0.5)
+        #expect(ClosedCard.stormFill(.nan) == 0)
+        #expect(ClosedCard.bestLine(meters: 4_000, best: 0) == "Your first flight")
+        #expect(ClosedCard.bestLine(meters: 5_500, best: 6_100) == "0.6 km to your best")
+        #expect(ClosedCard.bestLine(meters: 4_000, best: 6_100) == "Beat 6.1 km to set a best")
+        #expect(ClosedCard.bestLine(meters: 7_000, best: 6_100) == "Past your best")
+    }
+
+    @Test func migrationAndDailyGuards() throws {
+        let v1 = Data(#"{"version": 1, "rank": 20, "goalProgress": {"r0-reach": 0.5}, "hintsLearned": true, "bestMeters": 900}"#.utf8)
+        let data = try #require(ProgressStore.decode(v1))
+        #expect(data.version == ProgressData.currentVersion)
+        #expect(data.goalProgress.isEmpty)
+        #expect(data.rank == GoalCatalog.maxRank)
+        #expect(data.learnedHints == ["fold", "open"])
+        #expect(data.bestMeters == 900)
+        #expect(data.starFlocks == 0)
+        #expect(data.lastDailyDay == Int.min)
+        // QA-2 P2-8: a clock set back never scores an older Daily.
+        #expect(ProgressRules.dailyMayScore(day: 300, lastDailyDay: 300))
+        #expect(ProgressRules.dailyMayScore(day: 301, lastDailyDay: 300))
+        #expect(!ProgressRules.dailyMayScore(day: 299, lastDailyDay: 300))
+        #expect(ProgressRules.dailyMayScore(day: 1, lastDailyDay: Int.min))
+        let grace = ProgressRules.streakWithGrace(days: [3, 4, 6], today: 6)
+        #expect(grace.streak == 3 && grace.graceKept)
+        #expect(!ProgressRules.streakWithGrace(days: [5, 6], today: 6).graceKept)
+        #expect(ProgressRules.streakWithGrace(days: [Int.max - 1, Int.max], today: Int.max).streak == 2)
+    }
+
+    @Test func starFlocksPastTheTop() {
+        var data = ProgressData()
+        data.rank = 2
+        let stars: (Int) -> [Goal] = { n in
+            [Goal(id: "s\(n)", kind: .reachMeters, target: 500, text: "Fly 0.5 km")]
+        }
+        let out = ProgressRules.record(makeRun(meters: 900), into: &data, today: 1, goals: fakeGoals, maxRank: 2,
+                                       evaluate: fakeEvaluate, unlocks: noUnlocks, trailUnlocks: noTrails, stars: stars)
+        #expect(out.starEarned)
+        #expect(out.rankUp == nil)
+        #expect(data.rank == 2)
+        #expect(data.starFlocks == 1)
+        #expect(data.goalProgress["s0"] == nil)
+        #expect(ProgressRules.currentGoals(rank: GoalCatalog.maxRank, starFlocks: 1).count == 3)
+        #expect(ProgressRules.currentGoals(rank: 0, starFlocks: 9).map(\.id) == GoalCatalog.goals(forRank: 0).map(\.id))
+    }
+
+    @Test func logbookFillsFromLighthouses() {
+        var data = ProgressData()
+        let out = ProgressRules.record(makeRun(meters: 9_000, lighthouses: 2), into: &data, today: 1, goals: fakeGoals,
+                                       maxRank: 15, evaluate: fakeEvaluate, unlocks: noUnlocks, trailUnlocks: noTrails)
+        #expect(out.newLogbook.count == 2)
+        #expect(data.logbook.count == 2)
+        let again = ProgressRules.record(makeRun(meters: 9_000, lighthouses: 2), into: &data, today: 1,
+                                         goals: fakeGoals, maxRank: 15, evaluate: fakeEvaluate, unlocks: noUnlocks,
+                                         trailUnlocks: noTrails)
+        #expect(again.newLogbook.isEmpty)
+    }
+
+    #if DEBUG
+    @Test func roundThreeDemoKeys() {
+        let c = DemoConfig.parse("screen=cover;cover=midrun;titleTuck=0.8;folded;flat;dailyToday;rankUp;closing;"
+                                 + "holdReady;foldFill=0.6;orient=portrait")
+        #expect(c.screen == .cover)
+        #expect(c.coverState == .midrun)
+        #expect(c.titleTuck == 0.8)
+        #expect(c.folded && c.flat && c.dailyToday && c.rankUp && c.closing && c.holdReady && c.orientPortrait)
+        #expect(c.foldFill == 0.6)
+        #expect(DemoConfig.parse("screen=daily").effectiveScreen == .daily)
+        #expect(DemoConfig.parse("cover=nope").coverState == .home)
+        #expect(DemoConfig.parse("titleTuck=9").titleTuck == 1)
+    }
+    #endif
+}
+
+@MainActor
+struct RoundThreeStoreTests {
+    @Test func dailyEntriesKeepTheLargerAndTheCapSparesBests() {
+        let daily = GameCenterManager.Leaderboard.daily
+        let longest = GameCenterManager.Leaderboard.longest
+        var q: [String] = []
+        q = GameCenterManager.enqueue(GameCenterManager.encode(leaderboard: daily, score: 1_000, day: 300, token: "a"),
+                                      into: q)
+        q = GameCenterManager.enqueue(GameCenterManager.encode(leaderboard: daily, score: 2_000, day: 300, token: "b"),
+                                      into: q)
+        q = GameCenterManager.enqueue(GameCenterManager.encode(leaderboard: daily, score: 500, day: 300, token: "c"),
+                                      into: q)
+        #expect(q.count == 1)
+        #expect(GameCenterManager.parse(q[0])?.score == 2_000)
+        for i in 0..<25 {
+            q = GameCenterManager.enqueue(GameCenterManager.encode(leaderboard: longest, score: i, day: nil,
+                                                                   token: "l\(i)"), into: q, cap: 20)
+        }
+        #expect(q.count == 20)
+        #expect(q.compactMap { GameCenterManager.parse($0) }.allSatisfy { $0.leaderboard == longest })
+    }
+
+    @Test func hapticLevelPersistsOnlyWhenChosen() throws {
+        let suite = "swoop.tests.haptics.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let s = SettingsStore(defaults: defaults)
+        #expect(s.chosenHapticLevel == nil)
+        s.isDuo = true
+        #expect(s.hapticLevel == .strong)
+        s.hapticLevel = .off
+        let again = SettingsStore(defaults: defaults)
+        #expect(again.chosenHapticLevel == .off)
+        #expect(!again.hapticsOn)
+        // A v1 save with haptics off reads as a chosen Off.
+        let legacy = try #require(SettingsStore.decode(Data(#"{"hapticsOn": false}"#.utf8)))
+        #expect(legacy.hapticLevel == .off)
+        let fresh = try #require(SettingsStore.decode(Data("{}".utf8)))
+        #expect(fresh.hapticLevel == nil)
+        #expect(!fresh.tuckByTapping && !fresh.tapOfferAnswered)
+    }
 }

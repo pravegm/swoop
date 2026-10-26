@@ -915,4 +915,157 @@ struct CoreTests {
         #expect(d >= 0)
         #expect(FlightPilot.planBudget <= 4000)
     }
+
+    // MARK: Round 3
+
+    @Test func countdownTickSchedules() {
+        let full = FlightSession.countdownTicks(duration: 3.0)
+        #expect(full.map { (e: (tick: Int, at: Double)) -> Int in e.tick } == [3, 2, 1])
+        #expect(full.map { (e: (tick: Int, at: Double)) -> Double in e.at } == [0, 1, 2])
+        let restart = FlightSession.countdownTicks(duration: Tuning.restartCountdownDuration)
+        #expect(restart.map { (e: (tick: Int, at: Double)) -> Int in e.tick } == [2, 1])
+        #expect(restart.map { (e: (tick: Int, at: Double)) -> Double in e.at } == [0, 0.75])
+        #expect(FlightSession.countdownTicks(duration: 0).isEmpty)
+    }
+
+    /// Times (s since the session began) of the countdown events, at 120 Hz.
+    private func countdownTimes(_ s: FlightSession) -> [(event: FlightEvent, at: Double)] {
+        var out: [(event: FlightEvent, at: Double)] = []
+        var i: Int = 0
+        var started: Bool = false
+        while i < 120 * 5 && !started {
+            let before: Double = s.snapshot.time
+            for e in s.step(dt: 1.0 / 120.0, tuck: 0) {
+                switch e {
+                case .countdownTick, .started:
+                    out.append((event: e, at: before))
+                    if e == .started { started = true }
+                default:
+                    break
+                }
+            }
+            i += 1
+        }
+        return out
+    }
+
+    @Test func restartCountdownBeatsMatchReadyGo() {
+        // UX-C1 + the Feel/App beat clash (NEEDS.md): Ready at 0, Go at 0.75 s, the drop at 1.5 s.
+        let s = FlightSession(mode: .flight, seed: 5, bestMeters: 0, bird: .gull,
+                              countdown: Tuning.restartCountdownDuration)
+        #expect(s.countdownDuration == 1.5)
+        if case .countdown(let remaining) = s.snapshot.phase {
+            #expect(remaining == 1.5)
+        } else {
+            Issue.record("expected the countdown")
+        }
+        let ev = countdownTimes(s)
+        #expect(ev.map { (e: (event: FlightEvent, at: Double)) -> FlightEvent in e.event }
+                == [FlightEvent.countdownTick(2), FlightEvent.countdownTick(1), FlightEvent.started])
+        if ev.count == 3 {
+            #expect(ev[0].at < 0.01)
+            #expect(abs(ev[1].at - 0.75) < 0.01)
+            #expect(abs(ev[2].at - 1.5) < 0.01)
+        }
+        // The default stays the 3 s, 3-2-1 countdown on whole seconds.
+        let d = FlightSession(mode: .flight, seed: 5, bestMeters: 0, bird: .gull)
+        let full = countdownTimes(d)
+        #expect(full.count == 4)
+        if full.count == 4 {
+            #expect(abs(full[1].at - 1.0) < 0.01)
+            #expect(abs(full[2].at - 2.0) < 0.01)
+            #expect(abs(full[3].at - 3.0) < 0.01)
+        }
+        // A zero countdown drops at once.
+        let z = FlightSession(mode: .flight, seed: 5, bestMeters: 0, bird: .gull, countdown: 0)
+        #expect(z.step(dt: 1.0 / 120.0, tuck: 0) == [FlightEvent.started])
+    }
+
+    @Test func finishCaughtSkipsTheEnding() {
+        func caughtSession() -> FlightSession {
+            let s = FlightSession(mode: .flight, seed: 3, bestMeters: 0, bird: .gull)
+            var i: Int = 0
+            while i < 60 * 300 {
+                _ = s.step(dt: 1.0 / 60.0, tuck: 0)
+                if case .caught = s.snapshot.phase { break }
+                i += 1
+            }
+            return s
+        }
+        let skipped = caughtSession()
+        let played = caughtSession()
+        #expect(skipped.finishCaught() == [FlightEvent.finished])
+        #expect(skipped.isFinished)
+        #expect(skipped.finishCaught().isEmpty)
+        var i: Int = 0
+        while i < 60 * 5 && !played.isFinished {
+            _ = played.step(dt: 1.0 / 60.0, tuck: 0)
+            i += 1
+        }
+        #expect(skipped.result != nil)
+        #expect(skipped.result == played.result)
+        // Not caught yet: nothing happens.
+        let flying = flyingSession(seed: 2)
+        #expect(flying.finishCaught().isEmpty)
+        #expect(!flying.isFinished)
+    }
+
+    @Test func stormLeashKeepsTheStormNear() {
+        // UX-C3: a strong pilot can't bank a 30 km lead any more; the storm stays a few screens behind.
+        let s = flyingSession(seed: 1000)
+        var pilot = FlightPilot(skill: .perfect, seed: 1)
+        var maxGap: Double = 0
+        var i: Int = 0
+        while i < 120 * 180 && !s.isFinished {
+            _ = s.step(dt: 1.0 / 120.0, tuck: pilot.tuck(for: s.snapshot, sea: s.sea))
+            maxGap = max(maxGap, s.snapshot.gap)
+            i += 1
+        }
+        #expect(maxGap > Tuning.stormLeashGap)
+        #expect(maxGap < Tuning.stormLeashGap + 11000, "max gap \(maxGap)")
+        #expect(Tuning.stormLeashSpeed(gap: Tuning.stormLeashGap - 1) == 0)
+        #expect(abs(Tuning.stormLeashSpeed(gap: Tuning.stormLeashGap + 1000) - 1000 * Tuning.stormLeashRate) < 1e-9)
+    }
+
+    @Test func rankSevenDailyNeedsAFreshDaily() {
+        // UX-C2: rank 7's "Fly a Daily Flight" isn't met by a Daily flown long ago; rank 2's is.
+        let r7: Goal = GoalCatalog.goals(forRank: 7).first(where: { (g: Goal) -> Bool in g.kind == .dailyPlayed })
+            ?? Goal(id: "", kind: .dailyPlayed, target: 1, text: "")
+        let r2: Goal = GoalCatalog.goals(forRank: 2).first(where: { (g: Goal) -> Bool in g.kind == .dailyPlayed })
+            ?? Goal(id: "", kind: .dailyPlayed, target: 1, text: "")
+        #expect(r7.id == "r7-daily")
+        #expect(r7.text == "Fly a Daily Flight")
+        #expect(GoalEvaluator.progress(r7, run: result(), lifetimeMeters: 0, dailyPlayed: true) == 0)
+        #expect(GoalEvaluator.progress(r7, run: result(mode: .daily(day: 40, scored: true)), lifetimeMeters: 0,
+                                       dailyPlayed: true) == 1)
+        #expect(GoalEvaluator.progress(r2, run: result(), lifetimeMeters: 0, dailyPlayed: true) == 1)
+    }
+
+    @Test func ladderStretchAndStarFlocks() {
+        let totals: [Double] = GoalCatalog.ladder.joined().filter { (g: Goal) -> Bool in g.kind == .totalMeters }
+            .map { (g: Goal) -> Double in g.target }
+        #expect(totals.contains(400_000))
+        #expect(totals.contains(1_000_000))
+        #expect(GoalCatalog.goals(forRank: 9).contains(where: { (g: Goal) -> Bool in g.target == 400_000 }))
+        #expect(GoalCatalog.goals(forRank: 12).contains(where: { (g: Goal) -> Bool in g.target == 1_000_000 }))
+        #expect(GoalCatalog.starGoals(n: -1).isEmpty)
+        let top: [Goal] = GoalCatalog.goals(forRank: GoalCatalog.maxRank - 1)
+        var ids: Set<String> = []
+        var n: Int = 0
+        while n < 12 {
+            let star: [Goal] = GoalCatalog.starGoals(n: n)
+            #expect(star.count == 3)
+            #expect(Set(star.map { (g: Goal) -> String in g.kind.rawValue }).count == 3)
+            for g in star {
+                ids.insert(g.id)
+                #expect(!g.text.isEmpty)
+                if let same = top.first(where: { (t: Goal) -> Bool in t.kind == g.kind }) {
+                    #expect(g.target >= same.target * 1.49, "\(g.id) is not 1.5 × the top")
+                }
+            }
+            n += 1
+        }
+        #expect(ids.count == 36)
+        #expect(GoalCatalog.starGoals(n: 3) == GoalCatalog.starGoals(n: 3))
+    }
 }

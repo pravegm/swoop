@@ -46,6 +46,31 @@ enum ShareText {
 
     static func perfects(_ n: Int) -> String { n == 1 ? "1 Perfect" : "\(n) Perfects" }
 
+    /// "6 h 12 m" / "12 m" (never "0 m": under a minute reads "1 m"), rounded up to the minute.
+    static func nextIn(seconds: Double) -> String {
+        let s = seconds.isFinite ? max(seconds, 0) : 0
+        let minutes = max(Int((s / 60).rounded(.up)), 1)
+        let h = minutes / 60
+        let m = minutes % 60
+        if h == 0 { return "\(m) m" }
+        return "\(h) h \(m) m"
+    }
+
+    /// Home and the cover: "6 h" from an hour out, then "12 m" (never "0 m").
+    static func nextInShort(seconds: Double) -> String {
+        let s = seconds.isFinite ? max(seconds, 0) : 0
+        if s >= 3600 { return "\(Int((s / 3600).rounded(.down))) h" }
+        return "\(max(Int((s / 60).rounded(.up)), 1)) m"
+    }
+
+    /// Seconds until the next Daily (UTC midnight, `DailySeed.utc`).
+    static func secondsToNextDaily(now: Date) -> Double {
+        let cal = DailySeed.utc
+        let start = cal.startOfDay(for: now)
+        let next = cal.date(byAdding: .day, value: 1, to: start) ?? now.addingTimeInterval(86_400)
+        return max(next.timeIntervalSince(now), 0)
+    }
+
     /// The flight share line.
     static func flight(meters: Double, perfects: Int, lastLighthouse: String) -> String {
         "Swoop \(body(meters: meters, perfects: perfects, lastLighthouse: lastLighthouse))"

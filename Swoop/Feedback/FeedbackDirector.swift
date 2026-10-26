@@ -2,6 +2,29 @@ import Foundation
 import QuartzCore
 import UIKit
 
+/// Round 3: one-shot cues for states the App owns (`FeedbackDirector.cue(_:)`; UX-SPEC §2, §9, §10, F1/F4).
+enum FeelCue: Sendable, Equatable {
+    /// Home: the first fold of the title bird (≥ 18°): a soft wind swell.
+    case homeFold
+    /// Results: fold-to-fly armed (= `uiTap`) and fired (= `uiConfirm` plus a rising rush of air).
+    case foldArmed
+    case foldFired
+    /// The closing pause (< 95°): a falling breath. Call it alongside `silence()`.
+    case closing
+    /// The Ready ring appears after a pause or reopening: a rising breath.
+    case reopened
+    /// The Ready ring ends and the run goes on.
+    case go
+    /// The seated split deck starts (also the cover's "Keep flying here").
+    case splitDeck
+    /// "Fly with the fold?" back in book pose.
+    case bookPrompt
+    /// The results distance count-up: one tick per 0.5 km (step = 0, 1, 2…).
+    case resultsTick(Int)
+    /// A finger lands in touch play (iPhone only; ignored on a Duo).
+    case touchDown
+}
+
 /// Audio + haptics for Swoop (GAME-DESIGN §7). The App calls `start()` once at launch, sets the three toggles from its
 /// SettingsStore, then calls `handle(_:telemetry:)` every frame. Everything audible is synthesised in real time
 /// (`FeelSynth`); every touch is Core Haptics (`FeelHaptics`).
@@ -34,10 +57,35 @@ final class FeedbackDirector: FeedbackSink {
         }
     }
 
-    var hapticsOn: Bool = true {
+    /// Round 3 (F2): "Haptics: Off | Normal | Strong". Setting it counts as the player's choice; until then the
+    /// profile follows the device (`deviceHasFold`: Strong on a Duo, Normal elsewhere).
+    var hapticProfile: HapticProfile {
+        get { profile }
+        set {
+            profileChosen = true
+            applyProfile(newValue)
+        }
+    }
+
+    /// Backward compatible (R1/R2 Settings): `hapticProfile != .off`. Turning it on restores the last chosen profile,
+    /// or the device default.
+    var hapticsOn: Bool {
+        get { profile != .off }
+        set {
+            if !newValue {
+                applyProfile(.off)
+            } else if profile == .off {
+                applyProfile(profileChosen ? lastOnProfile : HapticProfile.defaultFor(hasFold: deviceHasFold))
+            }
+        }
+    }
+
+    /// The App sets this once a hinge has been seen (a Duo). It moves an unchosen profile to Strong and turns on the
+    /// iPhone-only touch-down click only where there is no fold.
+    var deviceHasFold: Bool = false {
         didSet {
-            guard oldValue != hapticsOn else { return }
-            haptics.enabled = hapticsOn
+            guard oldValue != deviceHasFold, !profileChosen, profile != .off else { return }
+            applyProfile(HapticProfile.defaultFor(hasFold: deviceHasFold))
         }
     }
 
@@ -65,6 +113,15 @@ final class FeedbackDirector: FeedbackSink {
     private var lastThunder: CFTimeInterval = -Double.infinity
     /// The Perfect chain as of the last touchdown (Round 2: only a splash breaks it).
     private var currentChain = 0
+    private var profile: HapticProfile = .normal
+    private var lastOnProfile: HapticProfile = .normal
+    private var profileChosen = false
+    private var lastLighthouse: CFTimeInterval = -Double.infinity
+    private var lastHomeFold: CFTimeInterval = -Double.infinity
+    private var lastClosing: CFTimeInterval = -Double.infinity
+    private var lastResultsTick: CFTimeInterval = -Double.infinity
+    /// Seconds around a lighthouse in which a milestone sparkle stays quiet (the bell and its card win).
+    static let milestoneLighthouseQuiet: Double = 3
 
     init() {
         // Menus play before any flight frame: start from an audible, empty bed (a master of 0 mutes one-shots too).
@@ -73,10 +130,16 @@ final class FeedbackDirector: FeedbackSink {
 
     private var master: Float { soundOn ? FeelAudioEngine.masterGain : 0 }
 
-    /// True when this touchdown broke a chain worth mourning: a splash after 2+ Perfects (a lone Perfect lost is not
-    /// worth a sound on top of the splash). Pure.
+    /// True when this touchdown broke a chain worth mourning: a splash after 3+ Perfects. Round 3: the same threshold
+    /// as the HUD's "×N lost" pill (UX §3), so the sound always has its picture. Pure.
     nonisolated static func chainBroke(previousChain: Int, quality: TouchdownQuality) -> Bool {
-        quality == .splash && previousChain >= 2
+        quality == .splash && previousChain >= 3
+    }
+
+    /// Round 3 (UX §3: km toasts only at 5, 10, 15 km…; no km toast near a lighthouse): the milestone sparkle follows
+    /// the toast, so it sounds only on those. Pure.
+    nonisolated static func milestoneAudible(km: Int, lighthouseNearby: Bool) -> Bool {
+        km > 0 && km % 5 == 0 && !lighthouseNearby
     }
 
     /// True while the engines idle (menus, a long pause).
@@ -88,7 +151,8 @@ final class FeedbackDirector: FeedbackSink {
         started = true
         audio.enabled = soundOn
         audio.respectSilentSwitch = respectSilentSwitch
-        haptics.enabled = hapticsOn
+        haptics.enabled = profile != .off
+        if profile != .off { haptics.profile = profile }
         audio.start()
         haptics.start()
         activationObserver = NotificationCenter.default.addObserver(
@@ -134,8 +198,77 @@ final class FeedbackDirector: FeedbackSink {
         haptics.update(telemetry: telemetry, now: now)
 
         for event in events {
+            if case .lighthouse = event { lastLighthouse = now }
+        }
+        for event in events {
             react(to: event, now: now)
         }
+    }
+
+    // MARK: - Round 3 cues (poses, the restart, Home; UX-SPEC §2, §9, §10)
+
+    /// A one-shot cue for a state the App owns. Every cue has sound (the Duo's taptic is weak, so haptics never stand
+    /// alone), except the iPhone touch-down click, which is a haptic by design.
+    func cue(_ cue: FeelCue) {
+        ensureStarted()
+        let now = CACurrentMediaTime()
+        switch cue {
+        case .homeFold:
+            guard now - lastHomeFold >= 1.5 else { return }
+            lastHomeFold = now
+            audio.play(FeelSoundBook.homeFold())
+            playHaptic(FeelHapticBook.homeFold)
+        case .foldArmed:
+            uiTap()
+        case .foldFired:
+            var sounds = FeelSoundBook.uiConfirm()
+            sounds.append(contentsOf: FeelSoundBook.foldFired())
+            audio.play(sounds)
+            playHaptic(FeelHapticBook.uiConfirm)
+        case .closing:
+            guard now - lastClosing >= 1 else { return }
+            lastClosing = now
+            audio.play(FeelSoundBook.closing())
+            playHaptic(FeelHapticBook.closing)
+        case .reopened:
+            audio.play(FeelSoundBook.reopened())
+            playHaptic(FeelHapticBook.reopened)
+        case .go:
+            audio.play(FeelSoundBook.go())
+            playHaptic(FeelHapticBook.go)
+        case .splitDeck:
+            audio.play(FeelSoundBook.splitDeck())
+            playHaptic(FeelHapticBook.uiConfirm)
+        case .bookPrompt:
+            audio.play(FeelSoundBook.bookPrompt())
+            playHaptic(FeelHapticBook.uiTap)
+        case .resultsTick(let step):
+            guard now - lastResultsTick >= 0.04 else { return }
+            lastResultsTick = now
+            audio.play(FeelSoundBook.resultsTick(step: step))
+            playHaptic(FeelHapticBook.resultsTick)
+        case .touchDown:
+            guard Self.touchDownPlays(deviceHasFold: deviceHasFold) else { return }
+            playHaptic(FeelHapticBook.touchDown)
+        }
+    }
+
+    /// F4: the touch-down click is for iPhones (no fold) only. Pure.
+    nonisolated static func touchDownPlays(deviceHasFold: Bool) -> Bool {
+        !deviceHasFold
+    }
+
+    private func playHaptic(_ cue: FeelHapticCue) {
+        haptics.play(FeelHapticBook.adapt(cue, to: profile))
+    }
+
+    private func applyProfile(_ newProfile: HapticProfile) {
+        profile = newProfile
+        if newProfile != .off {
+            lastOnProfile = newProfile
+            haptics.profile = newProfile
+        }
+        haptics.enabled = newProfile != .off
     }
 
     /// Fade the continuous layers out (pause, menus). One-shots already ringing play out; the engines idle after
@@ -155,20 +288,20 @@ final class FeedbackDirector: FeedbackSink {
     func uiTap() {
         ensureStarted()
         audio.play(FeelSoundBook.uiTap())
-        haptics.play(FeelHapticBook.uiTap)
+        playHaptic(FeelHapticBook.uiTap)
     }
 
     func uiConfirm() {
         ensureStarted()
         audio.play(FeelSoundBook.uiConfirm())
-        haptics.play(FeelHapticBook.uiConfirm)
+        playHaptic(FeelHapticBook.uiConfirm)
     }
 
     /// Rank up, a new best on the results card: a rising chime arpeggio and a celebratory pattern.
     func celebrate() {
         ensureStarted()
         audio.play(FeelSoundBook.celebrate())
-        haptics.play(FeelHapticBook.celebrate)
+        playHaptic(FeelHapticBook.celebrate)
     }
 
     // MARK: - Events
@@ -177,17 +310,17 @@ final class FeedbackDirector: FeedbackSink {
         switch event {
         case .countdownTick:
             audio.play(FeelSoundBook.countdownTick())
-            haptics.play(FeelHapticBook.countdownTick)
+            playHaptic(FeelHapticBook.countdownTick)
         case .started:
             caughtAt = -Double.infinity
             currentChain = 0
             audio.play(FeelSoundBook.started())
-            haptics.play(FeelHapticBook.started)
+            playHaptic(FeelHapticBook.started)
         case .launched(let speed):
             guard now - lastLaunch >= Self.launchGap else { return }
             lastLaunch = now
             audio.play(FeelSoundBook.launch(speed: speed))
-            haptics.play(FeelHapticBook.launch(speed: speed))
+            haptics.play(FeelHapticBook.launch(speed: speed, profile: profile))
         case .touchdown(let quality, let speed, let chain):
             // A Perfect and a splash always speak; repeats of the soft Good touch are thinned.
             let previousChain = currentChain
@@ -199,13 +332,13 @@ final class FeedbackDirector: FeedbackSink {
             switch quality {
             case .perfect:
                 // The haptic first: it must land on the App's hit-stop, which starts this very frame.
-                haptics.play(FeelHapticBook.perfect)
+                haptics.play(FeelHapticBook.perfect(for: profile))
                 audio.play(FeelSoundBook.perfect(chain: max(chain, 1), dice: &dice))
             case .good:
                 audio.play(FeelSoundBook.good(speed: speed, dice: &dice))
-                haptics.play(FeelHapticBook.good)
+                playHaptic(FeelHapticBook.good)
             case .splash:
-                haptics.play(FeelHapticBook.splash)
+                playHaptic(FeelHapticBook.splash)
                 audio.play(FeelSoundBook.splash(speed: speed, dice: &dice))
                 if Self.chainBroke(previousChain: previousChain, quality: quality) {
                     audio.play(FeelSoundBook.chainBreak(previousChain: previousChain, dice: &dice))
@@ -213,35 +346,37 @@ final class FeedbackDirector: FeedbackSink {
             }
         case .tailwindStarted:
             audio.play(FeelSoundBook.tailwindStarted(dice: &dice))
-            haptics.play(FeelHapticBook.tailwind)
+            playHaptic(FeelHapticBook.tailwind)
         case .tailwindEnded:
             audio.play(FeelSoundBook.tailwindEnded())
         case .lighthouse(let index, _):
             audio.play(FeelSoundBook.lighthouse(index: index, dice: &dice))
-            haptics.play(FeelHapticBook.lighthouse)
+            playHaptic(FeelHapticBook.lighthouse)
         case .cloudTouched:
             guard now - lastCloud >= Self.cloudGap else { return }
             lastCloud = now
             audio.play(FeelSoundBook.cloudTouched(dice: &dice))
-            haptics.play(FeelHapticBook.cloudTouched)
-        case .milestone:
+            playHaptic(FeelHapticBook.cloudTouched)
+        case .milestone(let km):
+            let nearby = now - lastLighthouse < Self.milestoneLighthouseQuiet
+            guard Self.milestoneAudible(km: km, lighthouseNearby: nearby) else { return }
             audio.play(FeelSoundBook.milestone(dice: &dice))
-            haptics.play(FeelHapticBook.milestone)
+            playHaptic(FeelHapticBook.milestone)
         case .newBest:
             audio.play(FeelSoundBook.newBest(dice: &dice))
-            haptics.play(FeelHapticBook.newBest)
+            playHaptic(FeelHapticBook.newBest)
         case .stormClose:
             guard now - lastThunder >= Self.thunderGap else { return }
             lastThunder = now
             audio.play(FeelSoundBook.thunder(dice: &dice))
-            haptics.play(FeelHapticBook.thunder)
+            playHaptic(FeelHapticBook.thunder)
         case .caught:
             caughtAt = now
             // The wind glides out under the rain swell and the calm pad.
             audio.setBed(FeelSoundBook.idleBed(master: master, glide: FeelSoundBook.caughtGlide))
             lastBedSend = now
             audio.play(FeelSoundBook.caught(dice: &dice))
-            haptics.play(FeelHapticBook.caught)
+            playHaptic(FeelHapticBook.caught)
         case .finished:
             break // the calm pad from `caught` is still ringing; the results card may call `celebrate()`
         }

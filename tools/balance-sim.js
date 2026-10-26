@@ -38,10 +38,13 @@ const T = {
   launchMargin: 0.04,
   launchGrace: 0.1,
   stormBaseSpeed: 480,
-  stormAccel: 18,
-  stormCruiseSpeed: 1800,
+  stormAccel: 12,
+  stormCruiseSpeed: 1300,
   stormLateAccel: 3.5,
   stormMaxSpeed: 3200,
+  // R3 leash: beyond stormLeashGap the storm closes the excess gap at stormLeashRate per second (always in view).
+  stormLeashGap: 9000,
+  stormLeashRate: 0.5,
   gapStart: 2400,
   fullLead: 3000,
   perfectGapBonus: 120,
@@ -242,6 +245,7 @@ function stormSpeed(t) {
   return Math.min(T.stormMaxSpeed, T.stormCruiseSpeed + T.stormLateAccel * (t - cruiseT));
 }
 function assistedAlpha(beta, phi) { const a = T.landingAssistDeg * Math.PI / 180; const b = beta + clamp(phi - beta, -a, a); return Math.abs(b - phi) * 180 / Math.PI; }
+function stormLeash(gap) { return T.stormLeashRate * Math.max(0, gap - T.stormLeashGap); }
 function gEff(u) { return T.gravity * (1 + T.tuckGravityFactor * u); }
 function gAir(u) { return T.gravity * (1 + T.airTuckGravityFactor * u); }
 function liftAccel(u, vx, vy) { return vy < 0 ? (1 - u) * Math.min(T.liftMaxFraction * T.gravity, T.liftCoefficient * vx * vx) : 0; }
@@ -265,7 +269,7 @@ class FlightSession {
     this.chain = 0; this.bestChain = 0; this.perfects = 0; this.goods = 0; this.splashes = 0; this.tailwinds = 0;
     this.tailwindLeft = 0; this.lighthouses = 0; this.cloudTouches = 0; this.cloudArmed = true;
     this.maxSpeed = 0; this.maxAlt = 0; this.caughtElapsed = 0; this.finished = false; this.airTime = 0;
-    this.launches = 0; this.skimTime = 0; this.tailwindFadeLeft = 0;
+    this.launches = 0; this.skimTime = 0; this.tailwindFadeLeft = 0; this.longestClean = 0; this.lastSplashX = this.x;
   }
   snapshot() {
     const sp = Math.hypot(this.vx, this.vy);
@@ -302,7 +306,7 @@ class FlightSession {
     if (this.tailwindLeft > 0) { this.tailwindLeft -= dt; if (this.tailwindLeft <= 0) { this.tailwindLeft = 0; this.tailwindFadeLeft = T.tailwindFade; ev.push('tailwindEnded'); } }
     // storm
     if (this.mode === 'attract') this.stormX = this.x - T.attractStormLag;
-    else this.stormX += stormSpeed(this.flightTime) * dt;
+    else this.stormX += (stormSpeed(this.flightTime) + stormLeash(this.x - this.stormX)) * dt;
     while (this.x >= Lighthouses.x(this.lighthouses)) { this.lighthouses++; this.stormX -= T.lighthouseGapBonus; ev.push('lighthouse'); }
     const alt = this.y - this.sea.height(this.x);
     if (this.cloudArmed && this.y >= T.cloudHeight) { this.cloudArmed = false; this.cloudTouches++; ev.push('cloud'); }
@@ -386,7 +390,7 @@ class FlightSession {
         }
         this.tailwindLeft = T.tailwindDuration;
       }
-    } else if (q === 'good') { this.goods++; } else { this.chain = 0; this.splashes++; }
+    } else if (q === 'good') { this.goods++; } else { this.chain = 0; this.splashes++; this.longestClean = Math.max(this.longestClean, this.x - this.lastSplashX); this.lastSplashX = this.x; }
     ev.push(q);
   }
 }
@@ -556,17 +560,20 @@ function runOne(skill, seed, dt, cap) {
   const pilot = new FlightPilot(skill, seed * 7 + 1);
   let t = 0; let snap = s.snapshot();
   const counts = { perfect: 0, good: 0, splash: 0, launched: 0, tailwindStarted: 0 };
+  const gaps = []; let nextGap = 0; // gap / fullLead, sampled every 0.25 s of flight (UX-C3)
   while (!s.finished && t < cap + 3) {
     const tuck = pilot.tuck(snap, s.sea);
     const ev = s.step(dt, tuck);
     for (const e of ev) if (counts[e] !== undefined) counts[e]++;
     t += dt; snap = s.snapshot();
+    if (s.phase === 'flying' && s.flightTime >= nextGap) { gaps.push((s.x - s.stormX) / T.fullLead); nextGap += 0.25; }
     if (s.phase === 'caught' || s.finished) break;
   }
   const sec = s.phase === 'flying' ? s.flightTime : (s.caughtAt || s.flightTime);
   const x = s.caughtX !== undefined ? s.caughtX : s.x;
   return { sec, meters: x / 10, perfects: s.perfects, splashes: s.splashes, goods: s.goods, chain: s.bestChain,
-    tail: s.tailwinds, maxSpeed: s.maxSpeed, maxAlt: s.maxAlt, clouds: s.cloudTouches, lh: s.lighthouses, capped: s.phase === 'flying' };
+    tail: s.tailwinds, maxSpeed: s.maxSpeed, maxAlt: s.maxAlt, clouds: s.cloudTouches, lh: s.lighthouses, capped: s.phase === 'flying', gaps,
+    clean: Math.max(s.longestClean, x - s.lastSplashX) / 10 };
 }
 function pct(a, p) { const b = a.slice().sort((x, y) => x - y); const i = (b.length - 1) * p; const lo = Math.floor(i), hi = Math.ceil(i); return b[lo] + (b[hi] - b[lo]) * (i - lo); }
 
@@ -586,6 +593,12 @@ function main() {
       `medianMeters=${pct(m, .5).toFixed(0)} perfects/min=${pct(ppm, .5).toFixed(1)} splashes/min=${pct(rs.map(r => r.splashes / Math.max(r.sec / 60, 1e-6)), .5).toFixed(1)} ` +
       `good/min=${avg(r => r.goods / (r.sec / 60)).toFixed(1)} chain=${avg(r => r.chain).toFixed(1)} tail=${avg(r => r.tail).toFixed(1)} vmax=${avg(r => r.maxSpeed).toFixed(0)} ` +
       `alt=${avg(r => r.maxAlt).toFixed(0)} clouds=${avg(r => r.clouds).toFixed(1)} lh=${avg(r => r.lh).toFixed(1)} capped=${rs.filter(r => r.capped).length}`);
+    const allGaps = [].concat(...rs.map(r => r.gaps));
+    const g50 = pct(allGaps, .5);
+    // UX-C3: where the lead meter sits. The App draws gap / (headroom · fullLead); headroom = p50 / 0.6 puts the
+    // median at 60 %.
+    console.log(`SWOOP-GAP skill=${sk} gap/fullLead p25=${pct(allGaps, .25).toFixed(2)} p50=${g50.toFixed(2)} ` +
+      `p75=${pct(allGaps, .75).toFixed(2)} headroom-for-p50-at-60%=${(g50 / 0.6).toFixed(2)}`);
     if (args.v) console.log('   secs', secs.map(x => x.toFixed(0)).join(' '));
   }
 }
@@ -609,4 +622,4 @@ function seaCheck(args) {
 }
 
 if (require.main === module) main();
-module.exports = { T, SKILLS, SeaProfile, FlightSession, FlightPilot, SeededRandom, runOne };
+module.exports = { stormLeash, T, SKILLS, SeaProfile, FlightSession, FlightPilot, SeededRandom, runOne };

@@ -21,9 +21,9 @@ struct SwoopPages<Left: View, Right: View>: View {
                 .frame(width: info.size.width, height: info.size.height)
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 12) {
-                    SwoopIconButton(systemName: "chevron.left", label: "Back", action: onBack)
+                    SwoopIconButton(systemName: "chevron.left", compact: info.isCompact, label: "Back", action: onBack)
                     Text(title)
-                        .font(SwoopTheme.display(info.isCompact ? 28 : 34))
+                        .font(SwoopType.title(info.isCompact))
                         .foregroundStyle(SwoopTheme.foam)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
@@ -52,9 +52,9 @@ struct SwoopPages<Left: View, Right: View>: View {
             .frame(width: rp.width, height: info.size.height)
             .position(x: rp.midX, y: info.size.height / 2)
             if info.hasFold {
-                // The crease as a faint glint, so the two pages read as one spread.
-                LinearGradient(colors: [SwoopTheme.gold.opacity(0), SwoopTheme.gold.opacity(0.10),
-                                        SwoopTheme.gold.opacity(0)],
+                // The crease as a faint neutral glint, so the two pages read as one spread (ART A9: no gold glows).
+                LinearGradient(colors: [SwoopTheme.foam.opacity(0), SwoopTheme.foam.opacity(0.06),
+                                        SwoopTheme.foam.opacity(0)],
                                startPoint: .leading, endPoint: .trailing)
                     .frame(width: max(info.foldMaxX - info.foldMinX, 1), height: info.size.height)
                     .position(x: (info.foldMinX + info.foldMaxX) / 2, y: info.size.height / 2)
@@ -65,15 +65,13 @@ struct SwoopPages<Left: View, Right: View>: View {
     }
 }
 
-/// A section heading on a page.
+/// A section heading on a page (an overline: caps, tracked, `mist`).
 struct PageHeading: View {
     let text: String
+    var compact: Bool = false
 
     var body: some View {
-        Text(text.uppercased())
-            .font(SwoopTheme.text(12, .heavy))
-            .kerning(1)
-            .foregroundStyle(SwoopTheme.mist)
+        SwoopOverline(text: text, compact: compact)
             .padding(.leading, 4)
             .padding(.top, 6)
     }

@@ -143,10 +143,12 @@ final class SceneRingFX {
     var endScale: CGFloat = 1
     var peakAlpha: CGFloat = 1
     var active = false
+    /// Rides with the bird (the Perfect ring), or stays where it was dropped (the ripple).
+    var rides = false
 
     init() {
-        // Drawn at a 200-pt width (a flat ellipse lying on the water) and scaled, so the stroke thickens as it grows.
-        node = SKShapeNode(ellipseOf: CGSize(width: 200, height: 44))
+        // Drawn at a 200-pt width (a 1 : 0.32 ellipse lying on the water) and scaled, so the stroke thickens as it grows.
+        node = SKShapeNode(ellipseOf: CGSize(width: 200, height: 200 * SceneLook.ringAspect))
         node.fillColor = .clear
         node.lineWidth = 7
         node.isHidden = true

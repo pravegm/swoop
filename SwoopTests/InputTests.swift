@@ -293,6 +293,31 @@ struct InputTests {
         #expect(source.tuck(at: 10.1) == tuck)
     }
 
+    // MARK: Flat pose (Round 3, UX §9)
+
+    @Test func flatPoseIsTimedFromTheLastReading() {
+        let source = HingeTuckSource(logs: false)
+        #expect(source.flatDuration(at: 1) == 0)
+        #expect(source.timeSinceFlat(at: 1) == Double.infinity)
+        source.ingest(angleDegrees: 160, at: 1)
+        #expect(source.flatDuration(at: 2) == 0)
+        #expect(source.timeSinceFlat(at: 2) == Double.infinity)
+        source.ingest(angleDegrees: 176, at: 3)
+        // The Duo sends nothing while still: the timer runs on from the last reading.
+        #expect(abs(source.flatDuration(at: 4.5) - 1.5) < 1e-9)
+        #expect(source.timeSinceFlat(at: 4.5) == 0)
+        #expect(source.inFlatBlurGuard(at: 4.5) == false)
+        // Hysteresis: 174° is still flat (it only leaves under 173°).
+        source.ingest(angleDegrees: 174, at: 5)
+        #expect(abs(source.flatDuration(at: 5) - 2) < 1e-9)
+        source.ingest(angleDegrees: 168, at: 6)
+        #expect(source.flatDuration(at: 6.5) == 0)
+        #expect(abs(source.timeSinceFlat(at: 7) - 1) < 1e-9)
+        // The 2.2 s fold-blur guard after leaving flat.
+        #expect(source.inFlatBlurGuard(at: 7))
+        #expect(source.inFlatBlurGuard(at: 8.5) == false)
+    }
+
     // MARK: Touch
 
     @Test func touchRampsUpIn120msAndDownIn100ms() {
@@ -300,36 +325,99 @@ struct InputTests {
         #expect(touch.tuck(at: 10) == 0)
         touch.began(at: 10)
         #expect(touch.tuck(at: 10) == 0)
-        #expect(abs(touch.tuck(at: 10.06) - 0.5) < 1e-6)
+        // Round 3 (UX §10): an ease-out ramp answers at once (44 % in 30 ms) and lands softly.
+        #expect(touch.tuck(at: 10.03) > 0.4)
+        #expect(abs(touch.tuck(at: 10.06) - 0.75) < 1e-6)
         #expect(abs(touch.tuck(at: 10.12) - 1) < 1e-6)
         #expect(touch.tuck(at: 11) == 1)
-        // A smooth, monotonic attack.
+        // A smooth, monotonic attack whose steps shrink as it lands.
         var previous: Double = -1
+        var previousStep: Double = 1
         for index in 0...24 {
             let value = touch.tuck(at: 10 + 0.005 * Double(index))
             #expect(value >= previous)
+            if index > 0 {
+                let step = value - previous
+                #expect(step <= previousStep + 1e-9)
+                previousStep = step
+            }
             previous = value
         }
         touch.ended(at: 11)
-        #expect(abs(touch.tuck(at: 11.05) - 0.5) < 1e-6)
+        #expect(abs(touch.tuck(at: 11.05) - 0.25) < 1e-6)
         #expect(touch.tuck(at: 11.1) < 1e-6)
         #expect(touch.tuck(at: 12) == 0)
+        #expect(TouchTuckRamp.easeOut(0) == 0)
+        #expect(TouchTuckRamp.easeOut(1) == 1)
+        #expect(TouchTuckRamp.easeOut(2) == 1)
     }
 
     @Test func touchRepressMidReleaseCarriesOnWithoutAJump() {
         let touch = TouchTuckSource()
         touch.began(at: 20)
+        let beforeRelease = touch.tuck(at: 20.03)
         touch.ended(at: 20.03)
-        #expect(abs(touch.tuck(at: 20.03) - FeelMath.smoothstep(0.25)) < 1e-6)
+        #expect(abs(touch.tuck(at: 20.03) - beforeRelease) < 1e-12)
+        let beforePress = touch.tuck(at: 20.04)
+        #expect(beforePress < beforeRelease)
         touch.began(at: 20.04)
-        #expect(abs(touch.tuck(at: 20.04) - FeelMath.smoothstep(0.15)) < 1e-6)
+        #expect(abs(touch.tuck(at: 20.04) - beforePress) < 1e-12)
         #expect(touch.isHolding)
-        #expect(abs(touch.tuck(at: 20.04 + 0.12 * 0.85 + 0.001) - 1) < 1e-9)
+        // The rest of the stroke takes the rest of the attack: fully tucked within 0.12 s.
+        #expect(abs(touch.tuck(at: 20.04 + 0.12) - 1) < 1e-9)
         // Double presses and stray releases are ignored.
         touch.began(at: 20.5)
         #expect(touch.tuck(at: 20.5) == 1)
         touch.ended(at: 21)
         touch.ended(at: 21.02)
-        #expect(abs(touch.tuck(at: 21.05) - 0.5) < 1e-6)
+        #expect(abs(touch.tuck(at: 21.05) - 0.25) < 1e-6)
+    }
+
+    @Test func touchAttackIsTunable() {
+        let phone = TouchTuckSource(attack: TouchTuckSource.phoneAttack)
+        #expect(phone.attack == 0.09)
+        phone.began(at: 0)
+        #expect(abs(phone.tuck(at: 0.09) - 1) < 1e-6)
+        #expect(phone.tuck(at: 0.045) > 0.7)
+        let nonsense = TouchTuckSource(attack: 0, release: Double.nan)
+        #expect(nonsense.attack == TouchTuckSource.defaultAttack)
+        #expect(nonsense.release == TouchTuckSource.defaultRelease)
+    }
+
+    /// F3: "Tuck by: Tapping" (Switch Control, VoiceOver, tired hands) toggles with the same ramps.
+    @Test func tapToTuckTogglesAndIgnoresReleases() {
+        let touch = TouchTuckSource()
+        touch.tapToggles = true
+        touch.began(at: 30)
+        touch.ended(at: 30.05)
+        #expect(touch.isHolding)
+        #expect(touch.tuck(at: 30.2) == 1)
+        touch.began(at: 31)
+        touch.ended(at: 31.02)
+        #expect(touch.isHolding == false)
+        #expect(touch.tuck(at: 31.2) == 0)
+        // Direct control (a Switch Control select, a VoiceOver adjustable).
+        touch.toggle(at: 32)
+        #expect(abs(touch.tuck(at: 32.06) - 0.75) < 1e-6)
+        touch.setTucked(false, at: 33)
+        #expect(touch.tuck(at: 33.2) == 0)
+        touch.setTucked(true, at: 34)
+        // Switching back to holding while tucked lets go, so a tuck can never get stuck on.
+        touch.tapToggles = false
+        #expect(touch.isHolding == false)
+    }
+
+    @Test func combinedSourceTakesTheLargerTuck() {
+        let hinge = HingeTuckSource(logs: false)
+        let touch = TouchTuckSource()
+        let both = CombinedTuckSource(primary: hinge, assist: touch)
+        #expect(both.tuck(at: 40) == 0)
+        touch.setTucked(true, at: 40)
+        #expect(both.tuck(at: 40.2) == 1)
+        touch.setTucked(false, at: 41)
+        hinge.ingest(angleDegrees: 142, at: 41)
+        let value = both.tuck(at: 41.5)
+        #expect(value > 0.3)
+        #expect(value < 0.7)
     }
 }

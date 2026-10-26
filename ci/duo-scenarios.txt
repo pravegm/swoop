@@ -17,3 +17,29 @@
 14-caught|mode=flight;seed=7;autopilot=novice;lead=0.03;freezeOn=caught;freezeAfter=0|20
 15-perfect-storm|mode=flight;seed=7;autopilot=perfect;chain=2;lead=0.25;freezeOn=perfect;freezeAfter=0;freezeDelay=0.12|24
 16-tailwind-callout|mode=flight;seed=7;autopilot=perfect;chain=2;freezeOn=tailwind;freezeAfter=0;freezeDelay=0.12|24
+# Round 3: the Duo states (UX §9 D1–D8) and the new first-60-seconds beats. The cover frames force the closed pose on
+# the inner display (the cover display itself can't be driven from simctl); `orient=portrait` asks for the seated
+# split deck.
+17-home-folded|screen=home;progress=mid;folded;titleTuck=0.85|5
+18-home-flat|screen=home;progress=mid;flat|5
+19-home-fresh|screen=home|5
+20-countdown|mode=flight;seed=7;hints=fresh;freezeOn=countdown|6
+21-countdown-flat|mode=flight;seed=7;flat;freezeOn=countdown|6
+22-ready-go|mode=flight;seed=7;shortCountdown;freezeOn=countdown|6
+23-hint-fold|mode=flight;seed=7;hints=fresh;autopilot=casual;freezeAt=1.2|7
+24-chain-lost|mode=flight;seed=7;autopilot=novice;chain=3;freezeOn=splash;freezeAfter=0;freezeDelay=0.3|24
+25-results-first|screen=results;seed=7;progress=fresh;autopilot=casual|8
+26-results-rankup|screen=results;seed=7;progress=mid;rankUp;autopilot=casual|8
+27-results-daily|screen=results;mode=daily;progress=mid;autopilot=expert|10
+28-results-foldfill|screen=results;seed=7;progress=mid;foldFill=0.6;autopilot=casual|8
+29-daily-card|screen=daily;progress=mid;dailyToday|5
+30-cover-fresh|screen=cover|4
+31-cover-home|screen=cover;progress=mid;dailyToday|4
+32-cover-midrun|screen=cover;cover=midrun;mode=flight;seed=7;progress=mid;autopilot=perfect;skipCountdown|6
+33-cover-results|screen=cover;cover=results;seed=7;progress=mid;autopilot=casual|8
+34-seated-deck|mode=flight;seed=7;orient=portrait;autopilot=perfect;skipCountdown;freezeAt=6|12
+35-closing|mode=flight;seed=7;closing;autopilot=perfect;skipCountdown|6
+36-reopened-ready|mode=flight;seed=7;holdReady;autopilot=perfect;skipCountdown|6
+37-settings|screen=settings|4
+38-goals-late|screen=goals;progress=late|5
+39-birds-fresh|screen=birds;progress=fresh|5

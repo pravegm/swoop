@@ -99,15 +99,33 @@ final class SceneProps {
                                      CGPoint(x: -12, y: 118)])
         shadePath.closeSubpath()
         let shadeNode = SKShapeNode(path: shadePath)
-        shadeNode.fillColor = UIColor(white: 0, alpha: 0.16)
+        shadeNode.fillColor = UIColor(white: 0, alpha: 0.20)
         shadeNode.strokeColor = .clear
         shadeNode.zPosition = 1.3
         lighthouseRoot.addChild(shadeNode)
+        // Two-tone shading (ART-S13): the sun-facing side ahead +15 %.
+        let litPath = CGMutablePath()
+        litPath.addLines(between: [CGPoint(x: 5, y: 4), CGPoint(x: 17, y: 4), CGPoint(x: 12, y: 118),
+                                   CGPoint(x: 4, y: 118)])
+        litPath.closeSubpath()
+        let litNode = SKShapeNode(path: litPath)
+        litNode.fillColor = UIColor(white: 1, alpha: 0.15)
+        litNode.strokeColor = .clear
+        litNode.zPosition = 1.3
+        lighthouseRoot.addChild(litNode)
+        // A foam ring where the rock meets the far sea (drawn over the far-front layer).
+        let foamRing = SKShapeNode(ellipseOf: CGSize(width: 214, height: 12))
+        foamRing.fillColor = .clear
+        foamRing.strokeColor = UIColor(white: 1, alpha: 0.55)
+        foamRing.lineWidth = 2
+        foamRing.position = CGPoint(x: 2, y: -4)
+        foamRing.zPosition = 0.9
+        lighthouseRoot.addChild(foamRing)
 
         lamp.blendMode = .add
         lamp.colorBlendFactor = 1
         lamp.color = UIColor(red: 1.0, green: 0.86, blue: 0.55, alpha: 1)
-        lamp.size = CGSize(width: 120, height: 120)
+        lamp.size = CGSize(width: SceneLook.lampGlowSize, height: SceneLook.lampGlowSize)
         lamp.position = CGPoint(x: 0, y: 131)
         lamp.zPosition = 2
         lighthouseRoot.addChild(lamp)
@@ -115,7 +133,7 @@ final class SceneProps {
         beam.blendMode = .add
         beam.colorBlendFactor = 1
         beam.color = UIColor(red: 1.0, green: 0.92, blue: 0.70, alpha: 1)
-        beam.size = CGSize(width: 560, height: 70)
+        beam.size = CGSize(width: 520, height: 64)
         beam.position = CGPoint(x: 0, y: 131)
         beam.zPosition = 1.9
         lighthouseRoot.addChild(beam)
@@ -149,19 +167,20 @@ final class SceneProps {
         buoyRoot.isHidden = true
 
         for _ in 0..<8 {
-            let c = SKSpriteNode(texture: SceneTextures.cloud)
+            let c = SKSpriteNode(texture: SceneTextures.cloudStreak)
             c.colorBlendFactor = 1
             cloudRoot.addChild(c)
             clouds.append(c)
         }
     }
 
-    func apply(sky: Sky) {
-        let stone = ScenePaint.darker(sky.seaFar.mixed(with: sky.storm, 0.35), 0.45)
+    func apply(palette p: ScenePalette) {
+        // The rock sits between the two far layers in value (ART §3), its sun-facing rim lit.
+        let stone = p.farFront.mixed(with: p.nearDeep, 0.55)
         rock.fillColor = ScenePaint.ui(stone)
         rock.strokeColor = .clear
-        rockRim.strokeColor = ScenePaint.ui(ScenePaint.lighter(stone, 0.25).mixed(with: sky.sun, 0.2), alpha: 0.8)
-        let tint = ScenePaint.ui(sky.horizon.mixed(with: ScenePaint.white, 0.62).mixed(with: sky.zenith, 0.08))
+        rockRim.strokeColor = ScenePaint.ui(p.horizon, alpha: 0.7)
+        let tint = ScenePaint.ui(p.cloud)
         for c in clouds { c.color = tint }
     }
 
@@ -189,11 +208,12 @@ final class SceneProps {
         beamPhase += dt * (SceneLook.beamSpeed + 3.2 * sweep)
         let c = cos(beamPhase)
         // The beam turns about the tower: long to one side, foreshortened as it faces us (the lamp flares), the other.
+        // A soft cone, α ≤ 0.25 (a little more during the pass sweep).
         beam.xScale = c
         let facing = pow(1 - abs(c), 4)
-        beam.alpha = (0.18 + 0.55 * sweep) * (0.3 + 0.7 * abs(c))
-        lamp.alpha = min(1, 0.55 + 0.45 * facing + 0.3 * sweep)
-        lamp.setScale(1 + 0.5 * facing + 0.6 * sweep)
+        beam.alpha = (SceneLook.beamAlpha * (0.4 + 0.6 * abs(c))) * (1 + 0.6 * sweep)
+        lamp.alpha = min(1, 0.6 + 0.4 * facing + 0.3 * sweep)
+        lamp.setScale(1 + 0.6 * facing + 0.5 * sweep)
         sweep = max(0, sweep - dt * 0.4)
     }
 
@@ -222,11 +242,11 @@ final class SceneProps {
             let h2 = SceneRNG.hash(ci, 9)
             let h3 = SceneRNG.hash(ci, 17)
             let seaX = (Double(ci) + 0.6 * Double(h1)) * cell
-            let height = 210 + 60 * h2
-            c.size = CGSize(width: 620 + 240 * h3, height: height)
-            // The texture's puffs fill about its lower 70 %: centre it so that part starts at the band's bottom.
-            c.position = CGPoint(x: CGFloat(seaX - originX), y: bottom + height * 0.42 + 30 * h1)
-            c.alpha = 0.62 + 0.2 * h3
+            // Long, flat-bottomed lit banks (no puffballs), overlapping, their undersides at the band's bottom.
+            let height = 120 + 50 * h2
+            c.size = CGSize(width: 700 + 260 * h3, height: height)
+            c.position = CGPoint(x: CGFloat(seaX - originX), y: bottom + height * 0.40 + 24 * h1)
+            c.alpha = 0.5 + 0.2 * h3
         }
     }
 }

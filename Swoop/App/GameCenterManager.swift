@@ -167,10 +167,35 @@ final class GameCenterManager {
     }
 
     private func queueScore(_ score: Int, leaderboard: String, day: Int?) {
-        var queue = UserDefaults.standard.stringArray(forKey: pendingScoresKey) ?? []
-        queue.append(Self.encode(leaderboard: leaderboard, score: score, day: day, token: UUID().uuidString))
-        UserDefaults.standard.set(Array(queue.suffix(20)), forKey: pendingScoresKey)
+        let queue = UserDefaults.standard.stringArray(forKey: pendingScoresKey) ?? []
+        let entry = Self.encode(leaderboard: leaderboard, score: score, day: day, token: UUID().uuidString)
+        UserDefaults.standard.set(Self.enqueue(entry, into: queue), forKey: pendingScoresKey)
         flush()
+    }
+
+    /// QA-2 P2-4: one pending Daily entry per day (the larger wins, an in-flight one is kept), and the cap of 20 never
+    /// evicts a `longest` best: the oldest Daily entries go first. Pure; tested.
+    nonisolated static func enqueue(_ entry: String, into queue: [String], cap: Int = 20) -> [String] {
+        guard let new = parse(entry) else { return queue }
+        var out = queue
+        if new.leaderboard == Leaderboard.daily {
+            if let i = out.firstIndex(where: { e in
+                guard let p = parse(e) else { return false }
+                return p.leaderboard == Leaderboard.daily && p.day == new.day
+            }) {
+                if let old = parse(out[i]), old.score >= new.score { return out }
+                out.remove(at: i)
+            }
+        }
+        out.append(entry)
+        while out.count > cap {
+            if let i = out.firstIndex(where: { parse($0)?.leaderboard != Leaderboard.longest }) {
+                out.remove(at: i)
+            } else {
+                out.removeFirst()
+            }
+        }
+        return out
     }
 
     private func flush() {

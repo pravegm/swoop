@@ -44,13 +44,30 @@ import UIKit
 // - `skipTo=<m>` (extra)          play headless (perfect pilot) to that distance first, e.g. just short of the first
 //                                 lighthouse (4 km) for `freezeOn=lighthouse`. Logs `SWOOP-T skipped to <m>`.
 //
+// Round 3 keys
+// - `screen=cover`                the cover card (forced `.closed`), state from `cover=home|midrun|results` (default home).
+// - `screen=daily`                the Daily card (Home's Daily once flown; pair with `dailyToday`).
+// - `cover=home|midrun|results`   see `screen=cover` (midrun pauses a run of `mode` 1.2 s in).
+// - `titleTuck=<0…1>`             hold Home's title bird at that tuck (home-folded frames).
+// - `folded`                      Home as after the first fold ("Fold to dive. Open to soar.").
+// - `flat`                        the Duo lies flat: Home's bend caption, or the countdown's flat hold.
+// - `dailyToday`                  today's Daily is already flown (7.48 km): the Daily card, "Flown · next in".
+// - `rankUp`                      every goal of the preset rank done, so a `screen=results` run ranks up.
+// - `closing`                     1.5 s into the run the Duo "closes" (the closing card, `SWOOP-T paused closing`).
+// - `holdReady`                   1.5 s in, a resume's "Ready" ring is held (`SWOOP-T resumed`).
+// - `foldFill=<0…1>`              Results: Fly again shows that much fold fill (UX-A3).
+// - `orient=portrait`             ask the scene for portrait (the seated split deck with `mode=`).
+// - `shortCountdown`              the run uses the 1.5 s "Ready · Go" restart countdown (with `freezeOn=countdown`
+//                                 the frame holds 1.3 s in: "Go").
+//
 // Log lines: `SWOOP-T demo '<args>' starts`, `SWOOP-T frame 120`, `SWOOP-T canvas <W>x<H> fold=<0|1> mirrored=<0|1>`,
 // `SWOOP-T input hinge|touch|autopilot`, `SWOOP-T event <name> …`, `SWOOP-T tuck <u> angle <θ>`, `SWOOP-T paused closing`,
 // `SWOOP-T resumed`, `SWOOP-T freeze <x>`, `SWOOP-T run meters=<m> perfects=<n> seconds=<s>`, `SWOOP-T screen <route>`,
 // `SWOOP-T icon ok|failed`, `SWOOP-T badges done <n>`. (`SWOOP-H` hinge samples come from Input's HingeReader.)
 
 struct DemoConfig: Equatable {
-    enum Screen: String, Equatable { case home, play, results, goals, birds, settings, pose, icon, badges }
+    enum Screen: String, Equatable { case home, play, results, goals, birds, settings, pose, icon, badges, cover, daily }
+    enum CoverState: String, Equatable { case home, midrun, results }
     enum ModeKey: String, Equatable { case flight, daily, attract }
     enum Freeze: String, Equatable { case launch, perfect, splash, tailwind, lighthouse, stormclose, caught, finished, flying, countdown }
     enum ProgressPreset: String, Equatable { case fresh, mid, late }
@@ -81,6 +98,17 @@ struct DemoConfig: Equatable {
     var hintsFresh = false
     var lead: Double?
     var skipTo: Double?
+    var coverState: CoverState = .home
+    var titleTuck: Double?
+    var folded = false
+    var flat = false
+    var dailyToday = false
+    var rankUp = false
+    var closing = false
+    var holdReady = false
+    var foldFill: Double?
+    var orientPortrait = false
+    var shortCountdown = false
 
     init(raw: String) { self.raw = raw }
 
@@ -145,6 +173,19 @@ struct DemoConfig: Equatable {
                 if let x = number(value) { config.lead = min(max(x, 0), 1) }
             case "skipTo":
                 if let m = number(value) { config.skipTo = max(m, 0) }
+            case "cover": config.coverState = CoverState(rawValue: value) ?? .home
+            case "titleTuck":
+                if let x = number(value) { config.titleTuck = min(max(x, 0), 1) }
+            case "folded": config.folded = flag(value)
+            case "flat": config.flat = flag(value)
+            case "dailyToday": config.dailyToday = flag(value)
+            case "rankUp": config.rankUp = flag(value)
+            case "closing": config.closing = flag(value)
+            case "holdReady": config.holdReady = flag(value)
+            case "foldFill":
+                if let x = number(value) { config.foldFill = min(max(x, 0), 1) }
+            case "orient": config.orientPortrait = value == "portrait"
+            case "shortCountdown": config.shortCountdown = flag(value)
             default: break
             }
         }
@@ -158,6 +199,23 @@ struct DemoConfig: Equatable {
         setvbuf(stdout, nil, _IOLBF, 0)
         return DemoConfig.parse(raw)
     }()
+}
+
+// MARK: - Orientation (`orient=portrait`)
+
+@MainActor
+enum DemoOrientation {
+    /// Asks the window scene for portrait (the seated split deck on a Duo simulator; iPhones stay landscape-only).
+    static func requestPortrait() {
+        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+            let window = scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first
+            window?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait)) { error in
+                AppTrace.t("SWOOP-T orient request error: \(error.localizedDescription)")
+            }
+        }
+        AppTrace.t("SWOOP-T orient portrait requested")
+    }
 }
 
 // MARK: - Seeded progress (`progress=`)

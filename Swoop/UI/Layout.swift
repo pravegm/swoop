@@ -3,13 +3,16 @@ import SwiftUI
 
 // MARK: - Pose
 
-/// What the display should show, from the canvas shape and the hinge.
+/// What the display should show, from the canvas shape, the hinge and the run (UX-SPEC §9).
 enum AppPose: String, Equatable {
     /// Landscape (the Duo held like a book, or any phone turned sideways): the game and its screens.
     case play
-    /// Portrait (Duo tabletop, or a phone held upright): "Turn your Duo sideways and hold it like a book".
+    /// Portrait on a Duo during a run or its results (seated inner display), or "Keep flying here" on the cover: the
+    /// split deck, the game band on the top half and the touch deck below (UX-D2).
+    case deck
+    /// Portrait with nothing to play (Home and pages on a seated Duo; an iPhone held upright): "Turn it sideways".
     case turn
-    /// The Duo closed (hinge ≤ 10°) or the small cover display: "Open your wings".
+    /// The Duo shut (hinge ≤ 10°) or the small cover display: the cover card (UX-D1).
     case closed
 }
 
@@ -27,11 +30,20 @@ enum AppPoseRule {
         return short / long > 0.62 && short >= 600
     }
 
-    static func pose(canvas: CGSize, hingeSeen: Bool, isShut: Bool, touchOverride: Bool) -> AppPose {
-        if hingeSeen && isShut { return .closed }
+    /// - `inRun`: a run or its results is on screen (route playing / results).
+    /// - `touchOverride`: "Play with touch" from the portrait card.
+    /// - `coverFlying`: "Keep flying here" on the cover display.
+    static func pose(canvas: CGSize, hingeSeen: Bool, isShut: Bool, inRun: Bool = false, touchOverride: Bool = false,
+                     coverFlying: Bool = false) -> AppPose {
         let valid = canvas.width > 10 && canvas.height > 10
-        if hingeSeen && valid && max(canvas.width, canvas.height) < coverMaxSide { return .closed }
-        if valid && canvas.height > canvas.width && !touchOverride { return .turn }
+        let small = valid && max(canvas.width, canvas.height) < coverMaxSide
+        if hingeSeen && small { return coverFlying && inRun ? .deck : .closed }
+        if hingeSeen && isShut { return .closed }
+        if valid && canvas.height > canvas.width {
+            let duo = hingeSeen || looksLikeDuoInner(canvas)
+            if duo && (inRun || touchOverride) { return .deck }
+            return .turn
+        }
         return .play
     }
 
@@ -43,13 +55,39 @@ enum AppPoseRule {
         return looksLikeDuoInner(canvas)
     }
 
-    /// The game canvas: the whole screen in landscape; a centred landscape band on a portrait canvas ("Play with touch"
-    /// from the pose card when iOS keeps the interface upright).
+    /// The game canvas in the play pose: the whole screen.
     static func playRect(in canvas: CGSize) -> CGRect {
-        guard canvas.height > canvas.width else { return CGRect(origin: .zero, size: canvas) }
-        let ratio = ScreenLayout.canvasHeight / ScreenLayout.canvasWidth
-        let height = min(canvas.height, (canvas.width * ratio).rounded())
-        return CGRect(x: 0, y: ((canvas.height - height) / 2).rounded(), width: canvas.width, height: height)
+        CGRect(origin: .zero, size: canvas)
+    }
+}
+
+// MARK: - The split deck (UX-D2: seated Duo, or flying on the cover)
+
+/// The portrait split: the game band on the top half and the deck (distance, meter, touch pad, pause) below, nothing
+/// in the inner display's horizontal fold band (y 456–496). Pure; tested.
+struct DeckLayout: Equatable {
+    var band: CGRect
+    var deck: CGRect
+
+    /// Clear room either side of the seated fold.
+    static let foldClear: CGFloat = 28
+
+    static func make(canvas: CGSize) -> DeckLayout {
+        let w = max(canvas.width, 1)
+        let h = max(canvas.height, 1)
+        let inner = max(w, h) >= AppPoseRule.coverMaxSide
+        if inner {
+            // 669 × 951: the band y 8…448, the deck from 504.
+            let mid = h / 2
+            let band = CGRect(x: 0, y: 8, width: w, height: max(mid - 8 - foldClear, 0))
+            let deckTop = mid + foldClear
+            return DeckLayout(band: band, deck: CGRect(x: 0, y: deckTop, width: w, height: max(h - deckTop, 0)))
+        }
+        // The cover (466 × 678): a 466 × 328 band, the deck under it.
+        let bandH = min((w * 0.704).rounded(), h * 0.5)
+        let band = CGRect(x: 0, y: 0, width: w, height: bandH)
+        let deckTop = bandH + 8
+        return DeckLayout(band: band, deck: CGRect(x: 0, y: deckTop, width: w, height: max(h - deckTop, 0)))
     }
 }
 
@@ -61,19 +99,23 @@ struct AppCanvas: Equatable {
     var size: CGSize
     var insets: EdgeInsets
     var layout: ScreenLayout
+    /// One page only (the split deck, the cover): both "pages" are the whole width.
+    var singlePage: Bool
 
-    /// Controls keep at least this far from the fold band.
-    static let foldClear: CGFloat = 18
-    /// Margin inside the safe area at the outer edges.
-    static let edgeMargin: CGFloat = 14
     /// The smallest tap target anywhere (arm's length on a Duo held in two hands).
     static let minTap: CGFloat = 56
 
-    init(size: CGSize, insets: EdgeInsets, layout: ScreenLayout) {
+    init(size: CGSize, insets: EdgeInsets, layout: ScreenLayout, singlePage: Bool = false) {
         self.size = size
         self.insets = insets
         self.layout = layout
+        self.singlePage = singlePage
     }
+
+    /// Margins (ART §6 "Spacing"): 32 pt from the Duo's outer edges and 24 pt from the fold band; 20 pt (plus the safe
+    /// area) and 16 pt on iPhones.
+    var edgeMargin: CGFloat { hasFold ? 32 : 20 }
+    var foldClear: CGFloat { hasFold ? 24 : 16 }
 
     /// The design canvas → screen scale (aspect fill).
     var scale: CGFloat {
@@ -86,20 +128,35 @@ struct AppCanvas: Equatable {
         (size.width - layout.size.width * scale) / 2 + designX * scale
     }
 
+    /// Screen point (SwiftUI, y down) of a design-canvas point (SpriteKit, y up). Pure; tested.
+    func screenPoint(_ design: CGPoint) -> CGPoint {
+        let s = scale
+        let oy = (size.height - layout.size.height * s) / 2
+        return CGPoint(x: screenX(design.x), y: oy + (layout.size.height - design.y) * s)
+    }
+
     var foldMinX: CGFloat { screenX(layout.creaseMinX) }
     var foldMaxX: CGFloat { screenX(layout.creaseMaxX) }
     var hasFold: Bool { layout.hasFold }
     var mirrored: Bool { layout.mirrored }
 
+    private var fullPage: CGRect {
+        let x0 = max(insets.leading, 0) + edgeMargin
+        let x1 = size.width - max(insets.trailing, 0) - edgeMargin
+        return CGRect(x: x0, y: 0, width: max(x1 - x0, 0), height: size.height)
+    }
+
     var leftPage: CGRect {
-        let x0 = max(insets.leading, 0) + Self.edgeMargin
-        let x1 = foldMinX - Self.foldClear
+        if singlePage { return fullPage }
+        let x0 = max(insets.leading, 0) + edgeMargin
+        let x1 = foldMinX - foldClear
         return CGRect(x: x0, y: 0, width: max(x1 - x0, 0), height: size.height)
     }
 
     var rightPage: CGRect {
-        let x0 = foldMaxX + Self.foldClear
-        let x1 = size.width - max(insets.trailing, 0) - Self.edgeMargin
+        if singlePage { return fullPage }
+        let x0 = foldMaxX + foldClear
+        let x1 = size.width - max(insets.trailing, 0) - edgeMargin
         return CGRect(x: x0, y: 0, width: max(x1 - x0, 0), height: size.height)
     }
 
@@ -108,13 +165,15 @@ struct AppCanvas: Equatable {
     /// The half that shows what's coming: menus, the results card, the HUD's distance.
     var farPage: CGRect { mirrored ? leftPage : rightPage }
 
-    var top: CGFloat { max(insets.top, 0) + 10 }
-    var bottom: CGFloat { size.height - max(insets.bottom, 8) - 8 }
+    var top: CGFloat { max(insets.top, 0) + (hasFold ? 16 : 10) }
+    var bottom: CGFloat { size.height - max(insets.bottom, 8) - (hasFold ? 16 : 8) }
+    /// iPhone-sized type (ART §6): the Duo's 669 pt height gets the larger scale.
     var isCompact: Bool { size.height < 520 }
 
     /// Nothing tappable may overlap the fold band. Pure; tested.
     func isFoldClear(_ rect: CGRect) -> Bool {
-        rect.maxX <= foldMinX + 0.5 || rect.minX >= foldMaxX - 0.5
+        if singlePage { return true }
+        return rect.maxX <= foldMinX + 0.5 || rect.minX >= foldMaxX - 0.5
     }
 }
 
@@ -126,8 +185,10 @@ struct HomeLayout: Equatable {
     var wordmark: CGRect
     var caption: CGRect
     var menuPanel: CGRect
-    /// The wordmark + caption block (its navy scrim keeps it readable over the attract bird).
+    /// The wordmark + caption block.
     var textBlock: CGRect
+    /// The feathered scrim behind it (ART A12): ends ≥ 28 pt + its feather before the crease.
+    var scrim: CGRect
     var fly: CGRect
     var daily: CGRect
     var flocks: CGRect
@@ -142,11 +203,12 @@ struct HomeLayout: Equatable {
     static let dailyHeight: CGFloat = 62
     static let rowHeight: CGFloat = 58
     static let gap: CGFloat = 10
-    /// The menu column (REVIEW-1 P2: narrowed ~8 % so more of the sea ahead shows).
+    /// The menu column: 368 wide on the Duo (UX §3).
     static let maxMenuWidth: CGFloat = 368
     static let menuPageFraction: CGFloat = 0.92
-    /// The wordmark's left inset from the page edge (REVIEW-1 P1-2: 24 pt from the screen edge on the Duo).
-    static let wordmarkInset: CGFloat = 10
+    /// The scrim's feather (blur) and its clearance from the fold band.
+    static let scrimFeather: CGFloat = 32
+    static let scrimFoldClear: CGFloat = 28
 
     static func make(_ c: AppCanvas) -> HomeLayout {
         let w = c.size.width
@@ -156,11 +218,11 @@ struct HomeLayout: Equatable {
         let bottom = c.bottom
         let minMenu = minTap * 3 + gap * 2
         let birdRoom = max(bottom - top - 12 - minMenu, 60)
-        let birdH = min(max(h * 0.38, 90), 300, birdRoom)
-        // Centred on the fold, so the title bird's body sits on the crease and each wing on its own half.
+        let birdH = min(max(h * 0.38, 90), 254, birdRoom)
+        // Centred on the fold, so the title bird's spine sits on the crease and each wing on its own half.
         let foldMid = (c.foldMinX + c.foldMaxX) / 2
-        let birdHalf = max(min(foldMid - max(c.insets.leading, 0) - 8, w - max(c.insets.trailing, 0) - 8 - foldMid), 0)
-        let bird = CGRect(x: foldMid - birdHalf, y: top, width: birdHalf * 2, height: birdH)
+        let birdHalf = max(min(foldMid - max(c.insets.leading, 0) - 12, w - max(c.insets.trailing, 0) - 12 - foldMid), 0)
+        let bird = CGRect(x: foldMid - birdHalf, y: max(c.insets.top, 0) + 10, width: birdHalf * 2, height: birdH)
         let menuTop = bird.maxY + 12
         let avail = max(bottom - menuTop, 0)
 
@@ -206,45 +268,51 @@ struct HomeLayout: Equatable {
             settings = CGRect(x: bp.minX, y: cornerY, width: minTap, height: minTap)
             gameCenter = CGRect(x: settings.maxX + gap, y: cornerY, width: minTap, height: minTap)
         }
-        // REVIEW-1 P1-2: a bigger wordmark (64–72 pt type on the Duo), inset from the edge.
-        let wordH = min(max(h * 0.14, 46), 96)
-        let tx = c.mirrored ? bp.minX : bp.minX + wordmarkInset
-        let tw = max(bp.width - wordmarkInset, 0)
-        let wordmark = CGRect(x: tx, y: menuTop, width: tw, height: wordH)
+        // The wordmark: 72 pt type on the Duo, 52 on iPhone (ART §6), on the bird page under the title bird.
+        let wordH: CGFloat = c.isCompact ? 70 : 96
+        let wordmark = CGRect(x: bp.minX, y: menuTop, width: bp.width, height: wordH)
         let captionTop = wordmark.maxY + 2
-        let caption = CGRect(x: tx, y: captionTop, width: tw, height: max(cornerY - 8 - captionTop, 0))
-        let textBlock = CGRect(x: tx, y: wordmark.minY, width: tw,
+        let caption = CGRect(x: bp.minX, y: captionTop, width: bp.width, height: max(cornerY - 8 - captionTop, 0))
+        let textBlock = CGRect(x: bp.minX, y: wordmark.minY, width: bp.width,
                                height: wordH + 2 + min(caption.height, c.isCompact ? 70 : 110))
+        var scrim = textBlock.insetBy(dx: -16, dy: -12)
+        if c.mirrored {
+            let minX = c.foldMaxX + scrimFoldClear + scrimFeather
+            if scrim.minX < minX { scrim = CGRect(x: minX, y: scrim.minY, width: max(scrim.maxX - minX, 0), height: scrim.height) }
+        } else {
+            let maxX = c.foldMinX - scrimFoldClear - scrimFeather
+            if scrim.maxX > maxX { scrim.size.width = max(maxX - scrim.minX, 0) }
+        }
         return HomeLayout(bird: bird, wordmark: wordmark, caption: caption, menuPanel: panel, textBlock: textBlock,
-                          fly: fly, daily: daily,
-                          flocks: flocks, birds: birds, settings: settings, gameCenter: gameCenter)
+                          scrim: scrim, fly: fly, daily: daily, flocks: flocks, birds: birds, settings: settings,
+                          gameCenter: gameCenter)
     }
 }
 
 // MARK: - Play HUD
 
-/// Where the play HUD goes (screen points). Pure; tested.
+/// Where the play HUD goes (screen points, UX-SPEC §3 "Play HUD"). Pure; tested.
 struct PlayLayout: Equatable {
     /// The pause button: the outer top corner of the bird's half (never on the fold).
     var pause: CGRect
-    /// The distance: the outer top corner of the far half.
-    var distance: CGRect
-    /// The lead meter: a thin bar along the top of the bird's half.
+    /// The lead meter: from pause + 18 to the bird page's inner edge.
     var meter: CGRect
-    /// First-run hints: low on the bird's half.
+    /// One 12 pt line 22 pt under the meter: the DAILY tag and the one-time teach lines.
+    var tagLine: CGRect
+    /// The distance, its pill and "Best in…": the outer top corner of the far half.
+    var distance: CGRect
+    /// First-run hints: the bird's half at 62 % height.
     var hint: CGRect
-    /// Countdown, "Ready", toasts: the middle of the far half.
+    /// Countdown and "Ready": the middle of the far half.
     var center: CGRect
-    /// Cards (pause, closing, lighthouse): the far half.
+    /// Toasts and the lighthouse card: the far half, top edge at 60 % height, over the sea.
+    var toast: CGRect
+    /// Cards (pause, closing): the far half.
     var card: CGRect
-    /// "Perfect ×N": above the bird on its own half (x follows the bird's fixed screen x), never on the fold.
-    var callout: CGRect
 
     static let pauseSize: CGFloat = 56
     static let meterHeight: CGFloat = 14
-    /// The callout's box and its height on the canvas (fraction from the top; the camera keeps the bird lower).
-    static let calloutSize = CGSize(width: 260, height: 70)
-    static let calloutY: CGFloat = 0.34
+    static let toastTop: CGFloat = 0.60
 
     static func make(_ c: AppCanvas) -> PlayLayout {
         let top = c.top
@@ -263,19 +331,54 @@ struct PlayLayout: Equatable {
             let x0 = pause.maxX + 18
             meter = CGRect(x: x0, y: top + (s - meterHeight) / 2, width: max(bp.maxX - x0, 0), height: meterHeight)
         }
-        let distance = CGRect(x: fp.minX, y: top - 6, width: fp.width, height: 130)
+        let tagLine = CGRect(x: meter.minX, y: meter.maxY + 22 - 6, width: meter.width, height: 20)
+        let distance = CGRect(x: fp.minX, y: top - 6, width: fp.width, height: 120)
         let hint = CGRect(x: bp.minX, y: c.size.height * 0.62, width: bp.width, height: 64)
         let centerTop = distance.maxY + 4
-        let center = CGRect(x: fp.minX, y: centerTop, width: fp.width, height: max(c.bottom - centerTop, 0))
+        let toastY = c.size.height * toastTop
+        let center = CGRect(x: fp.minX, y: centerTop, width: fp.width, height: max(toastY - centerTop, 80))
+        let toast = CGRect(x: fp.minX, y: toastY, width: fp.width, height: max(c.bottom - toastY, 60))
         let card = CGRect(x: fp.minX, y: c.top, width: fp.width, height: max(c.bottom - c.top, 0))
-        let f = ScreenLayout.birdScreenFraction
-        let birdX = c.screenX(c.layout.size.width * (c.mirrored ? 1 - f : f))
-        let cw = min(calloutSize.width, bp.width)
-        let cx = min(max(birdX - cw / 2, bp.minX), max(bp.maxX - cw, bp.minX))
-        let callout = CGRect(x: cx, y: c.size.height * calloutY - calloutSize.height / 2, width: cw,
-                             height: calloutSize.height)
-        return PlayLayout(pause: pause, distance: distance, meter: meter, hint: hint, center: center, card: card,
-                          callout: callout)
+        return PlayLayout(pause: pause, meter: meter, tagLine: tagLine, distance: distance, hint: hint, center: center,
+                          toast: toast, card: card)
+    }
+}
+
+/// Where "Perfect ×N" goes (UX-A1, ART A5): the bird + (40, −64) (mirrored −40); if that's under the HUD, 70 pt below
+/// the bird instead; clear of the bird's rect + 24; clamped into the bird page. Pure; tested.
+enum CalloutPlacement {
+    static let offset = CGPoint(x: 40, y: -64)
+    static let below: CGFloat = 70
+    static let birdClear: CGFloat = 24
+    /// The HUD band at the top of the bird page.
+    static let hudBand: CGFloat = 106
+
+    static func center(bird: CGPoint, birdRadius: CGFloat, size: CGSize, canvas c: AppCanvas) -> CGPoint {
+        let dx = c.mirrored ? -offset.x : offset.x
+        var p = CGPoint(x: bird.x + dx, y: bird.y + offset.y)
+        if p.y - size.height / 2 < c.top + hudBand { p.y = bird.y + below }
+        // Keep the label's box clear of the bird's rect + 24.
+        let r = birdRadius + birdClear
+        let birdBox = CGRect(x: bird.x - r, y: bird.y - r, width: 2 * r, height: 2 * r)
+        var box = CGRect(x: p.x - size.width / 2, y: p.y - size.height / 2, width: size.width, height: size.height)
+        if box.intersects(birdBox) {
+            if p.y < bird.y {
+                p.y = birdBox.minY - size.height / 2
+            } else {
+                p.y = birdBox.maxY + size.height / 2
+            }
+            box = CGRect(x: p.x - size.width / 2, y: p.y - size.height / 2, width: size.width, height: size.height)
+        }
+        // Clamp into the bird page (horizontally) and the screen (vertically).
+        let page = c.birdPage
+        let minX = page.minX + size.width / 2
+        let maxX = max(page.maxX - size.width / 2, minX)
+        p.x = min(max(p.x, minX), maxX)
+        let minY = c.top + size.height / 2
+        let maxY = max(c.bottom - size.height / 2, minY)
+        p.y = min(max(p.y, minY), maxY)
+        _ = box
+        return p
     }
 }
 
@@ -295,8 +398,8 @@ enum ResultsLayout {
 
 // MARK: - The title bird's tuck
 
-/// The Home title bird's wings: live from the hinge (the same stroke as the game, GAME-DESIGN §3), or a gentle idle
-/// beat plus press-and-hold on phones. Pure; tested.
+/// The Home title bird's wings: live from the hinge (the same mapping and filters as play), or a gentle idle beat
+/// plus press-and-hold on phones. Pure; tested.
 enum TitleTuck {
     /// The tuck stroke below the open angle (θ_open − θ_full = 36°).
     static let stroke: Double = 36

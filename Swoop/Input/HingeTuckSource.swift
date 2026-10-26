@@ -43,6 +43,9 @@ enum HingeTuckTuning {
     /// still; a resting Duo sends nothing at all, which reads as a spread of 0.
     static let snapStillWindow = 0.3
     static let snapStillSpread = 1.5
+    /// Round 3 (UX §9, flat pose): the phone counts as flat from 175° (entry) until it is back under `flatExit` (a
+    /// little hysteresis, so a ±1° reading around 175° never restarts the flat timer).
+    static let flatExit = 173.0
     /// Hold-stabiliser rest cutoff (Hz) near the open angle (heavy: tremor at rest never flutters the wings) and deep
     /// in a dive (lighter: small trims mid-dive still answer quickly).
     static let nearOpenRestCutoff = 0.6
@@ -105,6 +108,8 @@ final class HingeTuckSource: TuckSource {
 
     private var lastQuery: TimeInterval?
     private var stillSince: TimeInterval?
+    private var flatSince: TimeInterval?
+    private var leftFlatAt: TimeInterval?
     private var lastTuckLog: TimeInterval = -Double.infinity
     private var loggedOpen: Double = HingeTuckTuning.initialOpen
     private let logs: Bool
@@ -117,6 +122,42 @@ final class HingeTuckSource: TuckSource {
     /// True while the phone is closing: the filtered angle fell below 95° (pause), until it is back above 102°.
     /// Updated on every report, so it works while the run is paused and nobody asks for the tuck.
     var isClosing: Bool { hasHinge && latch.isClosing }
+
+    // MARK: Flat pose (UX-SPEC §9: "judged on the last reading plus a timer, never by waiting for an event")
+
+    /// Seconds the hinge has been flat (≥ 175°, until < 173°) as of `time`; 0 when it isn't flat or there is no
+    /// hinge. The Duo sends nothing while still, so this keeps counting from the last reading. The App uses it for
+    /// "Bend it a little, like a book" (1 s), the countdown's flat hold, and "Keep a little bend" (2 s).
+    func flatDuration(at time: TimeInterval = CACurrentMediaTime()) -> TimeInterval {
+        guard hasHinge, time.isFinite, let since = flatSince else { return 0 }
+        return max(time - since, 0)
+    }
+
+    /// Seconds since the hinge last left flat, as of `time` (the 2.2 s fold-blur guard); `.infinity` if it has never
+    /// been flat, 0 while it is flat.
+    func timeSinceFlat(at time: TimeInterval = CACurrentMediaTime()) -> TimeInterval {
+        guard hasHinge, time.isFinite else { return .infinity }
+        if flatSince != nil { return 0 }
+        guard let left = leftFlatAt else { return .infinity }
+        return max(time - left, 0)
+    }
+
+    /// True while the fold-blur guard holds (left flat within `window` s, 2.2 by default): queue toasts and cards.
+    func inFlatBlurGuard(at time: TimeInterval = CACurrentMediaTime(), window: TimeInterval = 2.2) -> Bool {
+        let since = timeSinceFlat(at: time)
+        return since > 0 && since < window
+    }
+
+    private func updateFlat(raw: Double, at stamp: TimeInterval) {
+        if flatSince != nil {
+            if raw < T.flatExit {
+                flatSince = nil
+                leftFlatAt = stamp
+            }
+        } else if raw >= T.flatAngle {
+            flatSince = stamp
+        }
+    }
 
     /// One hinge report: degrees (180 = flat), stamped on receipt with `CACurrentMediaTime()`.
     func ingest(angleDegrees: Double, at time: TimeInterval) {
@@ -131,6 +172,7 @@ final class HingeTuckSource: TuckSource {
         stabiliser.sample(raw, at: stamp)
         let tracked = predictor.estimate ?? raw
         latch.update(angle: tracked)
+        updateFlat(raw: raw, at: stamp)
         // Keep `angle` fresh while no frame asks (menus, the pause card); frames take over again at once.
         let lastFrame = lastQuery ?? -Double.infinity
         if angle == nil || stamp - lastFrame > 0.1 {

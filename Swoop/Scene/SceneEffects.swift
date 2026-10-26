@@ -14,6 +14,10 @@ final class SceneEffects {
     /// Sparkles (additive), over the bird.
     let glowRoot: SKNode
     var reduceMotion = false
+    /// Thermal / Low Power: the share of particles spawned (UX-D5: 0.7 at .serious or in Low Power).
+    var particleScale: CGFloat = 1
+    /// Where the Perfect ring rides this frame: the water under the bird, a little behind it (world-local).
+    var followPoint: CGPoint = .zero
 
     private let spray: SceneParticlePool
     private let foam: SceneParticlePool
@@ -39,11 +43,11 @@ final class SceneEffects {
         waterRoot = SKNode()
         root = SKNode()
         glowRoot = SKNode()
-        dotTexture = SceneTextures.dot
+        dotTexture = SceneTextures.drop
         softTexture = SceneTextures.soft
         sparkTexture = SceneTextures.sparkle
         bloom = SKSpriteNode(texture: SceneTextures.glow)
-        spray = SceneParticlePool(capacity: 240, texture: SceneTextures.dot, blend: .alpha)
+        spray = SceneParticlePool(capacity: 240, texture: SceneTextures.drop, blend: .alpha)
         foam = SceneParticlePool(capacity: 120, texture: SceneTextures.soft, blend: .alpha)
         glow = SceneParticlePool(capacity: 110, texture: SceneTextures.sparkle, blend: .add)
         waterRoot.addChild(foam.root)
@@ -55,7 +59,7 @@ final class SceneEffects {
         bloom.isHidden = true
         bloom.zPosition = -0.5
         waterRoot.addChild(bloom)
-        for _ in 0..<5 {
+        for _ in 0..<6 {
             let r = SceneRingFX()
             waterRoot.addChild(r.node)
             rings.append(r)
@@ -100,6 +104,7 @@ final class SceneEffects {
             if k >= 1 { bloom.isHidden = true }
         }
         for r in rings where r.active {
+            if r.rides { r.node.position = followPoint }
             r.age += dt
             let t = r.age - r.delay
             if t < 0 {
@@ -107,7 +112,8 @@ final class SceneEffects {
                 continue
             }
             let k = min(t / max(r.duration, 0.01), 1)
-            let e = 1 - (1 - k) * (1 - k)
+            // Ease-out cubic growth; the alpha eases in to 0.
+            let e = 1 - (1 - k) * (1 - k) * (1 - k)
             r.node.isHidden = false
             r.node.setScale(r.startScale + (r.endScale - r.startScale) * e)
             r.node.alpha = r.peakAlpha * (1 - k * k)
@@ -123,7 +129,7 @@ final class SceneEffects {
     /// Skimming: spray thrown up and back off the wingtip trailing in the water. `back` is the unit vector opposite
     /// the motion; `k` 0…1 is the speed.
     func skim(tip: CGPoint, waterY: CGFloat, back: CGVector, k: CGFloat, zoom z: CGFloat, color: UIColor, dt: CGFloat) {
-        sprayCarry += (SceneLook.skimSprayRate + SceneLook.skimSprayRateFast * k) * dt * (reduceMotion ? 0.6 : 1)
+        sprayCarry += (SceneLook.skimSprayRate + SceneLook.skimSprayRateFast * k) * dt * (reduceMotion ? 0.6 : 1) * particleScale
         var n = 0
         while sprayCarry >= 1 && n < 10 {
             sprayCarry -= 1
@@ -144,7 +150,7 @@ final class SceneEffects {
 
     /// Skimming: foam flecks left on the surface behind the bird (they stay put in the sea, so they trail behind).
     func wake(at point: CGPoint, k: CGFloat, zoom z: CGFloat, color: UIColor, dt: CGFloat) {
-        wakeCarry += (SceneLook.wakeRate + SceneLook.wakeRateFast * k) * dt
+        wakeCarry += (SceneLook.wakeRate + SceneLook.wakeRateFast * k) * dt * particleScale
         var n = 0
         while wakeCarry >= 1 && n < 6 {
             wakeCarry -= 1
@@ -201,29 +207,42 @@ final class SceneEffects {
         foamRing(at: point, count: 6, spread: 30, zoom: z, color: color)
     }
 
-    /// A Perfect (R2, REVIEW-1 P0-3): a gold ring growing 40 → 160 px over 0.35 s on the water (a second, paler one
-    /// 0.08 s later on chains ≥ 2), a gold bloom, golden sparkles. Visible from the first frame.
+    /// A Perfect (ART §5, ART-S12): a gold ring that rides with the bird for 0.38 s, growing 40 → 170 px (ease-out
+    /// cubic) as a 1 : 0.32 ellipse on the water; a paler one 0.08 s later on chains ≥ 2; a faint ripple that stays at
+    /// the touchdown; a gold bloom and golden sparkles. Visible from the first frame. Reduce Motion: the ring appears at
+    /// 120 px and fades over 0.3 s.
     func perfect(at point: CGPoint, chain: Int, zoom z: CGFloat, foamColor: UIColor) {
         // The ring node is 200 pt wide at scale 1.
         let from = SceneLook.perfectRingFrom / 200 / z
         let to = SceneLook.perfectRingTo / 200 / z
-        ring(at: point, color: goldColor, start: from, end: to, duration: SceneLook.perfectRingTime, delay: 0, alpha: 1)
-        if chain >= 2 {
-            ring(at: point, color: paleGoldColor, start: from, end: to * 1.25, duration: SceneLook.perfectRingTime + 0.1,
-                 delay: SceneLook.perfectRing2Delay, alpha: 0.85)
+        if reduceMotion {
+            let still = SceneLook.ringStill / 200 / z
+            ring(at: followPoint, color: goldColor, start: still, end: still, duration: 0.3, delay: 0, alpha: 1,
+                 rides: true)
+        } else {
+            ring(at: followPoint, color: goldColor, start: from, end: to, duration: SceneLook.perfectRingTime, delay: 0,
+                 alpha: 1, rides: true)
+            if chain >= 2 {
+                ring(at: followPoint, color: paleGoldColor, start: from, end: to * 1.15,
+                     duration: SceneLook.perfectRingTime + 0.08, delay: SceneLook.perfectRing2Delay, alpha: 0.85,
+                     rides: true)
+            }
         }
-        bloomSize = 220 / z
-        bloom.size = CGSize(width: bloomSize, height: bloomSize * 0.45)
+        // The physical ripple stays where the bird touched down.
+        ring(at: point, color: foamColor, start: from, end: to * 0.9, duration: 0.8, delay: 0.02, alpha: 0.35,
+             rides: false)
+        bloomSize = 200 / z
+        bloom.size = CGSize(width: bloomSize, height: bloomSize * 0.4)
         bloom.position = CGPoint(x: point.x, y: point.y + 4 / z)
         bloom.setScale(0.6)
-        bloom.alpha = 0.85
+        bloom.alpha = 0.7
         bloom.isHidden = false
         bloomAge = 0
         let c = min(max(chain, 1), 8)
-        let n = (reduceMotion ? 8 : 14) + 2 * c
+        let n = Int(CGFloat((reduceMotion ? 8 : 14) + 2 * c) * max(particleScale, 0.5))
         let colors: [UIColor] = [goldColor, paleGoldColor, whiteColor]
         for i in 0..<n {
-            let a = CGFloat(i) / CGFloat(n) * CGFloat.pi + rng.range(-0.15, 0.15)
+            let a = CGFloat(i) / CGFloat(max(n, 1)) * CGFloat.pi + rng.range(-0.15, 0.15)
             let s = rng.range(160, 340)
             var p = SceneParticle()
             p.position = CGPoint(x: point.x + cos(a) * 20 / z, y: point.y + 4 / z)
@@ -243,9 +262,10 @@ final class SceneEffects {
         foamRing(at: point, count: 6, spread: 26, zoom: z, color: color)
     }
 
-    /// The mistake: a big white splash (crown, plume, foam).
+    /// The mistake (ART §5): wet and heavy, not light: 18–26 hard drops, one mist puff ≤ 90 px at α ≤ 0.5, and foam.
     func splash(at point: CGPoint, k: CGFloat, zoom z: CGFloat, color: UIColor) {
-        let n = reduceMotion ? 22 : 44
+        let span = CGFloat(SceneLook.splashDropsMax - SceneLook.splashDropsMin)
+        let n = Int((CGFloat(SceneLook.splashDropsMin) + span * k) * (reduceMotion ? 0.7 : 1) * max(particleScale, 0.6))
         for _ in 0..<n {
             let a = CGFloat.pi / 2 + rng.range(-1.05, 1.05)
             let s = rng.range(250, 560 + 260 * k)
@@ -256,22 +276,19 @@ final class SceneEffects {
             p.gravity = 1500
             p.floorY = point.y - 20
             p.stretch = true
-            spray.spawn(p, size: rng.range(4, 9) / z, color: color, texture: dotTexture)
+            spray.spawn(p, size: rng.range(2.5, 5) / z, color: color, texture: dotTexture)
         }
-        let plume = reduceMotion ? 4 : 9
-        for _ in 0..<plume {
-            var p = SceneParticle()
-            p.position = CGPoint(x: point.x + rng.range(-20, 20) / z, y: point.y + rng.range(0, 14) / z)
-            p.velocity = CGVector(dx: rng.range(-60, 60), dy: rng.range(110, 300))
-            p.life = rng.range(0.55, 0.85)
-            p.gravity = 300
-            p.drag = 1.2
-            p.shrink = false
-            p.growth = 1.6
-            p.alphaScale = 0.7
-            spray.spawn(p, size: rng.range(26, 44) / z, color: color, texture: softTexture)
-        }
-        foamRing(at: point, count: 14, spread: 60, zoom: z, color: color)
+        var mist = SceneParticle()
+        mist.position = CGPoint(x: point.x, y: point.y + 10 / z)
+        mist.velocity = CGVector(dx: 0, dy: 90)
+        mist.life = 0.7
+        mist.gravity = 60
+        mist.drag = 1.5
+        mist.shrink = false
+        mist.growth = 0.4
+        mist.alphaScale = 0.5
+        spray.spawn(mist, size: SceneLook.splashMist / 1.4 / z, color: color, texture: softTexture)
+        foamRing(at: point, count: 10, spread: 50, zoom: z, color: color)
     }
 
     /// Reaching cloud height: soft white puffs around the bird.
@@ -351,10 +368,11 @@ final class SceneEffects {
     }
 
     private func ring(at point: CGPoint, color: UIColor, start: CGFloat, end: CGFloat, duration: CGFloat,
-                      delay: CGFloat, alpha: CGFloat) {
+                      delay: CGFloat, alpha: CGFloat, rides: Bool) {
         let r = rings[ringCursor % rings.count]
         ringCursor += 1
         r.active = true
+        r.rides = rides
         r.age = 0
         r.delay = delay
         r.duration = duration

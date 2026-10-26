@@ -10,8 +10,9 @@ import Testing
 // The assertions are the Round 2 targets (design/ROUND-2.md, medians over the seeds):
 //   novice 45–80 s and ≥ 2 Perfects/min; casual 130–170 s, ≥ 7 Perfects/min, ≤ 4 splashes/min; expert 300–500 s;
 //   perfect always caught inside the 15-min cap.
-// tools/balance-sim.js predicts novice ~53 s / 2.4 Perfects/min, casual ~157 s / 12.3 / 3.5, expert ~410 s,
-// perfect ~526 s. Overrides: SWOOP_BAL_SEEDS (number of seeds).
+// tools/balance-sim.js predicts (Round 3, with the storm leash) novice ~65 s / 2.8 Perfects/min, casual ~142 s /
+// 12.9 / 3.3, expert ~341 s, perfect ~398 s. It also prints SWOOP-GAP: the gap / fullLead quartiles while flying
+// (UX-C3; casual p50 ≈ 3.1, so Tuning.leadMeterScale 5 puts it at ~61 %). Overrides: SWOOP_BAL_SEEDS.
 // Each skill is simulated once (memoised per skill), so the comparison test reuses the per-skill runs.
 
 struct SwoopBalanceRun {
@@ -20,6 +21,8 @@ struct SwoopBalanceRun {
     var perfects: Int
     var splashes: Int
     var capped: Bool
+    /// gap / fullLead every 0.25 s of flight (UX-C3).
+    var gaps: [Double]
 }
 
 final class SwoopBalanceMemo: @unchecked Sendable {
@@ -71,6 +74,7 @@ enum SwoopBalanceHarness {
         var perfects: Int = 0
         var splashes: Int = 0
         var frames: Int = 0
+        var gaps: [Double] = []
         let maxFrames: Int = Int((capSeconds + 3) / frameDt)
         while !session.isFinished && frames < maxFrames {
             let tuck: Double = pilot.tuck(for: session.snapshot, sea: session.sea)
@@ -82,14 +86,18 @@ enum SwoopBalanceHarness {
                 }
             }
             frames += 1
+            if frames % 30 == 0 {
+                let snap = session.snapshot
+                if snap.phase == .flying { gaps.append(snap.gap / Tuning.fullLead) }
+            }
         }
         if let r = session.result {
             return SwoopBalanceRun(seconds: r.seconds, meters: r.meters, perfects: perfects, splashes: splashes,
-                              capped: false)
+                                   capped: false, gaps: gaps)
         }
         let snap = session.snapshot
         return SwoopBalanceRun(seconds: capSeconds, meters: snap.distanceMeters, perfects: perfects, splashes: splashes,
-                          capped: true)
+                               capped: true, gaps: gaps)
     }
 
     static func simulate(_ skill: PilotSkill) -> [SwoopBalanceRun] {
@@ -123,6 +131,15 @@ enum SwoopBalanceHarness {
                       percentile(meters, 0.5), percentile(ppm, 0.5), percentile(spm, 0.5), capped, runs.count)
     }
 
+    static func gapReport(_ skill: PilotSkill, _ runs: [SwoopBalanceRun]) -> String {
+        var all: [Double] = []
+        for r in runs { all.append(contentsOf: r.gaps) }
+        let p50: Double = percentile(all, 0.5)
+        return String(format: "SWOOP-GAP skill=%@ gap/fullLead p25=%.2f p50=%.2f p75=%.2f meter-p50=%.0f%%",
+                      skill.rawValue, percentile(all, 0.25), p50, percentile(all, 0.75),
+                      100 * p50 / Tuning.leadMeterScale)
+    }
+
     static func median(_ skill: PilotSkill) -> Double {
         let runs: [SwoopBalanceRun] = SwoopBalanceMemo.shared.runs(skill)
         return percentile(runs.map { (r: SwoopBalanceRun) -> Double in r.seconds }, 0.5)
@@ -137,6 +154,7 @@ struct BalanceTests {
         let line: String = SwoopBalanceHarness.report(skill, runs)
         // Unbuffered, so the line survives even if a later test crashes the runner.
         FileHandle.standardOutput.write(Data((line + "\n").utf8))
+        FileHandle.standardOutput.write(Data((SwoopBalanceHarness.gapReport(skill, runs) + "\n").utf8))
         let med: Double = SwoopBalanceHarness.percentile(runs.map { (r: SwoopBalanceRun) -> Double in r.seconds }, 0.5)
         let ppm: Double = SwoopBalanceHarness.percentile(runs.map { (r: SwoopBalanceRun) -> Double in
             Double(r.perfects) / max(r.seconds / 60, 1e-6)

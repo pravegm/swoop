@@ -4,8 +4,8 @@ import Foundation
 //
 // Units: sea points (pt; 10 pt = 1 m), seconds, pt/s, pt/s², degrees where the name says so.
 // The numbers were tuned with the Node port of Core in `tools/balance-sim.js` (keep the two in sync!). Its predicted
-// run lengths (20 seeds, dt 1/120; Round 2 targets in design/ROUND-2.md): novice ~53 s, casual ~157 s, expert ~6.8 min,
-// perfect ~8.8 min (always ends). `tools/storm-fit.js` fits the storm law to those targets.
+// run lengths (20 seeds, dt 1/120; the Round 2 targets in design/ROUND-2.md, kept in Round 3): novice ~65 s, casual
+// ~142 s, expert ~5.7 min, perfect ~6.6 min (always ends). `tools/storm-fit.js` fits the storm law to those targets.
 // Feel numbers to try first on a held Duo are marked FEEL.
 
 public enum Tuning {
@@ -77,21 +77,28 @@ public enum Tuning {
 
     // MARK: The storm (GAME-DESIGN §6)
 
-    /// Storm speed n(t) = stormBaseSpeed + stormAccel · t until stormCruiseSpeed (t ≈ 73 s), then it keeps
-    /// accelerating (stormLateAccel) up to stormMaxSpeed (reached at ~7 min), so even a flawless run ends.
-    /// Round 2: late accel 3.5 (ROUND-2); base, accel and cruise refit by tools/storm-fit.js for the R2 targets.
+    /// Storm speed n(t) = stormBaseSpeed + stormAccel · t until stormCruiseSpeed (t ≈ 68 s), then it keeps
+    /// accelerating (stormLateAccel) up to stormMaxSpeed (reached at ~10 min), so even a flawless run ends.
+    /// Round 2: late accel 3.5 (ROUND-2). Round 3: base, accel and cruise refit by tools/storm-fit.js together with the
+    /// leash below, for the same R2 run-length targets.
     public static let stormBaseSpeed: Double = 480
-    public static let stormAccel: Double = 18
-    public static let stormCruiseSpeed: Double = 1800
+    public static let stormAccel: Double = 12
+    public static let stormCruiseSpeed: Double = 1300
     public static let stormLateAccel: Double = 3.5
+    /// Round 3 leash (UX-C3: the lead meter sat pinned because a casual bird banked a ~30 km lead). Beyond
+    /// stormLeashGap the storm also closes the excess gap at stormLeashRate per second, so the storm stays a few
+    /// screens behind and the meter moves all run (casual gap p25/p50/p75 ≈ 2.0/3.1/3.5 × fullLead). Not in attract.
+    public static let stormLeashGap: Double = 9000
+    public static let stormLeashRate: Double = 0.5
     public static let stormMaxSpeed: Double = 3200
     /// The gap bird − storm at the drop (pt).
     public static let gapStart: Double = 2400
     /// The lead meter's "full" gap (pt): lead = gap / fullLead, clamped 0…1.
     public static let fullLead: Double = 3000
-    /// HUD headroom (REVIEW-1 P1-7): draw the meter as gap / (leadMeterScale · fullLead), so the 2400 pt start reads
-    /// ~60 % instead of pinned full. `snapshot.lead` itself is unchanged (stormClose still uses it).
-    public static let leadMeterScale: Double = 1.3
+    /// HUD headroom (REVIEW-1 P1-7, UX-C3): draw the meter as gap / (leadMeterScale · fullLead). Round 3: 5.0, from
+    /// balance-sim's SWOOP-GAP line, so the casual median gap (3.07 × fullLead) reads ~61 % and the leash (3 ×) 60 %;
+    /// the 2400 pt start reads 16 %. `snapshot.lead` itself is unchanged (stormClose still uses it).
+    public static let leadMeterScale: Double = 5.0
     /// `stormClose` fires when lead < stormCloseLead, once per dip; it re-arms above stormRearmLead.
     public static let stormCloseLead: Double = 0.15
     public static let stormRearmLead: Double = 0.30
@@ -134,6 +141,8 @@ public enum Tuning {
     public static let bodyAngleSmoothing: Double = 0.08
     /// Countdown before the drop (s): ticks 3, 2, 1, then `started`.
     public static let countdownDuration: Double = 3.0
+    /// The short "Ready · Go" countdown for Fly again and the Daily row (UX-C1): Ready at 0, Go at 0.75 s, drop at 1.5 s.
+    public static let restartCountdownDuration: Double = 1.5
     /// The calm "caught" ending before `finished` (s).
     public static let caughtDuration: Double = 1.8
     /// While caught the bird slows to a bob: drag (1/s) and the drift speed it settles at (pt/s).
@@ -223,7 +232,12 @@ public enum Tuning {
 
     // MARK: Laws
 
-    /// Storm speed (pt/s) at `t` seconds of flight.
+    /// The leash's extra storm speed (pt/s) for a gap (pt).
+    public static func stormLeashSpeed(gap: Double) -> Double {
+        return stormLeashRate * max(0, gap - stormLeashGap)
+    }
+
+    /// Storm speed (pt/s) at `t` seconds of flight (before the leash).
     public static func stormSpeed(atFlightTime t: Double) -> Double {
         let cruiseT: Double = (stormCruiseSpeed - stormBaseSpeed) / stormAccel
         if t <= cruiseT { return stormBaseSpeed + stormAccel * max(0, t) }
