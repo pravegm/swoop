@@ -72,6 +72,12 @@ import UIKit
 // - `goalNear`                    the run starts 250 m short of the first lighthouse (the chip's near state).
 // - `resultsFrame=caught|reached|newroute|first`: the Results variants.
 // - `existingPlayer`              the Home Wing check card (a Duo player from before R6).
+// Round 7 keys
+// - `session=first:home|school|run|results|home2|route|goals`: one coherent first session (fresh install; the school
+//                                 done from `run` on; run 1 recorded from `results` on). Logs `SWOOP-T session first <x>`.
+// - `school=storm:1|2|3`          step 7 held on its 1st / 2nd / 3rd line.
+// - `school=wingcheck:<phase>`    the Settings Wing check (R7: no longer in the school) at that phase.
+// - `settingsWhy`                 Settings with the Bird side "Why?" explainer open.
 // - `shortCountdown`              the run uses the 1.5 s "Ready · Go" restart countdown (with `freezeOn=countdown`
 //                                 the frame holds 1.3 s in: "Go").
 //
@@ -85,6 +91,10 @@ struct DemoConfig: Equatable {
         case home, play, results, goals, birds, settings, pose, icon, badges, cover, daily, route
     }
     enum ResultsFrame: String, Equatable { case caught, reached, newroute, first }
+    /// `session=first:<stage>`: ONE fresh install walked forward (no mixed presets): `home` (first launch), `school`
+    /// (with `school=` for the step), `run` (the first real run after the school), `results` (run 1's card),
+    /// `home2` / `route` / `goals` (after run 1, which is flown headless with the casual pilot and recorded).
+    enum FirstSession: String, Equatable { case home, school, run, results, home2, route, goals }
     enum CoverState: String, Equatable { case home, midrun, results }
     enum ModeKey: String, Equatable { case flight, daily, attract }
     enum Freeze: String, Equatable {
@@ -148,6 +158,9 @@ struct DemoConfig: Equatable {
     var goalNear = false
     var resultsFrame: ResultsFrame?
     var existingPlayer = false
+    // R7 (design/ROUND-7.md P0-3): one coherent first session, and the Bird side explainer.
+    var session: FirstSession?
+    var settingsWhy = false
 
     init(raw: String) { self.raw = raw }
 
@@ -239,6 +252,10 @@ struct DemoConfig: Equatable {
             case "goalNear": config.goalNear = flag(value)
             case "resultsFrame": config.resultsFrame = ResultsFrame(rawValue: value)
             case "existingPlayer": config.existingPlayer = flag(value)
+            case "session":
+                let bits = value.split(separator: ":", maxSplits: 1).map(String.init)
+                if bits.first == "first" { config.session = FirstSession(rawValue: bits.count > 1 ? bits[1] : "home") }
+            case "settingsWhy": config.settingsWhy = flag(value)
             case "shortCountdown": config.shortCountdown = flag(value)
             case "paused": config.paused = flag(value)
             case "nudge": config.nudge = flag(value)

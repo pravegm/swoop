@@ -335,7 +335,8 @@ struct HUDView: View {
                     .transition(.opacity)
             }
             Group {
-                LeadMeter(lead: hud.lead, stormClose: hud.stormClose, mirrored: mirrored, showsLabels: hud.meterLabel)
+                LeadMeter(lead: hud.lead, stormClose: hud.stormClose, mirrored: mirrored, showsLabels: hud.meterLabel,
+                          teachesDanger: hud.meterTeach)
                     .frame(width: layout.meter.width, height: layout.meter.height)
                     .position(x: layout.meter.midX, y: layout.meter.midY)
                     .allowsHitTesting(false)
@@ -360,7 +361,8 @@ struct HUDView: View {
                     // R6 (UX §4.2): the sea page carries WHERE: the distance, the goal chip, "Best in".
                     if hud.goalVisible {
                         VStack(alignment: mirrored ? .leading : .trailing, spacing: 2) {
-                            if hud.goalOverline { SwoopOverline(text: "Your goal", compact: c) }
+                            // R7: "Your goal" under the distance read as "the distance is the goal".
+                            if hud.goalOverline { SwoopOverline(text: "Next lighthouse", compact: c) }
                             GoalChip(index: hud.goalIndex, metersLeft: hud.goalMetersLeft, mirrored: mirrored,
                                      compact: c)
                         }
@@ -447,6 +449,13 @@ struct LeadMeter: View {
     let mirrored: Bool
     /// R5 (UX R4 P2-2): the first run's "Storm" (under the cloud) and "You" (under the knob), after Go, for 3 s.
     var showsLabels: Bool = false
+    /// R7: the first 3 runs name the danger zone ("Too close"), but only while the storm is inside it.
+    var teachesDanger: Bool = false
+
+    /// Pure; tested.
+    nonisolated static func showsTooClose(teach: Bool, lead: Double) -> Bool {
+        teach && lead.isFinite && lead < AppRules.meterDangerZone
+    }
 
     @State private var pulse = false
 
@@ -496,8 +505,8 @@ struct LeadMeter: View {
                             .frame(width: 20, height: 13)
                     }
                     .position(x: knobX, y: h / 2)
-                    if showsLabels {
-                        // D4 (UX §5 Meter): the coral end zone's label on the first 3 runs.
+                    if Self.showsTooClose(teach: teachesDanger, lead: lead) {
+                        // D4 / R7 P0-2: the coral end zone's label, on the first 3 runs, only while the knob is in it.
                         Text("Too close")
                             .font(.system(size: 12, weight: .bold, design: .rounded))
                             .foregroundStyle(SwoopTheme.coral)

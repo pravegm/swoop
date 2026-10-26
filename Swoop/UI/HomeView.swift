@@ -198,14 +198,16 @@ struct HomeView: View {
         // R6 D3: a returning player's caption is the objective (UX §4.1).
         if returning { return RouteRules.objective }
         if duo { return folded ? "Fold to dive. Open to soar." : "Hold your Duo like a book. These are your wings." }
-        return folded ? "Hold to dive. Let go to soar." : "Press and hold the bird. That's a tuck."
+        // R7 P1-7: "Press and hold" everywhere (anywhere on the screen, not only the bird).
+        return folded ? "Hold to dive. Let go to soar." : "Press and hold anywhere. That's a tuck."
     }
 
     private var caption: some View {
         // UX R3 P2-2: a returning player starts on the fold line (they already know the tuck).
         let folded = controller.homeFolded || !fresh
         let text = Self.captionText(duo: isDuo, folded: folded, flat: controller.homeFlat,
-                                    lowRest: isDuo && controller.homeLowRest, returning: !fresh)
+                                    lowRest: isDuo && controller.homeLowRest,
+                                    returning: !fresh && store.data.routeReached > 0)
         let gold = folded && !(isDuo && (controller.homeFlat || controller.homeLowRest))
         return VStack(alignment: info.mirrored ? .trailing : .leading, spacing: 8) {
             Text(text)
@@ -216,14 +218,8 @@ struct HomeView: View {
                 .minimumScaleFactor(0.75)
                 .id(text)
                 .transition(.opacity)
-            // UX §10: an iPhone's one-time line until the first flight.
-            if !isDuo && fresh {
-                Text("Made for iPhone Duo. Here, hold to tuck.")
-                    .font(SwoopType.caption(info.isCompact))
-                    .foregroundStyle(SwoopTheme.mist)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-            }
+            // R7 P1-8: no Duo line on an iPhone's first screen (it read as "the lesser version"); a positive "Fun
+            // fact" comes once, after the first results.
         }
         .swoopLegible()
         .animation(.easeInOut(duration: 0.4), value: text)
@@ -276,9 +272,11 @@ struct HomeView: View {
         return ProgressRules.goalsLine(rank: d.rank, done: done, total: max(goals.count, 3), starFlocks: d.starFlocks)
     }
 
-    /// Fly's second line (R6 UX §4.5): "Next: Saltlight · 9 km · best 6.42 km", shortened to fit. Pure; tested.
+    /// Fly's second line (R6 UX §4.5): "Next: Saltlight · 9 km · best 6.42 km", shortened to fit. R7 P1-6: until the
+    /// first lighthouse is reached it is the goal sentence. Pure; tested.
     nonisolated static func flySubtitle(best: Double, routeReached: Int = 0, compact: Bool = false) -> String {
-        RouteRules.homeNext(routeReached: routeReached, best: best, maxChars: compact ? 30 : 40)
+        if routeReached <= 0 { return RouteRules.objective }
+        return RouteRules.homeNext(routeReached: routeReached, best: best, maxChars: compact ? 30 : 40)
     }
 
     private func flyButton(_ r: CGRect) -> some View {
@@ -380,36 +378,86 @@ struct HomeView: View {
         }
     }
 
+    /// R7 P0-4: how a Home tile lays out in its rect. `row`: icon beside the word (and the Duo's detail line when it
+    /// fits); else `stacked`: icon over the word. The "New" capsule is a corner badge, so it never takes the text's
+    /// room. Pure; tested on every canvas.
+    struct TilePlan: Equatable {
+        var stacked: Bool
+        var detail: Bool
+        /// The width the plan needs (padding included).
+        var need: CGFloat
+    }
+
+    nonisolated static let tilePadding: CGFloat = 12
+    nonisolated static func titleWidth(_ s: String, compact: Bool) -> CGFloat {
+        CGFloat(s.count) * (compact ? 15 : 17) * 0.62
+    }
+    nonisolated static func detailWidth(_ s: String) -> CGFloat { CGFloat(s.count) * 13 * 0.56 }
+
+    nonisolated static func tilePlan(width: CGFloat, height: CGFloat, title: String, detail: String,
+                                     compact: Bool) -> TilePlan {
+        let pad = 2 * tilePadding
+        let icon: CGFloat = 22 + 6
+        let tw = titleWidth(title, compact: compact)
+        let withDetail = pad + icon + max(tw, detailWidth(detail))
+        if !compact && height >= 54 && withDetail <= width { return TilePlan(stacked: false, detail: true, need: withDetail) }
+        let row = pad + icon + tw
+        if row <= width { return TilePlan(stacked: false, detail: false, need: row) }
+        return TilePlan(stacked: true, detail: false, need: pad + tw)
+    }
+
     private func menuTile(_ r: CGRect, title: String, icon: TileIcon, detail: String, dot: Bool,
                           action: @escaping () -> Void) -> some View {
-        SwoopButton(kind: .secondary, height: r.height, compact: info.isCompact, action: action) {
-            HStack(spacing: 6) {
-                tileIcon(icon)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title)
-                        .font(SwoopType.body(info.isCompact).weight(.heavy))
-                        .foregroundStyle(SwoopTheme.foam)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                    // iPhone: icon + one word (UX §4.5); the Duo adds the detail line.
-                    if !info.isCompact {
-                        Text(detail)
-                            .font(SwoopType.caption(true))
-                            .foregroundStyle(SwoopTheme.mist)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
+        let plan = Self.tilePlan(width: r.width, height: r.height, title: title, detail: detail, compact: info.isCompact)
+        return SwoopButton(kind: .secondary, height: r.height, compact: info.isCompact, action: action) {
+            Group {
+                if plan.stacked {
+                    VStack(spacing: 2) {
+                        tileIcon(icon)
+                        tileTitle(title)
+                    }
+                    .frame(maxWidth: .infinity)
+                } else {
+                    HStack(spacing: 6) {
+                        tileIcon(icon)
+                        VStack(alignment: .leading, spacing: 1) {
+                            tileTitle(title)
+                            // iPhone: icon + one word (UX §4.5); the Duo adds the detail line when it fits.
+                            if plan.detail {
+                                Text(detail)
+                                    .font(SwoopType.caption(true))
+                                    .foregroundStyle(SwoopTheme.mist)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                            }
+                        }
+                        Spacer(minLength: 0)
                     }
                 }
-                Spacer(minLength: 0)
-                if dot { NewCapsule() }
             }
         }
         .frame(width: r.width, height: r.height)
+        .overlay(alignment: .topTrailing) {
+            if dot {
+                NewCapsule()
+                    .fixedSize()
+                    .offset(x: 4, y: -7)
+                    .allowsHitTesting(false)
+            }
+        }
         .position(x: r.midX, y: r.midY)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title), \(detail)\(dot ? ", new" : "")")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { action() }
+    }
+
+    private func tileTitle(_ title: String) -> some View {
+        Text(title)
+            .font(SwoopType.body(info.isCompact).weight(.heavy))
+            .foregroundStyle(SwoopTheme.foam)
+            .lineLimit(1)
+            .fixedSize()
     }
 
     // MARK: The tap-to-tuck offer (UX §10)
@@ -474,6 +522,8 @@ struct NewCapsule: View {
     var body: some View {
         Text("New")
             .font(.system(size: 11, weight: .heavy, design: .rounded))
+            .lineLimit(1)
+            .fixedSize()
             .foregroundStyle(SwoopTheme.ink)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)

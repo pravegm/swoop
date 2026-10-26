@@ -152,22 +152,15 @@ struct ResultsView: View {
                     .frame(height: ResultsPlan.stripHeight)
             }
             if plan.headline {
-                HStack(spacing: 8) {
-                    Text(head.title)
-                        .font(SwoopType.headline(c))
-                        .foregroundStyle(head.reached ? SwoopTheme.rewardGold : SwoopTheme.foam)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                    if outcome.newOnRoute {
-                        Text("New on your route")
-                            .font(SwoopType.chip(c))
-                            .foregroundStyle(SwoopTheme.ink)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Capsule().fill(SwoopTheme.rewardGold))
-                            .lineLimit(1)
-                            .fixedSize()
+                // R7 P0-4: the name is never cut ("Reached Cormorant…"): the chip goes first when space runs out.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        headlineText(head.title, reached: head.reached, compact: c).fixedSize()
+                        if outcome.newOnRoute { newOnRouteChip(c) }
                     }
+                    headlineText(head.title, reached: head.reached, compact: c).fixedSize()
+                    headlineText(head.title, reached: head.reached, compact: c)
+                        .minimumScaleFactor(0.6)
                 }
                 if plan.headlineSub, let sub = head.sub {
                     Text(sub)
@@ -206,6 +199,24 @@ struct ResultsView: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel((headText + [accessibleHeader(chip: chip)]).joined(separator: ", "))
+    }
+
+    private func headlineText(_ s: String, reached: Bool, compact c: Bool) -> some View {
+        Text(s)
+            .font(SwoopType.headline(c))
+            .foregroundStyle(reached ? SwoopTheme.rewardGold : SwoopTheme.foam)
+            .lineLimit(1)
+    }
+
+    private func newOnRouteChip(_ c: Bool) -> some View {
+        Text("New on your route")
+            .font(SwoopType.chip(c))
+            .foregroundStyle(SwoopTheme.ink)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(SwoopTheme.rewardGold))
+            .lineLimit(1)
+            .fixedSize()
     }
 
     private func accessibleHeader(chip: String?) -> String {
@@ -295,14 +306,14 @@ struct ResultsView: View {
         }
     }
 
-    /// The split deck's one line for the bird-page content: "3 goals done! · Rank 2 · Gull Wing · New: Tern" or
+    /// The split deck's one line for the bird-page content: "You ranked up! New bird: Tern · Rank 2 · Gull Wing" or
     /// "2 of 3 goals · next: Chain 12 Perfects". Pure; tested.
     nonisolated static func deckSummary(_ s: ResultSummary) -> String? {
         if let up = s.outcome.rankUp {
-            let unlocks = ProgressRules.unlockNames(from: up.from, to: up.to)
-            let tail = unlocks.isEmpty ? "" : " · New: " + unlocks.joined(separator: ", ")
-            return RankUpBanner.title(from: up.from, to: up.to, birds: [], others: [])
-                + " · " + RankUpBanner.rankLine(rank: up.to, title: GoalCatalog.rankTitle(up.to)) + tail
+            let unlocks = RankUpBanner.unlockLine(birds: up.birds.map { BirdCatalog.bird($0).name },
+                                                  skies: up.skies.map { SkyCatalog.sky($0).name }, trails: up.trailNames)
+            return RankUpBanner.title(from: up.from, to: up.to) + (unlocks.isEmpty ? "" : " " + unlocks)
+                + " · " + RankUpBanner.rankLine(rank: up.to, title: GoalCatalog.rankTitle(up.to))
         }
         let rows = s.outcome.goals
         guard !rows.isEmpty else { return nil }
@@ -334,7 +345,8 @@ struct ResultsView: View {
                                         done: goalsShown ? row.isMet : row.before >= 1,
                                         justMet: goalsShown && row.justMet,
                                         caption: AppRules.goalCaption(row.goal, before: row.before, run: result,
-                                                                      lifetime: controller.store.data.lifetimeMeters),
+                                                                      lifetime: controller.store.data.lifetimeMeters,
+                                                                      done: goalsShown ? row.isMet : row.before >= 1),
                                         compact: c)
                     }
                 }
@@ -359,8 +371,11 @@ struct ResultsView: View {
         // R6 (UX §4.6): "New in the logbook" is cut; the headline's "New on your route" chip carries it.
         if s.outcome.starEarned { out.append("Star goals done ★") }
         if s.showsRestLine { out.append("Long flight. Your wings can rest; the Daily will wait.") }
+        if s.funFact { out.append(ResultsView.funFactLine) }
         return Array(out.prefix(max(limit, 0)))
     }
+
+    nonisolated static let funFactLine = "Fun fact: on iPhone Duo, you fold the phone to fly."
 
     /// The last 7 days, oldest first: true where a scored Daily was flown. Pure; tested.
     nonisolated static func lastSevenDays(_ data: ProgressData, today: Int) -> [Bool] {
@@ -1015,7 +1030,7 @@ struct GoalProgressRow: View {
     }
 }
 
-/// "3 goals done! New bird: Tern" / "Rank 2 · Puddle Hopper" / "New goals: Fly 3 km · 3 Perfects in one flight · Chain 2": the
+/// "You ranked up!" / "New bird: Tern" / "Rank 2 · Puddle Hopper" / "New goals: Fly 3 km · 3 Perfects in one flight · Chain 2": the
 /// finished goals collapse into this. Every line has a limit, so `height` bounds it (R4 P0-1).
 struct RankUpBanner: View {
     let rankUp: AppRankUp
@@ -1026,24 +1041,31 @@ struct RankUpBanner: View {
             + 3 + 3 * ResultsPlan.line(ResultsPlan.caption(c))
     }
 
-    /// R6 (UX §4.6): "3 goals done! New bird: Tern", or after a cascade (R5 P1-9) "+3 ranks! New: Tern, Rose Dusk".
-    /// Pure; tested.
-    nonisolated static func title(from: Int, to: Int, birds: [String], others: [String]) -> String {
-        let n = to - from
-        let head = n >= 2 ? "+\(n) ranks!" : "3 goals done!"
-        if birds.count == 1 && others.isEmpty { return head + " New bird: " + birds[0] }
-        let all = birds + others
-        return all.isEmpty ? head : head + " New: " + all.joined(separator: ", ")
+    /// R7 P1-5 (plain words): "You ranked up!", after a cascade (R5 P1-9) "You ranked up twice!". Pure; tested.
+    nonisolated static func title(from: Int, to: Int) -> String {
+        switch to - from {
+        case ...1: return "You ranked up!"
+        case 2: return "You ranked up twice!"
+        case 3: return "You ranked up three times!"
+        case let n: return "You ranked up \(n) times!"
+        }
     }
 
     /// "Rank 2 · Puddle Hopper" (the rank title is flavour, never a header alone). Pure; tested.
     nonisolated static func rankLine(rank: Int, title: String) -> String { "Rank \(rank + 1) · \(title)" }
 
-    /// "New: Tern, Rose Dusk" (empty when nothing unlocked). Pure; tested.
+    /// R7 P1-5: "New bird: Tern · New trail: Coral" (each reward named for what it is; empty when nothing unlocked).
+    /// Pure; tested.
     nonisolated static func unlockLine(birds: [String], skies: [String], trails: [String] = []) -> String {
-        let all = birds + skies + trails
-        guard !all.isEmpty else { return "" }
-        return "New: " + all.joined(separator: ", ")
+        var parts: [String] = []
+        func add(_ names: [String], _ one: String, _ many: String) {
+            guard !names.isEmpty else { return }
+            parts.append((names.count == 1 ? one : many) + ": " + names.joined(separator: ", "))
+        }
+        add(birds, "New bird", "New birds")
+        add(skies, "New sky", "New skies")
+        add(trails, "New trail", "New trails")
+        return parts.joined(separator: " · ")
     }
 
     /// "New goals: A · B · C" for the rank reached (star goals past the top). Pure; tested.
@@ -1054,9 +1076,10 @@ struct RankUpBanner: View {
     }
 
     var body: some View {
-        let title = Self.title(from: rankUp.from, to: rankUp.to, birds: rankUp.birds.map { BirdCatalog.bird($0).name },
-                               others: rankUp.skies.map { SkyCatalog.sky($0).name } + rankUp.trailNames)
-        let line = Self.rankLine(rank: rankUp.to, title: GoalCatalog.rankTitle(rankUp.to))
+        let title = Self.title(from: rankUp.from, to: rankUp.to)
+        let unlocks = Self.unlockLine(birds: rankUp.birds.map { BirdCatalog.bird($0).name },
+                                      skies: rankUp.skies.map { SkyCatalog.sky($0).name }, trails: rankUp.trailNames)
+        let rank = Self.rankLine(rank: rankUp.to, title: GoalCatalog.rankTitle(rankUp.to))
         let goals = Self.newGoalsLine(rank: rankUp.to)
         HStack(alignment: .top, spacing: compact ? 10 : 14) {
             YouGlyph()
@@ -1071,18 +1094,24 @@ struct RankUpBanner: View {
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
                     .fixedSize(horizontal: false, vertical: true)
-                if !line.isEmpty {
-                    Text(line)
+                if !unlocks.isEmpty {
+                    Text(unlocks)
                         .font(SwoopType.body(compact))
-                        .foregroundStyle(SwoopTheme.mist)
+                        .foregroundStyle(SwoopTheme.goldLight)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                // The rank title never stands alone: "Rank 3 · Spray Chaser".
+                Text(rank)
+                    .font(SwoopType.caption(compact))
+                    .foregroundStyle(SwoopTheme.mist)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 if !goals.isEmpty {
                     Text(goals)
                         .font(SwoopType.caption(compact))
                         .foregroundStyle(SwoopTheme.mist)
-                        .lineLimit(3)
+                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

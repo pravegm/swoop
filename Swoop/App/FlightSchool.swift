@@ -331,6 +331,10 @@ struct FlightSchool: Equatable {
             praise = FlightSchoolCopy.praise(stepNow, wingCheck: wingCheck)
         case "fail":
             subline = FlightSchoolCopy.failure(stepNow, touch: touch)
+        case "1", "2", "3":
+            // R7: step 7's three lines as held frames (a 2 s wall-clock capture caught the launch's portrait frame).
+            let k = Double(Int(key) ?? 1)
+            stepStartedAt = time - (k - 1) * Self.stormLineSeconds - (k > 1 ? 1.0 : 0.5)
         default:
             if let p = WingCheckFlow.Phase(rawValue: key) { wingCheck.force(p) }
         }
@@ -358,7 +362,7 @@ struct FlightSchool: Equatable {
         case .finished:
             return out
         case .praise:
-            if t - phaseAt >= Self.praiseSeconds {
+            if t - phaseAt >= FlightSchoolCopy.praiseSeconds(stepNow) {
                 if let next = SchoolStep(rawValue: stepNow.rawValue + 1) {
                     var n = next
                     if n == .wingCheck && !asksWingCheck { n = .dive }
@@ -596,10 +600,11 @@ enum FlightSchoolCopy {
     static func prompt(_ step: SchoolStep, touch: Bool, tapping: Bool = false, elapsed: Double = 0) -> String {
         switch step {
         case .hold:
-            return touch ? "Turn your iPhone sideways." : "Hold your Duo open like a book."
+            // R7: the tester was already sideways when told to "turn".
+            return touch ? "Hold your iPhone sideways, in both hands." : "Hold your Duo open like a book."
         case .wings:
             if tapping { return "These are your wings. Tap to fold… tap again to open." }
-            return touch ? "These are your wings. Press and hold anywhere…" : "These are your wings. Fold a little…"
+            return touch ? "Press and hold anywhere to fold the wings…" : "These are your wings. Fold a little…"
         case .wingCheck:
             return "One quick check."
         case .dive:
@@ -609,11 +614,12 @@ enum FlightSchoolCopy {
             if tapping { return "Tap again at the bottom… and fly!" }
             return touch ? "Let go at the bottom… and fly!" : "Open at the bottom… and fly!"
         case .land:
-            return "Land on the next downslope: Perfect!"
+            return "Now land on the downslope ahead, in the ring."
         case .rhythm:
             if tapping { return "One tap down, one tap up, per wave." }
             if elapsed >= FlightSchool.rhythmSwapAfter { return touch ? "Hold down, let go up." : "Fold down, open up." }
-            return touch ? "That's it: one hold per wave. No tapping." : "That's it: one fold per wave. You never flap."
+            // R7 P1-7: "Press and hold" everywhere; no "no tapping" (nobody was told to tap).
+            return touch ? "That's it: one press and hold per wave." : "That's it: one fold per wave. You never flap."
         case .storm:
             let line = FlightSchool.stormLineSeconds
             if elapsed < line { return "A storm is chasing you out to sea." }
@@ -644,10 +650,23 @@ enum FlightSchoolCopy {
                 : "Got it. Your bird flies on the sharp side."
         case .dive: return "Feel that speed?"
         case .soar: return "Lift-off!"
-        case .land: return "Perfect!"
+        case .land: return "PERFECT"
         case .rhythm: return "You've got the rhythm."
         case .storm: return ""
         }
+    }
+
+    /// R7 P0-2: the line under the praise, where a step teaches a word. Step 5 names the Perfect outright.
+    static func praiseLine(_ step: SchoolStep) -> String? {
+        switch step {
+        case .land: return "Land on a downslope = Perfect. Perfects push the storm back."
+        default: return nil
+        }
+    }
+
+    /// How long the praise stays up (the teaching line needs time to read).
+    static func praiseSeconds(_ step: SchoolStep) -> Double {
+        praiseLine(step) == nil ? FlightSchool.praiseSeconds : 3.0
     }
 }
 
@@ -657,7 +676,7 @@ enum FlightSchoolCopy {
 /// Pure; tested.
 enum RouteRules {
     /// The framing sentence (UX §4.1).
-    static let objective = "Outfly the storm and reach the next lighthouse."
+    static let objective = "Outfly the storm. Reach the next lighthouse."
 
     /// The lighthouse's name (fixed by index in every mode).
     static func name(_ index: Int) -> String {

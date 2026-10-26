@@ -182,36 +182,51 @@ struct AngleGauge: View {
     }
 }
 
-/// The touch variant of the diagram (ART §1): a flat iPhone and a finger that presses its lower outer corner.
+/// The touch variant of the diagram (ART §1): an iPhone held sideways with the bird on its screen; from step 1 a
+/// fingertip presses the screen (R7: the old finger under the phone read as "a TV on a stand").
 struct PhoneTouchDiagram: View {
     let pressed: Bool
+    var showsFinger = true
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(DuoDiagram.bodyColor)
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(DuoDiagram.rim.opacity(0.4), lineWidth: 3))
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(swoopHex: 0x1B2A3A))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(DuoDiagram.bodyColor, lineWidth: 3))
                 .frame(width: 180, height: 88)
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .fill(LinearGradient(colors: [Color(swoopHex: 0x3D6FB0), Color(swoopHex: 0xFFE7C2)],
                                      startPoint: .top, endPoint: .bottom))
                 .frame(width: 166, height: 74)
-            Circle()
-                .stroke(SwoopTheme.foam.opacity(0.6), lineWidth: 2)
-                .frame(width: pressed ? 60 : 44, height: pressed ? 60 : 44)
-                .offset(x: 52, y: 18)
-                .opacity(pressed ? 1 : 0)
+            // The camera island on the short edge, so it reads as a phone on its side.
             Capsule()
-                .fill(SwoopTheme.mist)
-                .frame(width: 22, height: 36)
-                .offset(x: 52, y: pressed ? 34 : 44)
+                .fill(Color(swoopHex: 0x0B1520))
+                .frame(width: 6, height: 22)
+                .offset(x: -74)
+            YouGlyph()
+                .fill(Color.white)
+                .frame(width: 30, height: 19)
+                .offset(x: -24, y: pressed ? 6 : -4)
+            if showsFinger {
+                Circle()
+                    .stroke(SwoopTheme.foam.opacity(0.7), lineWidth: 2)
+                    .frame(width: pressed ? 54 : 30, height: pressed ? 54 : 30)
+                    .opacity(pressed ? 1 : 0)
+                    .offset(x: 44, y: 10)
+                Circle()
+                    .fill(SwoopTheme.mist)
+                    .overlay(Circle().stroke(DuoDiagram.rim.opacity(0.3), lineWidth: 2))
+                    .frame(width: 28, height: 28)
+                    .scaleEffect(pressed ? 0.9 : 1)
+                    .opacity(pressed ? 1 : 0.75)
+                    .offset(x: 44, y: 10)
+            }
         }
         .animation(.easeOut(duration: 0.2), value: pressed)
         .accessibilityHidden(true)
     }
 }
-
 // MARK: - The lighthouse icon (ART §3 AP4)
 
 /// The lighthouse: a tapered tower with a lamp room, a roof cap and a gallery, in a 24 × 32 viewBox.

@@ -77,8 +77,10 @@ struct SchoolDisplay: Equatable {
     var prompt = ""
     var subline: String?
     var praise: String?
+    /// R7 P0-2: the teaching line under the praise ("Land on a downslope = Perfect. …").
+    var praiseLine: String?
     var dotIndex = 0
-    var stepCount = 8
+    var stepCount = 7
     var canSkip = false
     var offersTouch = false
     var touch = false
@@ -132,6 +134,8 @@ final class HUDState: ObservableObject {
     @Published var splashMark: HUDSplashMark?
     /// R4 P1-7: the first run's one-time "Storm ←→ you" label under the meter.
     @Published var meterLabel = false
+    /// R7: one of the first 3 runs (the meter names its danger zone while the storm is in it).
+    @Published var meterTeach = false
     /// D4: the chain pill reads "✦ ×2 in a row" on the run that first chains.
     @Published var chainTeach = false
     /// SC3 (App-drawn): step 3's "Faster!" fill (0…1) and step 6's rhythm bar; nil = hidden.
@@ -186,6 +190,7 @@ final class HUDState: ObservableObject {
     func setFoldArmed(_ v: Bool) { if foldArmed != v { foldArmed = v } }
     func setSplashMark(_ v: HUDSplashMark?) { if splashMark != v { splashMark = v } }
     func setMeterLabel(_ v: Bool) { if meterLabel != v { meterLabel = v } }
+    func setMeterTeach(_ v: Bool) { if meterTeach != v { meterTeach = v } }
     func setChainTeach(_ v: Bool) { if chainTeach != v { chainTeach = v } }
     func setSchoolFaster(_ v: Double?) { if schoolFaster != v { schoolFaster = v } }
     func setSchoolRhythm(_ v: SchoolRhythm?) { if schoolRhythm != v { schoolRhythm = v } }
@@ -263,6 +268,8 @@ struct ResultSummary: Equatable {
     var firstRealRun = false
     /// D4: the Daily row's one-time sub-line is due (captured when the card is built).
     var explainsDaily = false
+    /// R7 P1-8: "Fun fact: on iPhone Duo, you fold the phone to fly." (an iPhone's first results).
+    var funFact = false
 }
 
 /// A run paused mid-flight (the cover display's Paused state, UX-D1), built at the pause.
@@ -698,7 +705,9 @@ enum AppRules {
 
     /// R4 P0-1 (contradicting numbers): the line under each goal row says its scope and, after a run, where this flight
     /// stands, so "Pass 4 lighthouses ✓" never sits unexplained next to "2 lighthouses". Tested.
-    static func goalCaption(_ goal: Goal, before: Double, run: RunResult?, lifetime: Double) -> String {
+    /// R7 P0-3: never "159 of 25" (a met target says "Done this flight"), and a ticked row is never captioned with a
+    /// this-flight count short of its target (`done`: the row shows as met).
+    static func goalCaption(_ goal: Goal, before: Double, run: RunResult?, lifetime: Double, done: Bool = false) -> String {
         if run != nil && before >= 1 { return "Done in an earlier flight" }
         switch goal.kind {
         case .totalMeters:
@@ -720,6 +729,19 @@ enum AppRules {
             case .tailwinds: value = "\(run.tailwinds)"
             default: value = ""
             }
+            let amount: Double
+            switch goal.kind {
+            case .reachMeters: amount = run.meters
+            case .cleanMeters: amount = run.longestCleanMeters
+            case .perfectsInRun: amount = Double(run.perfects)
+            case .chain: amount = Double(run.bestChain)
+            case .lighthouses: amount = Double(run.lighthouses)
+            case .cloudTouches: amount = Double(run.cloudTouches)
+            case .tailwinds: amount = Double(run.tailwinds)
+            default: amount = 0
+            }
+            if amount.isFinite && amount >= goal.target { return "Done this flight" }
+            if done { return "Done in an earlier flight" }
             let target = (goal.kind == .reachMeters || goal.kind == .cleanMeters)
                 ? ShareText.target(goal.target) : "\(Int(goal.target.rounded()))"
             return "This flight: \(value) of \(target)"

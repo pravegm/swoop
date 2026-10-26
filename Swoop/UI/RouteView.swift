@@ -39,7 +39,9 @@ struct RouteView: View {
     }
 
     private func summary(reached: Int) -> some View {
-        let lines = RouteRules.summary(routeReached: reached, best: store.data.bestMeters)
+        // R7 P0-4: a phone's 64 pt summary holds two lines (four were cut to "1 lighthouse r…").
+        let all = RouteRules.summary(routeReached: reached, best: store.data.bestMeters)
+        let lines = c ? [all.first, all.first(where: { $0.hasPrefix("Next") })].compactMap { $0 } : all
         return HStack(spacing: 14) {
             LighthouseIcon(state: .next, size: c ? 26 : 30)
             VStack(alignment: .leading, spacing: 2) {
@@ -48,9 +50,11 @@ struct RouteView: View {
                         .font(item.offset == 0 ? SwoopType.headline(c) : SwoopType.caption(c))
                         .foregroundStyle(item.offset == 0 ? SwoopTheme.foam : SwoopTheme.mist)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                        .minimumScaleFactor(0.6)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .layoutPriority(1)
             Spacer(minLength: 0)
             SwoopButton(kind: .primary, height: AppCanvas.minTap, compact: c, action: { controller.fly() }) {
                 Label("Fly", systemImage: "play.fill").lineLimit(1)

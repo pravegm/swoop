@@ -11,6 +11,8 @@ struct SettingsView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var confirmReset = false
     @State private var showPrivacy = false
+    /// R7 P0-1: the Bird side "Why?" explainer is open.
+    @State private var showsWhy = false
 
     private var version: String {
         let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
@@ -24,6 +26,7 @@ struct SettingsView: View {
         } right: {
             rightPage
         }
+        .onAppear { if controller.demoSettingsWhy { showsWhy = true } }
         .alert("Reset all progress?", isPresented: $confirmReset) {
             Button("Reset", role: .destructive) {
                 controller.resetProgress()
@@ -116,11 +119,26 @@ struct SettingsView: View {
                     controller.refreshLayout()
                 }
             }
-            if controller.hasHinge && current == .sharp {
-                SwoopButton(kind: .quiet, height: 44, compact: c, action: { controller.openWingCheck() }) {
-                    Text(settings.wingCheckDone ? "Check again" : "Check now").lineLimit(1)
+            if controller.hasHinge {
+                HStack(spacing: 8) {
+                    if current == .sharp {
+                        SwoopButton(kind: .quiet, height: 44, compact: c, action: { controller.openWingCheck() }) {
+                            Text(settings.wingCheckDone ? "Check again" : "Check my Duo").lineLimit(1)
+                        }
+                        .frame(width: 160)
+                    }
+                    SwoopButton(kind: .quiet, height: 44, compact: c, action: {
+                        withAnimation(.easeInOut(duration: 0.25)) { showsWhy.toggle() }
+                    }) {
+                        Label("Why?", systemImage: showsWhy ? "chevron.up" : "questionmark.circle").lineLimit(1)
+                    }
+                    .frame(width: 110)
+                    .accessibilityHint("Explains why the bird has a side")
                 }
-                .frame(width: 160)
+                if showsWhy {
+                    BirdSideWhy(birdSide: controller.birdScreenSide, mirrored: info.mirrored, compact: c)
+                        .transition(.opacity)
+                }
             }
         }
     }
@@ -402,5 +420,40 @@ struct SwoopSegmented: View {
         .background(RoundedRectangle(cornerRadius: SwoopTheme.buttonRadius(true) + 4, style: .continuous)
             .fill(SwoopTheme.surfaceRaised))
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// R7 P0-1: the one place the Wing check is explained, in plain words, with the diagram: a Duo folding from flat
+/// softens one half for a moment; the bird flies on the other one.
+struct BirdSideWhy: View {
+    let birdSide: ScreenSide
+    let mirrored: Bool
+    var compact = false
+
+    static let lines = [
+        "When an iPhone Duo starts to fold from flat, one half of the screen goes soft for a moment.",
+        "Swoop keeps your bird on the half that stays sharp, so you never lose sight of it.",
+        "Not sure? Leave it on Sharp side. It suits most Duos.",
+    ]
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            DuoDiagram(angle: 168, softSide: birdSide == .right ? .left : .right, showsGauge: false,
+                       mirrored: birdSide == .right)
+                .frame(width: compact ? 110 : 130, height: compact ? 78 : 92)
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Self.lines, id: \.self) { line in
+                    Text(line)
+                        .font(SwoopType.caption(compact))
+                        .foregroundStyle(SwoopTheme.mist)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: SwoopTheme.tileRadius(compact), style: .continuous)
+            .fill(SwoopTheme.abyss.opacity(0.45)))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Self.lines.joined(separator: " "))
     }
 }

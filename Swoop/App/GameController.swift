@@ -287,6 +287,15 @@ final class GameController: ObservableObject, SceneDriver {
             + "o=\(interfaceSide.feel.letter)"
     }
 
+    /// Demo `settingsWhy`: Settings opens with the Bird side explainer showing.
+    var demoSettingsWhy: Bool {
+        #if DEBUG
+        return demo?.settingsWhy ?? false
+        #else
+        return false
+        #endif
+    }
+
     /// Demo `pose=phone`: the forced TurnCard uses the iPhone copy.
     var demoPosePhone: Bool {
         #if DEBUG
@@ -965,6 +974,8 @@ final class GameController: ObservableObject, SceneDriver {
     #if DEBUG
     /// Demo `school=`: the frame is held (the machine isn't stepped).
     private var schoolHeld = false
+    /// Demo `school=wingcheck:<phase>`: the Settings check is held at its phase (the hinge doesn't move it on).
+    private var demoWingHeld = false
     #endif
 
     var schoolActive: Bool { school != nil }
@@ -980,8 +991,8 @@ final class GameController: ObservableObject, SceneDriver {
     /// Fly (first ever) or Settings › Flight School (replay).
     func startSchool(replay: Bool, at step: SchoolStep = .hold) {
         let now = CACurrentMediaTime()
-        var s = FlightSchool(touch: schoolTouch, tapping: settings.tuckByTapping,
-                             asksWingCheck: hasHinge && (replay || !settings.wingCheckDone))
+        // R7 P0-1: the Wing check is no longer part of the school (it lives in Settings › Bird side): 7 steps.
+        var s = FlightSchool(touch: schoolTouch, tapping: settings.tuckByTapping, asksWingCheck: false)
         s.start(at: step, time: now)
         school = s
         AppTrace.t("SWOOP-T school \(s.stepNow.key) prompt")
@@ -1039,6 +1050,7 @@ final class GameController: ObservableObject, SceneDriver {
         AppTrace.t("SWOOP-T school skip at \(s.stepNow.key)")
         endSchool()
         nextCountdown = Self.firstCountdown
+        firstRealRun = true    // R7: a skip's run is the first real run too (the goal sentence, the storm line)
         start(mode: .flight)
     }
 
@@ -1097,9 +1109,8 @@ final class GameController: ObservableObject, SceneDriver {
     func dismissWingCheckCard() { settings.wingCheckCardShown = true }
 
     /// The existing-player Wing check card (UX §2.4): a Duo, runs > 0, never checked, never shown.
-    var showsWingCheckCard: Bool {
-        (hasHinge || demoDuo) && store.data.runs > 0 && !settings.wingCheckDone && !settings.wingCheckCardShown
-    }
+    /// R7 P0-1: the Home Wing check card is gone (testers met it as a second, confusing ask); Settings keeps it.
+    var showsWingCheckCard: Bool { false }
 
     private func endSchool() {
         school = nil
@@ -1190,6 +1201,7 @@ final class GameController: ObservableObject, SceneDriver {
         d.prompt = sc.prompt(at: now)
         d.subline = sc.subline
         d.praise = sc.phase == .praise ? sc.praise : nil
+        d.praiseLine = sc.phase == .praise ? FlightSchoolCopy.praiseLine(sc.stepNow) : nil
         d.dotIndex = sc.dotIndex
         d.stepCount = sc.stepCount
         d.canSkip = sc.canSkip
@@ -1202,6 +1214,9 @@ final class GameController: ObservableObject, SceneDriver {
 
     /// The standalone Wing check's frame.
     private func stepStandaloneWingCheck(now: TimeInterval) {
+        #if DEBUG
+        if demoWingHeld { return }
+        #endif
         guard var w = standaloneWingCheck, let a = hinge.angle else { return }
         w.update(angle: a, time: now)
         standaloneWingCheck = w
@@ -1445,6 +1460,10 @@ final class GameController: ObservableObject, SceneDriver {
                                                                   AppHint.land.rawValue]))
         hud.reset()
         chainTeachRun = !store.data.learnedHints.contains("chain") && !schoolSeaRun
+        // R7 P1-6: the first real run's countdown carries the goal sentence (until Go).
+        if firstRealRun && !homeLoop && !schoolSeaRun {
+            showTip(RouteRules.objective, seconds: countdownTotal, sessionTime: 0)
+        }
         goalNearCued = -1
 
         let kind = chooseInput()
@@ -1616,6 +1635,8 @@ final class GameController: ObservableObject, SceneDriver {
                 if !store.data.learnedHints.contains("tailwind") && !schoolSeaRun {
                     if !isDemo { store.learnHint("tailwind") }
                     showTip("Tailwind! 3 Perfects in a row = a burst of speed.", seconds: 3, sessionTime: s.time)
+                    // R7 P0-4: the teach line says "Tailwind!"; the callout word clipped out from under it.
+                    hud.setCallout(nil)
                 }
             case .countdownTick, .launched, .tailwindEnded, .cloudTouched:
                 break
@@ -1759,7 +1780,8 @@ final class GameController: ObservableObject, SceneDriver {
         if !caught {
             let left = (RouteRules.metersLeft(nextIndex: s.lighthousesPassed, metersFlown: s.distanceMeters) / 10)
                 .rounded(.up) * 10
-            hud.setGoal(index: s.lighthousesPassed, metersLeft: left, visible: flying && !schoolSeaRun)
+            // R7 P0-4: hidden under the pause card (it ghosted through its top).
+            hud.setGoal(index: s.lighthousesPassed, metersLeft: left, visible: flying && !schoolSeaRun && !isPausedByReason)
             // Feel F4: one glint at 300 m to go, once per lighthouse.
             if flying && !schoolSeaRun && RouteRules.isNear(metersLeft: left) && goalNearCued != s.lighthousesPassed {
                 goalNearCued = s.lighthousesPassed
@@ -1787,6 +1809,7 @@ final class GameController: ObservableObject, SceneDriver {
             if let start = flightStart { label = s.time - start < Self.meterLabelSeconds }
         }
         hud.setMeterLabel(label)
+        hud.setMeterTeach(store.data.runs < 3 && !homeLoop && !schoolSeaRun)
         if hud.teachLine != nil && s.time > teachUntil { hud.setTeachLine(nil) }
     }
 
@@ -1816,6 +1839,8 @@ final class GameController: ObservableObject, SceneDriver {
         built.hingeRun = wasHinge
         built.firstRealRun = firstRealRun
         built.explainsDaily = !store.data.learnedHints.contains(AppRules.dailyRowHint)
+        // R7 P1-8: an iPhone hears about the Duo once, positively, after its first results (never on first launch).
+        built.funFact = !hasHinge && !demoDuo && store.data.runs == 1
         firstRealRun = false
         built.dailyBest = Self.isDailyBest(result, data: store.data)
         if wasHinge && store.data.foldToFlyShown < 5 {
@@ -1850,7 +1875,8 @@ final class GameController: ObservableObject, SceneDriver {
     }
 
     private func makeSummary(_ result: RunResult, outcome: RecordOutcome) -> ResultSummary {
-        var title = outcome.isNewBest && outcome.previousBest <= 0 ? "First flight" : "Flight"
+        // R7 P0-3: "First flight" only with no previous best, on the very first recorded run.
+        var title = outcome.isNewBest && outcome.previousBest <= 0 && store.data.runs <= 1 ? "First flight" : "Flight"
         var day: Int?
         var practice = false
         if case let .daily(d, scored) = result.mode {
@@ -1984,7 +2010,9 @@ final class GameController: ObservableObject, SceneDriver {
     #if DEBUG
     private func launchDemo(_ demo: DemoConfig) {
         let today = DailySeed.dayNumber(for: Date())
-        var data = DemoPresets.progress(demo.progress, today: today)
+        // R7 P0-3: `session=first:` always starts from the fresh install.
+        var data = DemoPresets.progress(demo.session != nil ? .fresh : demo.progress, today: today)
+        if let stage = demo.session, stage != .home && stage != .school { data.flightSchool = .done }
         if demo.dailyToday {
             data.daily[today] = DailyRecord(meters: 7_480, perfects: 23, lighthouses: 1,
                                             lastLighthouseName: Lighthouses.name(index: 0, seed: DailySeed.seed(day: today)),
@@ -2031,6 +2059,19 @@ final class GameController: ObservableObject, SceneDriver {
                 AppTrace.t("SWOOP-T flatTip shown")
             }
         }
+        if demo.schoolStep == .wingCheck {
+            // R7 P0-1: the Wing check lives in Settings only; its frames show that check at the phase asked.
+            startAttract()
+            openWingCheck()
+            if let p = demo.schoolPhase.flatMap(WingCheckFlow.Phase.init(rawValue:)) {
+                standaloneWingCheck?.force(p)
+                wingCheckDisplay = p
+            }
+            demoWingHeld = true
+            AppTrace.t("SWOOP-T wingcheck \(demo.schoolPhase ?? "explain")")
+            return
+        }
+        if let stage = demo.session, launchFirstSession(stage, demo: demo, today: today) { return }
         if let step = demo.schoolStep {
             startSchool(replay: false, at: step)
             school?.demo(phase: demo.schoolPhase, time: CACurrentMediaTime())
@@ -2121,6 +2162,45 @@ final class GameController: ObservableObject, SceneDriver {
         }
     }
 
+    /// R7 P0-3 `session=first:<stage>`: one coherent first session. Returns false for `school` with a `school=` step
+    /// (the school branch shows it, on the same fresh progress).
+    private func launchFirstSession(_ stage: DemoConfig.FirstSession, demo: DemoConfig, today: Int) -> Bool {
+        AppTrace.t("SWOOP-T session first \(stage.rawValue)")
+        switch stage {
+        case .home:
+            startAttract()
+        case .school:
+            if demo.schoolStep != nil { return false }
+            startSchool(replay: false, at: .hold)
+            schoolHeld = true
+            publishSchool(CACurrentMediaTime())
+        case .run:
+            firstRealRun = true
+            start(mode: .flight)
+        case .results:
+            firstRealRun = true
+            presentDemoResults(demo, today: today)
+        case .home2, .route, .goals:
+            demoRecordFirstRun(today: today)
+            startAttract()
+            if stage == .route { setRoute(.route) }
+            if stage == .goals { setRoute(.goals) }
+        }
+        return true
+    }
+
+    /// Run 1 of the first session, flown headless (casual pilot, seed 7, like `session=first:results`) and recorded.
+    private func demoRecordFirstRun(today: Int) {
+        let s = CoreAdapter.makeSession(mode: .flight, seed: DemoConfig.defaultSeed, bestMeters: 0, bird: store.activeBird,
+                                        countdown: 0)
+        s.skipCountdown()
+        DemoRunner.playToEnd(s, skill: .casual, seed: DemoConfig.defaultSeed)
+        if let r = s.result {
+            _ = store.record(r, today: today)
+            AppTrace.t("SWOOP-T run meters=\(AppTrace.int(r.meters)) perfects=\(r.perfects) (session first)")
+        }
+    }
+
     /// `chain=`, `lead=`, `skipTo=`, `skipCountdown`: the run is really flown headless before the live frames.
     private func seedDemoRun(_ s: FlightSession, demo: DemoConfig, seed: UInt64) {
         // R6: `goalNear` starts 250 m short of the first lighthouse; `resultsFrame=reached|newroute` just past it.
@@ -2177,6 +2257,11 @@ final class GameController: ObservableObject, SceneDriver {
         AppTrace.t("SWOOP-T run meters=\(AppTrace.int(result.meters)) perfects=\(result.perfects) "
                    + "seconds=\(String(format: "%.1f", result.seconds))")
         var built = makeSummary(result, outcome: outcome)
+        // R7: the demo card is framed like the real one (`resultsFrame=first`, `session=first:results`).
+        built.firstRealRun = firstRealRun
+        firstRealRun = false
+        built.explainsDaily = !store.data.learnedHints.contains(AppRules.dailyRowHint)
+        built.funFact = !hasHinge && !demoDuo && store.data.runs == 1
         if demo.duo || hasHinge || demo.foldFill != nil {
             built.hingeRun = true
             built.showsFoldHelper = true

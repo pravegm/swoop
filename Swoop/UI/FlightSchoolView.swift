@@ -12,7 +12,12 @@ struct SchoolLayout: Equatable {
     var prompt: CGRect
     /// The Sea steps' prompt (y 0.22 h on the bird page).
     var seaPrompt: CGRect
+    /// R7 P0-4: step 7's prompt, under the meter and the goal chip that fade in there (they overlapped the card).
+    var stormPrompt: CGRect
     var skip: CGRect
+
+    /// The Duo diagram's drawing height (ART §1: 240 × 170); the gauge adds 66 under it.
+    static let diagramDrawingHeight: CGFloat = 170
 
     static func make(_ c: AppCanvas) -> SchoolLayout {
         let bp = c.birdPage
@@ -23,7 +28,8 @@ struct SchoolLayout: Equatable {
         let foldMid = (c.foldMinX + c.foldMaxX) / 2
         let half = max(min(foldMid - 12, c.size.width - 12 - foldMid), 0)
         let titleBird = CGRect(x: foldMid - half, y: max(c.insets.top, 0) + 10, width: half * 2, height: birdH)
-        let dSize = compact ? CGSize(width: 180, height: 118) : CGSize(width: 240, height: 200)
+        // R7 P1-9: ART's 240 × 170 phone drawing on the Duo (plus the 66 pt gauge under it); 180 × 118 on iPhone.
+        let dSize = compact ? CGSize(width: 180, height: 118) : CGSize(width: 240, height: Self.diagramDrawingHeight + 66)
         let dw = min(dSize.width, bp.width)
         let diagram = CGRect(x: bp.midX - dw / 2, y: titleBird.maxY + 6, width: dw, height: dSize.height)
         let pw = min(380, bp.width)
@@ -32,11 +38,14 @@ struct SchoolLayout: Equatable {
         let prompt = CGRect(x: bp.midX - pw / 2, y: pTop, width: pw, height: ph)
         let seaPrompt = CGRect(x: bp.midX - pw / 2, y: max(c.size.height * 0.22 - ph / 2, c.top + 28), width: pw,
                                height: ph)
+        let meter = PlayLayout.make(c).meter
+        let stormPrompt = CGRect(x: seaPrompt.minX, y: min(max(meter.maxY + 62, seaPrompt.minY), c.bottom - ph),
+                                 width: pw, height: ph)
         let skipW: CGFloat = 120
         let skipX = c.mirrored ? fp.minX : fp.maxX - skipW
         let skip = CGRect(x: skipX, y: c.bottom - AppCanvas.minTap, width: skipW, height: AppCanvas.minTap)
         return SchoolLayout(dots: dots, titleBird: titleBird, diagram: diagram, prompt: prompt, seaPrompt: seaPrompt,
-                            skip: skip)
+                            stormPrompt: stormPrompt, skip: skip)
     }
 }
 
@@ -67,13 +76,32 @@ struct SchoolPrompt: View {
         VStack(spacing: 6) {
             SwoopOverline(text: display.overline, compact: compact)
             if let praise = display.praise {
-                Label(praise, systemImage: "checkmark")
-                    .font(SwoopType.headline(compact))
-                    .foregroundStyle(SwoopTheme.rewardGold)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-                    .transition(.opacity)
+                if let line = display.praiseLine {
+                    // R7 P0-2: the big word lands, then what it means.
+                    Text(praise)
+                        .font(.system(size: compact ? 34 : 44, weight: .black, design: .rounded))
+                        .kerning(2)
+                        .foregroundStyle(SwoopTheme.rewardGold)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .transition(.scale(scale: 1.3).combined(with: .opacity))
+                    Text(line)
+                        .font(SwoopType.body(compact))
+                        .foregroundStyle(SwoopTheme.foam)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.8)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Label(praise, systemImage: "checkmark")
+                        .font(SwoopType.headline(compact))
+                        .foregroundStyle(SwoopTheme.rewardGold)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .transition(.opacity)
+                }
             } else {
+                // R7 P0-4: one Text whose words cross-fade in place (an `.id` swap stacked the old line on the new).
                 Text(display.prompt)
                     .font(SwoopType.headline(compact))
                     .foregroundStyle(SwoopTheme.foam)
@@ -81,8 +109,7 @@ struct SchoolPrompt: View {
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
                     .fixedSize(horizontal: false, vertical: true)
-                    .id(display.prompt)
-                    .transition(.opacity)
+                    .contentTransition(.opacity)
                 if let sub = display.subline {
                     Text(sub)
                         .font(SwoopType.body(compact))
@@ -135,7 +162,7 @@ struct SchoolStudioView: View {
                             .position(x: l.titleBird.midX, y: l.titleBird.midY)
                         Group {
                             if d.touch {
-                                PhoneTouchDiagram(pressed: touching)
+                                PhoneTouchDiagram(pressed: touching, showsFinger: d.step != .hold)
                             } else {
                                 DuoDiagram(angle: controller.hingeAngleForDiagram,
                                            target: d.step == .hold ? 140 : (d.step == .wings ? 118 : nil),
@@ -206,9 +233,10 @@ struct SchoolSeaChrome: View {
             SchoolDots(current: d.dotIndex, count: d.stepCount)
                 .position(x: l.dots.midX, y: l.dots.midY)
                 .allowsHitTesting(false)
+            let promptRect = d.step == .storm ? l.stormPrompt : l.seaPrompt
             SchoolPrompt(display: d, compact: info.isCompact)
-                .frame(width: l.seaPrompt.width)
-                .position(x: l.seaPrompt.midX, y: l.seaPrompt.midY)
+                .frame(width: promptRect.width)
+                .position(x: promptRect.midX, y: promptRect.midY)
                 .allowsHitTesting(false)
             if d.step == .dive && !d.touch {
                 TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { _ in
