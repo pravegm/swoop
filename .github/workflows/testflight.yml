@@ -56,7 +56,9 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" -c "Print :CFBundleShortVersionString" -c "Print :CFBundleVersion" -c "Print :UISupportedInterfaceOrientations" "$APP/Info.plist"
           test -f "$APP/Assets.car" && echo "asset catalog present"
           # Demo/CI code must not ship: no SWOOP-T demo strings in the Release binary.
-          if strings "$APP/Swoop" | grep -q "swoopDemo"; then echo "::warning::'swoopDemo' string found in the Release binary"; else echo "no demo strings in Release"; fi
+          # '-swoopDemo' itself legitimately stays in Release (Input/App check the argument to keep logging off); the demo
+          # parser's keys are DEBUG-only, so they must not.
+          if strings "$APP/Swoop" | grep -qx "freezeAfter"; then echo "::error::demo-mode code found in the Release binary"; exit 1; else echo "no demo strings in Release"; fi
           du -sh "$APP"
       - name: Upload log
         if: always()
