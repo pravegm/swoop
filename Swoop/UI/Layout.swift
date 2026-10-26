@@ -198,6 +198,8 @@ struct HomeLayout: Equatable {
     var gameCenter: CGRect
 
     var buttons: [CGRect] { [fly, daily, flocks, birds, settings, gameCenter] }
+    /// The text the attract bird must keep under (R5b, Scene `homeTextRects`): the wordmark and the caption block.
+    var textRects: [CGRect] { [wordmark, textBlock].filter { !$0.isEmpty } }
 
     /// Preferred heights, shrunk toward `AppCanvas.minTap` on short screens.
     static let flyHeight: CGFloat = 76

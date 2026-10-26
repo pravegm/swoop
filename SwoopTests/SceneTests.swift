@@ -359,6 +359,47 @@ struct SceneTests {
         #expect(cam.displayScale <= 1.1)
     }
 
+    /// R5b: Home's attract bird stays under the wordmark (the camera's ceiling wins over the framing).
+    @Test func cameraCeilingKeepsTheBirdUnderHomeText() {
+        let vis = SceneTests.duo.visibleRect
+        let ceiling = Double(vis.minY + vis.height * 0.38)
+        for altitude in [0.0, 200, 500, 900] {
+            var cam = SceneCamera(layout: SceneTests.duo)
+            cam.birdCeiling = ceiling
+            let bird = CGPoint(x: 1000, y: altitude)
+            cam.snap(bird: bird, water: 0)
+            for _ in 0..<240 { cam.update(bird: bird, water: 0, dt: 1.0 / 120.0) }
+            #expect(Double(cam.screenPoint(bird).y) <= ceiling + 0.01)
+            #expect(abs(cam.screenPoint(bird).x - 952 * 0.30) < 0.01)
+        }
+    }
+
+    @Test @MainActor func attractBirdStaysUnderTheWordmark() {
+        let scene = FlightScene(layout: SceneTests.duo)
+        let driver = SceneTestsDriver()
+        scene.driver = driver
+        scene.reset()
+        driver.snap.phase = .flying
+        driver.snap.mode = .attract
+        // A wordmark block at y 260…360 (view points, y down) on the bird page.
+        scene.homeTextRects = [CGRect(x: 32, y: 260, width: 420, height: 100)]
+        guard let ceiling = scene.attractBirdCeiling() else {
+            #expect(Bool(false))
+            return
+        }
+        #expect(abs(ceiling - (670 - 360 - FlightScene.attractClearance)) < 0.5)
+        var now: TimeInterval = 90
+        for _ in 0..<240 {
+            scene.update(now)
+            now += 1.0 / 120.0
+            #expect(scene.birdCanvasPoint.y <= ceiling + 0.5)
+        }
+        // Outside attract, no ceiling.
+        driver.snap.mode = .flight
+        scene.update(now)
+        #expect(scene.birdCanvasPoint.y > 0)
+    }
+
     @Test func pausedCameraHoldsStill() {
         var cam = SceneCamera(layout: SceneTests.duo)
         cam.snap(bird: CGPoint(x: 100, y: 400), water: 0)

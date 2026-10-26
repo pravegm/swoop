@@ -101,6 +101,14 @@ final class FlightScene: SKScene {
     private(set) var stormMeterFill: CGFloat = 1
     /// False in store-capture mode: no book-gutter shade (REVIEW-3 juror #26).
     var gutterEnabled: Bool = true
+    /// Home (R5b, App NEEDS "attract bird crosses the wordmark"): in `.attract` the bird and its trail stay below this
+    /// canvas y (SpriteKit, y up) minus `attractClearance`. nil = no limit.
+    var attractCeiling: CGFloat?
+    /// Home: the wordmark and caption rects in view points (y down, SwiftUI); the attract bird stays
+    /// `attractClearance` below the lowest one. Empty = no limit. Combined with `attractCeiling` (the lower wins).
+    var homeTextRects: [CGRect] = []
+    /// The margin under the ceiling: the text rects + 24 pt, plus room for the bird's own half-height and its trail.
+    static let attractClearance: CGFloat = 24 + 36
 
     #if DEBUG
     private static let demoLogging: Bool = ProcessInfo.processInfo.arguments.contains("-swoopDemo")
@@ -452,6 +460,7 @@ final class FlightScene: SKScene {
 
         // Camera: framing on the simulation's clock; the punch-in and the pull-outs on the FX clock.
         let birdPoint = CGPoint(x: bx, y: by)
+        viewCam.birdCeiling = s.mode == .attract ? attractBirdCeiling().map { Double($0) } : nil
         if needsSnap {
             viewCam.snap(bird: birdPoint, water: water)
             originX = (bx / 2048).rounded(.down) * 2048
@@ -636,6 +645,25 @@ final class FlightScene: SKScene {
         updateFlare(dt: dt)
         updateFold(tuck: CGFloat(caught || countdown ? 0 : s.tuck), dt: dt)
         updateMorph(wallDt: wallDt)
+    }
+
+    /// The attract loop's ceiling for the bird's centre (canvas y), from `attractCeiling` and `homeTextRects`.
+    func attractBirdCeiling() -> CGFloat? {
+        var ceiling: CGFloat?
+        if let c = attractCeiling { ceiling = c }
+        for r in homeTextRects where !r.isNull && !r.isEmpty {
+            // The rect's lower edge (view y down → canvas y up).
+            let bottom: CGFloat
+            if view != nil {
+                bottom = convertPoint(fromView: CGPoint(x: r.midX, y: r.maxY)).y
+            } else {
+                bottom = layout.size.height - r.maxY
+            }
+            ceiling = min(ceiling ?? bottom, bottom)
+        }
+        guard let c = ceiling else { return nil }
+        let floorY = layout.visibleRect.minY + layout.visibleRect.height * 0.2
+        return max(c - FlightScene.attractClearance, floorY)
     }
 
     /// Chain milestones (ROUND-4 P1-8): 3, 5, 10, 15, 20… get the callout, the hit-stop and the punch-in.

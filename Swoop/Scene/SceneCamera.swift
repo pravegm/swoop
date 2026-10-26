@@ -50,6 +50,9 @@ struct SceneCamera: Equatable {
     private(set) var framingBottomY: Double = 0
     /// Short-lived multiplier centred on the bird: > 1 punches in, < 1 pulls out.
     private(set) var displayScale: Double = 1
+    /// Home's attract loop (R5b): the bird's screen y (canvas, y up) never goes above this; the zoom also comes out
+    /// sooner, so the flight fits under it. nil = no limit.
+    var birdCeiling: Double?
 
     init(layout: ScreenLayout) {
         canvasWidth = Double(layout.size.width)
@@ -84,7 +87,12 @@ struct SceneCamera: Equatable {
 
     /// The zoom that frames `altitude` pt of air between the water line and the bird.
     func targetZoom(altitude: Double) -> Double {
-        let fit = SceneCamera.framingFraction * visibleHeight / max(altitude, 1)
+        var framing = SceneCamera.framingFraction
+        if let c = birdCeiling {
+            let ceilingFraction = (c - visibleMinY) / visibleHeight
+            framing = min(framing, max(ceilingFraction - SceneCamera.groundFraction - 0.04, 0.05))
+        }
+        let fit = framing * visibleHeight / max(altitude, 1)
         return min(SceneCamera.zoomMax, max(zoomMin, fit))
     }
 
@@ -135,6 +143,8 @@ struct SceneCamera: Equatable {
         var b = ground - SceneCamera.groundFraction * hv / z
         b = max(b, y - SceneCamera.birdTopFraction * hv / z)
         b = min(b, y - SceneCamera.birdBottomFraction * hv / z)
+        // The ceiling wins over the bottom margin: the bird stays under Home's text.
+        if let c = birdCeiling { b = max(b, y - (c - visibleMinY) / z) }
         framingBottomY = b
     }
 

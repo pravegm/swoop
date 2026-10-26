@@ -72,6 +72,12 @@ enum SceneAdapter {
         return CGPoint(x: (p.x / 8).rounded() * 8, y: (p.y / 8).rounded() * 8)
     }
 
+    /// R5b: Home's text frames (view points) keep the attract bird out from under the wordmark and caption; [] clears.
+    static func setHomeTextRects(_ scene: FlightScene?, _ rects: [CGRect]) {
+        guard let scene, scene.homeTextRects != rects else { return }
+        scene.homeTextRects = rects
+    }
+
     /// Store captures (demo runs): no book-gutter shade (juror R3 #26).
     static func storeCapture(_ scene: FlightScene) {
         scene.gutterEnabled = false

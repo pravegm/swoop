@@ -110,9 +110,13 @@ struct HomeView: View {
         .animation(SwoopTheme.settle(reduceMotion), value: showsTapOffer)
         .frame(width: info.size.width, height: info.size.height, alignment: .topLeading)
         .onAppear {
+            controller.setHomeTextRects(layout.textRects)
             titleHidden = false
             withAnimation(SwoopTheme.settle(reduceMotion).delay(0.05)) { appeared = true }
         }
+        .onChange(of: info) { _, _ in controller.setHomeTextRects(layout.textRects) }
+        .onChange(of: controller.sceneGeneration) { _, _ in controller.setHomeTextRects(layout.textRects) }
+        .onDisappear { controller.setHomeTextRects([]) }
         .onChange(of: controller.flyGlowSerial) { _, _ in
             guard !reduceMotion else { return }
             withAnimation(.easeOut(duration: Self.glowSeconds / 2)) { flyGlow = true }

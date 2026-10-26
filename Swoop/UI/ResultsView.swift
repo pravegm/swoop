@@ -560,10 +560,13 @@ struct ResultsPlan: Equatable {
         // R5: every button row must fit the card's width (labels never squeezed out): the Daily row goes first.
         let inner = ResultsLayout.far(canvas).width - 2 * padding(c)
         if !p.rowsFit(width: inner) { p.dailyRow = false }
-        if !p.rowsFit(width: inner) && c { p.oneRow = true }
-        // Then fit the height by giving up, in order, the second button row (short cards only), the Daily row, the
-        // hook, the stats.
-        if p.farHeight() > cardHeight && c { p.oneRow = true }
+        // Then fit the height by giving up, in order, the second button row (only if the one row [Fly again | Home |
+        // Share] fits the width, so Fly again keeps its label), the Daily row, the hook, the stats.
+        if p.farHeight() > cardHeight && c {
+            var single = p
+            single.oneRow = true
+            if single.rowsFit(width: inner) { p = single }
+        }
         if p.farHeight() > cardHeight { p.dailyRow = false }
         if p.farHeight() > cardHeight { p.hasHook = false }
         if p.farHeight() > cardHeight { p.hasStats = false }

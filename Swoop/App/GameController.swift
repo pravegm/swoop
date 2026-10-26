@@ -596,6 +596,11 @@ final class GameController: ObservableObject, SceneDriver {
         SceneAdapter.setEffects(scene, quality: effectsQuality)
     }
 
+    /// Home shows (its wordmark and caption frames) or leaves ([]): the attract bird keeps under the text (R5b).
+    func setHomeTextRects(_ rects: [CGRect]) {
+        SceneAdapter.setHomeTextRects(scene, rects)
+    }
+
     func setReduceMotion(_ on: Bool) {
         reduceMotion = on
         scene?.reduceMotion = on

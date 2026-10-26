@@ -290,4 +290,7 @@ gutter, so ART-S15's `SceneDriver.hasFold` isn't needed. Please wire these `Flig
 - **Still open, Scene (ROUND-5 P1-10 "attract bird crosses the wordmark"):** the App can't move or hide the attract
   bird. Please add `scene.homeTextRects: [CGRect]` (view points) or `attractCeiling: CGFloat` (canvas y): keep the
   Home attract bird and its spray out of those rects + 24 pt (or fade it there over 0.2 s). The App will pass
-  `HomeLayout.textBlock`/`wordmark` the round it lands.
+  `HomeLayout.textBlock`/`wordmark` the round it lands.- **R5b, Home framing (done, as asked):** set `scene.homeTextRects = [wordmark, caption]` (view points, y down)
+  and/or `scene.attractCeiling` (canvas y, y up) while Home shows. In `.attract` mode only, the camera keeps the bird
+  below the lowest edge minus 60 pt: your 24 pt margin plus 36 for the bird and its trail. It zooms out sooner to
+  fit, and never sets the ceiling lower than 20 % of the visible height. Clear both when you leave Home.

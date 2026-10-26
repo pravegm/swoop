@@ -1405,3 +1405,16 @@ struct RoundFiveTests {
     }
     #endif
 }
+
+struct HomeTextRectTests {
+    /// R5b: Home hands the scene its wordmark and caption frames, on the bird page, fold-clear, below the title bird.
+    @Test func homeTextRectsCoverTheText() {
+        for c in testCanvases {
+            let l = HomeLayout.make(c)
+            #expect(l.textRects.count == 2)
+            #expect(l.textRects.allSatisfy { c.isFoldClear($0) })
+            #expect(l.textRects.allSatisfy { $0.minY >= l.bird.maxY - 0.5 })
+            #expect(l.textRects[0] == l.wordmark)
+        }
+    }
+}
