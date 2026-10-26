@@ -23,6 +23,9 @@ const T = {
   liftPerpendicular: 1,
   pilotBranchEvery: 2,
   pilotPullOut: 1,
+  // The harness starts runs like BalanceTests.swift (skipCountdown). R4 finding: with a 3 s countdown instead,
+  // the novice median read ~10 s longer than Swift; the run-length medians are chaotic at ±5–10 s per 20 seeds.
+  harnessSkipCountdown: 1,
   liftMaxFraction: 0.65,
   liftCoefficient: 0.012,
   airDrag: 0.04,
@@ -43,7 +46,7 @@ const T = {
   stormLateAccel: 2.5,
   stormMaxSpeed: 3200,
   // R3 leash: beyond stormLeashGap the storm closes the excess gap at stormLeashRate per second (always in view).
-  stormLeashGap: 9000,
+  stormLeashGap: 10500,
   stormLeashRate: 0.5,
   gapStart: 2400,
   fullLead: 3000,
@@ -561,6 +564,7 @@ class FlightPilot {
 // MARK: harness
 function runOne(skill, seed, dt, cap) {
   const s = new FlightSession('flight', seed, 0);
+  if (T.harnessSkipCountdown > 0) s.countdownLeft = 0; // like BalanceTests.swift (skipCountdown)
   const pilot = new FlightPilot(skill, seed * 7 + 1);
   let t = 0; let snap = s.snapshot();
   const counts = { perfect: 0, good: 0, splash: 0, launched: 0, tailwindStarted: 0 };

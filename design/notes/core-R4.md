@@ -48,3 +48,24 @@ longer than Node for casual in past rounds, which helps the 130 s floor.
 ## Tune on a Duo
 - **`tuckMaxRise`:** 0.15 s should feel firm, not laggy. Squish coaches at 250°/s. If the dive feels late, try 0.12 s
   and re-run the sim.
+
+## Round 4b: the Swift/Node drift (CI run 40363850772: Swift casual 122.8 s < 130)
+- **Cause 1, a harness mismatch.** `BalanceTests.swift` starts runs with `skipCountdown()`, but `balance-sim.js`
+  flew the 3 s countdown first. That moved the Node novice median ~10 s (72 against Swift's 62). Node now starts
+  runs the same way (`T.harnessSkipCountdown`) and matches Swift: novice 62–65, expert 330–354.
+- **Cause 2, chaos.** A 1e-10 nudge to gravity moves a 20-seed casual median by ±5–10 s (135–155 s in Node), and
+  Swift's libm is one more such draw. Swift's 123 s was a low draw on a mean that sat only ~10 s above the floor.
+  - The pilots, the session and the tuck-rise cap all match Node line by line. `AutopilotTuckSource` and the
+    hinge's own cap don't take part in the balance runs, since the tests drive `FlightPilot` directly.
+  - `storm-fit.js ens=3` now fits against a 3-run perturbation ensemble.
+- **Retune.** `stormLeashGap` 9000 → 10500. With the leash longer, `leadMeterScale` 5.0 → 5.7 keeps the casual
+  median meter at ~60 %.
+
+  Node ensemble (3 × 20 seeds), as medians:
+
+  | Skill | Median run | Perfects/min | Splashes/min |
+  |---|---|---|---|
+  | Novice | 64–65 s | 2.6–2.9 | 2.7 |
+  | Casual | 147–157 s (mean ~151) | 10.4–11.2 | 3.3–3.6 |
+  | Expert | 345–366 s | — | — |
+  | Perfect | 476–494 s (all caught) | — | — |

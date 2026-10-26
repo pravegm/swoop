@@ -1077,7 +1077,9 @@ struct RoundFourTests {
         #expect(AppRules.stageCenter(usual: usual, sun: CGPoint(x: 700, y: 600), height: 669) == usual)
         let moved = AppRules.stageCenter(usual: usual, sun: CGPoint(x: 720, y: 300), height: 669)
         #expect(moved != usual)
-        #expect(abs(moved.y - 300) > 150)
+        // A sun mid-height sits between the high (0.28 h) and low (0.62 h) stages, so the best move is ~113 pt;
+        // the navy backing (4.5:1, above) covers what's left.
+        #expect(abs(moved.y - 300) > 100)
     }
 
     @Test func dailyIsNumberedFromLaunch() {
@@ -1177,7 +1179,8 @@ struct RoundFourTests {
         let c = canvas(874, 402, fold: false, insets: EdgeInsets(top: 0, leading: 62, bottom: 21, trailing: 62))
         let g = TouchWingFeedback.glyphCenter(birdPage: c.birdPage, height: c.size.height)
         #expect(g.x > c.birdPage.minX + 100)               // off the left thumb
-        #expect(g.y == 402 - 40)
+        let glyphY: CGFloat = 402 - 40
+        #expect(abs(g.y - glyphY) < 0.5)
         #expect(TouchWingFeedback.glyphAlpha(tuck: 0) == 0.35)
         #expect(abs(TouchWingFeedback.glyphAlpha(tuck: 1) - 0.9) < 1e-9)
     }

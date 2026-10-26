@@ -4,8 +4,9 @@ import Foundation
 //
 // Units: sea points (pt; 10 pt = 1 m), seconds, pt/s, pt/s², degrees where the name says so.
 // The numbers were tuned with the Node port of Core in `tools/balance-sim.js` (keep the two in sync!). Its predicted
-// run lengths (20 seeds, dt 1/120; the Round 2 targets in design/ROUND-2.md, kept since): Round 4 novice ~72 s,
-// casual ~139 s, expert ~6.4 min, perfect ~7.7 min (always ends). `tools/storm-fit.js` fits the storm law to those targets.
+// run lengths (20 seeds, dt 1/120, runs started like BalanceTests: no countdown; the Round 2 targets, kept since).
+// Round 4b, averaged over a 3-run perturbation ensemble (20-seed medians are chaotic at ±5–10 s, and Swift's libm is
+// one more draw): novice ~65 s, casual ~151 s, expert ~5.9 min, perfect ~8.1 min (always ends). `tools/storm-fit.js` fits the storm law to those targets.
 // Feel numbers to try first on a held Duo are marked FEEL.
 
 public enum Tuning {
@@ -88,18 +89,19 @@ public enum Tuning {
     public static let stormLateAccel: Double = 2.5
     /// Round 3 leash (UX-C3: the lead meter sat pinned because a casual bird banked a ~30 km lead). Beyond
     /// stormLeashGap the storm also closes the excess gap at stormLeashRate per second, so the storm stays a few
-    /// screens behind and the meter moves all run (casual gap p25/p50/p75 ≈ 2.0/3.1/3.5 × fullLead). Not in attract.
-    public static let stormLeashGap: Double = 9000
+    /// screens behind and the meter moves all run (casual gap p25/p50/p75 ≈ 2.3/3.45/3.9 × fullLead). Not in attract.
+    /// Round 4b: 9000 → 10500, so casual runs centre on ~151 s (Swift's R4 casual median was 123 s against a 130 s floor).
+    public static let stormLeashGap: Double = 10500
     public static let stormLeashRate: Double = 0.5
     public static let stormMaxSpeed: Double = 3200
     /// The gap bird − storm at the drop (pt).
     public static let gapStart: Double = 2400
     /// The lead meter's "full" gap (pt): lead = gap / fullLead, clamped 0…1.
     public static let fullLead: Double = 3000
-    /// HUD headroom (REVIEW-1 P1-7, UX-C3): draw the meter as gap / (leadMeterScale · fullLead). Round 3: 5.0, from
-    /// balance-sim's SWOOP-GAP line, so the casual median gap (3.07 × fullLead) reads ~61 % and the leash (3 ×) 60 %;
-    /// the 2400 pt start reads 16 %. `snapshot.lead` itself is unchanged (stormClose still uses it).
-    public static let leadMeterScale: Double = 5.0
+    /// HUD headroom (REVIEW-1 P1-7, UX-C3): draw the meter as gap / (leadMeterScale · fullLead), from balance-sim's
+    /// SWOOP-GAP line. Round 4b: 5.0 → 5.7 with the longer leash, so the casual median gap (3.45 × fullLead) still reads
+    /// ~60 %; the 2400 pt start reads 14 %. `snapshot.lead` itself is unchanged (stormClose still uses it).
+    public static let leadMeterScale: Double = 5.7
     /// `stormClose` fires when lead < stormCloseLead, once per dip; it re-arms above stormRearmLead.
     public static let stormCloseLead: Double = 0.15
     public static let stormRearmLead: Double = 0.30

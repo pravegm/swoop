@@ -59,11 +59,15 @@ function pct(a, p) { const b = a.slice().sort((x, y) => x - y); return b[Math.mi
 
 // cache=<file>: reuse recorded runs (they only depend on the bird physics and pilots, not on the storm law).
 let recs = null;
-if (args.cache && fs.existsSync(args.cache)) { const c = JSON.parse(fs.readFileSync(args.cache, 'utf8')); if (c.seeds === seeds) recs = c.recs; }
+if (args.cache && fs.existsSync(args.cache)) { const c = JSON.parse(fs.readFileSync(args.cache, 'utf8')); if (c.seeds === seeds && c.ens === (args.ens || '1')) recs = c.recs; }
 if (!recs) {
+  // ens=<n>: record each seed n times with a 1e-10 gravity nudge, so the medians average over the chaos
+  // (libm differences between Swift and Node act like such a nudge: ±5–10 s on a 20-seed median).
   recs = {};
-  for (const sk of skills) { recs[sk] = []; for (let i = 0; i < seeds; i++) recs[sk].push(record(sk, 1000 + i * 7919)); }
-  if (args.cache) fs.writeFileSync(args.cache, JSON.stringify({ seeds, recs }));
+  const ens = parseInt(args.ens || '1'); const g0 = T.gravity;
+  for (const sk of skills) { recs[sk] = []; for (let e = 0; e < ens; e++) { T.gravity = g0 * (1 + e * 1e-10); for (let i = 0; i < seeds; i++) recs[sk].push(record(sk, 1000 + i * 7919)); } }
+  T.gravity = g0;
+  if (args.cache) fs.writeFileSync(args.cache, JSON.stringify({ seeds, ens: args.ens || '1', recs }));
 }
 
 function makeLaw(base, accel, cruise, late, max, gap, leashGap, leashRate) {
@@ -75,8 +79,8 @@ function makeLaw(base, accel, cruise, late, max, gap, leashGap, leashRate) {
 const laws = [makeLaw(T.stormBaseSpeed, T.stormAccel, T.stormCruiseSpeed, T.stormLateAccel, T.stormMaxSpeed, T.gapStart,
   T.stormLeashGap, T.stormLeashRate)];
 if (args.grid) {
-  for (const base of [420, 480]) for (const accel of [10, 12]) for (const cruise of [1200, 1300]) for (const late of [2.5, 3, 3.5])
-    for (const leashGap of [9000, 12000]) for (const leashRate of [0.5])
+  for (const base of [420, 480, 540]) for (const accel of [10, 12]) for (const cruise of [1200, 1300]) for (const late of [2, 2.5, 3])
+    for (const leashGap of [9000, 10500]) for (const leashRate of [0.5])
       laws.push(makeLaw(base, accel, cruise, late, T.stormMaxSpeed, T.gapStart, leashGap, leashRate));
 }
 const rows = [];
@@ -87,10 +91,10 @@ for (const law of laws) {
     med[sk] = median(ts); if (sk === 'perfect') capped = ts.filter(x => x >= CAP).length;
   }
   const g50 = pct(gaps, 0.5);
-  const ok = med.novice >= 52 && med.novice <= 72 && med.casual >= 140 && med.casual <= 160 && med.expert >= 340 && med.expert <= 460 && capped === 0;
+  const ok = med.novice >= 50 && med.novice <= 72 && med.casual >= 146 && med.casual <= 156 && med.expert >= 340 && med.expert <= 460 && capped === 0;
   rows.push({ law, med, capped, ok, g25: pct(gaps, 0.25), g50, g75: pct(gaps, 0.75) });
 }
-const score = (r) => Math.abs(r.med.novice - 62) / 17 + Math.abs(r.med.casual - 150) / 20 + Math.abs(r.med.expert - 400) / 100 + (r.capped ? 9 : 0);
+const score = (r) => Math.abs(r.med.novice - 62) / 17 + Math.abs(r.med.casual - 151) / 8 + Math.abs(r.med.expert - 400) / 100 + (r.capped ? 9 : 0);
 if (args.grid) rows.sort((a, b) => score(a) - score(b));
 for (const r of rows.slice(0, args.grid ? 12 : 1))
   console.log(`${r.ok ? 'OK ' : '   '}${r.law.desc}: novice=${r.med.novice.toFixed(0)} casual=${r.med.casual.toFixed(0)} expert=${r.med.expert.toFixed(0)} ` +

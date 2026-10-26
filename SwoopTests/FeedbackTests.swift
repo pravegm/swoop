@@ -126,7 +126,8 @@ struct FeedbackTests {
         let three = FeelSoundBook.perfect(chain: 3, dice: &dice)
         #expect(glints(one) == 0)
         #expect(glints(three) == 1)
-        #expect(glints(ten) == 1)
+        // Round 4: ×10 is a milestone, so it has the glint plus the three-note glass sparkle.
+        #expect(glints(ten) == 4)
     }
 
     @Test func perfectHasAWhooshPopOnTheHitStopAndItsHapticLandsThere() {
