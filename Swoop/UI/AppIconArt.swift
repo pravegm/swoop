@@ -120,6 +120,28 @@ enum AppIconPainter {
         sheen.move(to: CGPoint(x: 330, y: 880))
         sheen.addCurve(to: CGPoint(x: 760, y: 820), control1: CGPoint(x: 470, y: 840), control2: CGPoint(x: 620, y: 812))
         ctx.stroke(sheen, with: .color(white.opacity(0.22)), style: StrokeStyle(lineWidth: 14, lineCap: .round))
+        // REVIEW-1 P2: water, not a dune — wave lines on the face and a curling foam lip at the crest.
+        for (i, y) in [CGFloat(905), 950, 990].enumerated() {
+            var line = Path()
+            let x0 = 120 + CGFloat(i) * 70
+            line.move(to: CGPoint(x: x0, y: y))
+            line.addCurve(to: CGPoint(x: x0 + 520, y: y - 40), control1: CGPoint(x: x0 + 170, y: y - 30),
+                          control2: CGPoint(x: x0 + 340, y: y - 10))
+            ctx.stroke(line, with: .color(goldDeep.opacity(0.55)), style: StrokeStyle(lineWidth: 6, lineCap: .round))
+        }
+        var lip = Path()
+        lip.move(to: CGPoint(x: 500, y: 762))
+        lip.addQuadCurve(to: CGPoint(x: 640, y: 732), control: CGPoint(x: 560, y: 726))
+        lip.addQuadCurve(to: CGPoint(x: 694, y: 772), control: CGPoint(x: 690, y: 736))
+        lip.addQuadCurve(to: CGPoint(x: 652, y: 758), control: CGPoint(x: 670, y: 752))
+        lip.addQuadCurve(to: CGPoint(x: 500, y: 762), control: CGPoint(x: 572, y: 748))
+        lip.closeSubpath()
+        ctx.fill(lip, with: .color(white.opacity(0.92)))
+        let drops: [(CGFloat, CGFloat, CGFloat)] = [(712, 760, 7), (730, 778, 5), (700, 790, 4), (676, 724, 5)]
+        for (x, y, r) in drops {
+            ctx.fill(Path(ellipseIn: CGRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r)),
+                     with: .color(white.opacity(0.85)))
+        }
     }
 
     /// The right wing (from the shoulder up and out to the tip, a gull's gentle M); the left is its mirror.
@@ -145,11 +167,16 @@ enum AppIconPainter {
                  with: .color(goldDeep.opacity(0.35)))
         ctx.drawLayer { layer in
             layer.addFilter(.shadow(color: Color.black.opacity(0.35), radius: 18, x: 0, y: 12))
-            for wing in [left, right] {
-                layer.fill(wing, with: .linearGradient(Gradient(colors: [white, shade]),
-                                                       startPoint: CGPoint(x: 512, y: 470),
-                                                       endPoint: CGPoint(x: 512, y: 240)))
-            }
+            // White wings that darken smoothly to slate primaries at the tips (no hard-edged tip band: REVIEW-1 P2).
+            let tipGradient = Gradient(stops: [
+                .init(color: white, location: 0),
+                .init(color: shade, location: 0.62),
+                .init(color: Color(swoopHex: 0x3B4F63), location: 1),
+            ])
+            layer.fill(right, with: .linearGradient(tipGradient, startPoint: CGPoint(x: 540, y: 470),
+                                                    endPoint: CGPoint(x: 902, y: 236)))
+            layer.fill(left, with: .linearGradient(tipGradient, startPoint: CGPoint(x: 484, y: 470),
+                                                   endPoint: CGPoint(x: 122, y: 236)))
             // Body: a soft front-on teardrop.
             var body = Path()
             body.move(to: CGPoint(x: 512, y: 402))
@@ -162,13 +189,7 @@ enum AppIconPainter {
             // Head
             layer.fill(Path(ellipseIn: CGRect(x: 486, y: 378, width: 52, height: 52)), with: .color(white))
         }
-        // Wingtips: a touch of slate, as on a gull.
-        for wing in [left, right] {
-            var tipClip = ctx
-            tipClip.clip(to: wing)
-            tipClip.fill(Path(CGRect(x: 0, y: 200, width: 1024, height: 90)),
-                         with: .color(Color(swoopHex: 0x3B4F63).opacity(0.85)))
-        }
+
         // Beak, pointing down at us.
         var bill = Path()
         bill.move(to: CGPoint(x: 500, y: 416))
@@ -176,9 +197,5 @@ enum AppIconPainter {
         bill.addLine(to: CGPoint(x: 512, y: 446))
         bill.closeSubpath()
         ctx.fill(bill, with: .color(Self.beak))
-        // Eyes
-        for x in [CGFloat(498), CGFloat(526)] {
-            ctx.fill(Path(ellipseIn: CGRect(x: x - 5, y: 394, width: 10, height: 10)), with: .color(night))
-        }
     }
 }

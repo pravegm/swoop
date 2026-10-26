@@ -8,8 +8,10 @@ import Foundation
 /// - Zoom: 1.0 near the water, down to `zoomMin` high up, chosen from the bird's altitude above a smoothed water line
 ///   and followed by a critically damped spring, so the water always stays in view (GAME-DESIGN §4).
 /// - Vertical: the smoothed water line sits `groundFraction` up the visible height; the bird is kept between
-///   `birdBottomFraction` and `birdTopFraction` of it. Everything is framed inside `layout.visibleRect`, so phones
-///   (which crop the 952 × 670 canvas top and bottom) keep the water too.
+///   `birdBottomFraction` and `birdTopFraction` of it (R2: never in the top 22 %, the HUD band). Everything is framed
+///   inside `layout.visibleRect`, so phones (which crop the 952 × 670 canvas top and bottom) keep the water too.
+/// - Display scale (R2): a short-lived multiplier centred on the bird (the Perfect punch-in, the full-speed pull-out).
+///   The bird stays exactly where it is on screen; only the world around it scales.
 struct SceneCamera: Equatable {
     /// Zoom with the bird on the water.
     static let zoomMax: Double = 1.0
@@ -19,9 +21,11 @@ struct SceneCamera: Equatable {
     /// The smoothed water line sits this fraction up the visible height.
     static let groundFraction: Double = 0.32
     /// Altitude that fits at zoom 1, as a fraction of the visible height; above it the camera zooms out.
-    static let framingFraction: Double = 0.50
-    /// The bird never goes higher on screen than this fraction of the visible height…
-    static let birdTopFraction: Double = 0.84
+    /// (groundFraction + this stays under birdTopFraction, so the zoom-out starts before the bird reaches the HUD.)
+    static let framingFraction: Double = 0.42
+    /// The bird never goes higher on screen than this fraction of the visible height (REVIEW-1 P0-5: the 22 % HUD
+    /// band)…
+    static let birdTopFraction: Double = 0.78
     /// …nor lower than this one.
     static let birdBottomFraction: Double = 0.12
     /// Spring rate of the zoom (rad/s, critically damped). Higher = snappier zoom.
@@ -34,26 +38,39 @@ struct SceneCamera: Equatable {
     var visibleHeight: Double
     var mirrored: Bool
 
-    private(set) var zoom: Double = 1
+    /// The framing zoom (springs). What is drawn is `zoom` = this × `displayScale`.
+    private(set) var framingZoom: Double = 1
     private(set) var zoomVelocity: Double = 0
     /// The smoothed sea height under the bird (sea space).
     private(set) var ground: Double = 0
     private(set) var groundVelocity: Double = 0
     private(set) var birdX: Double = 0
-    /// The sea y shown at the bottom of the visible rect.
-    private(set) var bottomY: Double = 0
+    private(set) var birdY: Double = 0
+    /// The sea y at the bottom of the visible rect before the display scale.
+    private(set) var framingBottomY: Double = 0
+    /// Short-lived multiplier centred on the bird: > 1 punches in, < 1 pulls out.
+    private(set) var displayScale: Double = 1
 
     init(layout: ScreenLayout) {
         canvasWidth = Double(layout.size.width)
         visibleMinY = Double(layout.visibleRect.minY)
         visibleHeight = max(Double(layout.visibleRect.height), 1)
         mirrored = layout.mirrored
-        bottomY = -SceneCamera.groundFraction * visibleHeight
+        framingBottomY = -SceneCamera.groundFraction * visibleHeight
     }
 
     var zoomMin: Double {
         let k = min(max(visibleHeight / Double(ScreenLayout.canvasHeight), 0.7), 1.0)
         return SceneCamera.zoomMinDuo * k
+    }
+
+    /// The drawn zoom (canvas points per sea point).
+    var zoom: Double { framingZoom * displayScale }
+
+    /// The drawn sea y at the bottom of the visible rect (the display scale is centred on the bird).
+    var bottomY: Double {
+        let z = max(zoom, 0.0001)
+        return birdY - (birdY - framingBottomY) * framingZoom / z
     }
 
     /// Canvas x of the bird.
@@ -76,8 +93,9 @@ struct SceneCamera: Equatable {
         birdX = Double(bird.x)
         ground = water
         groundVelocity = 0
-        zoom = targetZoom(altitude: Double(bird.y) - ground)
+        framingZoom = targetZoom(altitude: Double(bird.y) - ground)
         zoomVelocity = 0
+        displayScale = 1
         frame(birdY: Double(bird.y))
     }
 
@@ -92,10 +110,10 @@ struct SceneCamera: Equatable {
             ground += groundVelocity * h
             let tz = targetZoom(altitude: Double(bird.y) - ground)
             let wz = SceneCamera.zoomOmega
-            let za = wz * wz * (tz - zoom) - 2 * wz * zoomVelocity
+            let za = wz * wz * (tz - framingZoom) - 2 * wz * zoomVelocity
             zoomVelocity += za * h
-            zoom += zoomVelocity * h
-            zoom = min(SceneCamera.zoomMax * 1.02, max(zoomMin * 0.9, zoom))
+            framingZoom += zoomVelocity * h
+            framingZoom = min(SceneCamera.zoomMax * 1.02, max(zoomMin * 0.9, framingZoom))
         }
         frame(birdY: Double(bird.y))
     }
@@ -105,19 +123,26 @@ struct SceneCamera: Equatable {
         zoomVelocity -= amount * SceneCamera.zoomOmega * 2.7
     }
 
-    private mutating func frame(birdY: Double) {
-        let z = max(zoom, 0.01)
+    /// The display multiplier (clamped 0.9 … 1.1), centred on the bird.
+    mutating func setDisplayScale(_ s: Double) {
+        displayScale = min(max(s, 0.9), 1.1)
+    }
+
+    private mutating func frame(birdY y: Double) {
+        birdY = y
+        let z = max(framingZoom, 0.01)
         let hv = visibleHeight
         var b = ground - SceneCamera.groundFraction * hv / z
-        b = max(b, birdY - SceneCamera.birdTopFraction * hv / z)
-        b = min(b, birdY - SceneCamera.birdBottomFraction * hv / z)
-        bottomY = b
+        b = max(b, y - SceneCamera.birdTopFraction * hv / z)
+        b = min(b, y - SceneCamera.birdBottomFraction * hv / z)
+        framingBottomY = b
     }
 
     /// Canvas point of a sea-space point.
     func screenPoint(_ p: CGPoint) -> CGPoint {
-        let x = anchorX + direction * (Double(p.x) - birdX) * zoom
-        let y = visibleMinY + (Double(p.y) - bottomY) * zoom
+        let z = zoom
+        let x = anchorX + direction * (Double(p.x) - birdX) * z
+        let y = visibleMinY + (Double(p.y) - bottomY) * z
         return CGPoint(x: x, y: y)
     }
 

@@ -30,6 +30,8 @@ import UIKit
 //     (a `lead=` seed fires the event headless). `flying` = soaring high (altitude ≥ 120 pt) after `freezeAfter`, or
 //     10 s later at the latest. `finished` freezes at once and shows the results card without its delay.
 // - `freezeAfter=<s>`             see freezeOn.
+// - `freezeDelay=<s>` (extra)      the 0.25 s between the event and the held frame (0.12 for Perfect ring frames).
+// - `freezeOn=countdown` (extra)  hold the 3-2-1 at "2" (1.3 s into the countdown), printing `SWOOP-T freeze countdown`.
 // - `freezeAt=<s>`                freeze at that flight time, printing `SWOOP-T freeze time`.
 // - `progress=fresh|mid|late`     seeded in-memory progress (demo runs never write UserDefaults).
 // - `bird=<BirdID>`, `sky=<SkyID>`   the cosmetics for this run (and the Home loop).
@@ -50,10 +52,11 @@ import UIKit
 struct DemoConfig: Equatable {
     enum Screen: String, Equatable { case home, play, results, goals, birds, settings, pose, icon, badges }
     enum ModeKey: String, Equatable { case flight, daily, attract }
-    enum Freeze: String, Equatable { case launch, perfect, splash, tailwind, lighthouse, stormclose, caught, finished, flying }
+    enum Freeze: String, Equatable { case launch, perfect, splash, tailwind, lighthouse, stormclose, caught, finished, flying, countdown }
     enum ProgressPreset: String, Equatable { case fresh, mid, late }
 
     static let defaultFreezeAfter: Double = 4
+    static let defaultFreezeDelay: Double = 0.25
     static let defaultSeed: UInt64 = 7
 
     var raw: String
@@ -68,6 +71,8 @@ struct DemoConfig: Equatable {
     var freezeOn: Freeze?
     var freezeAfter: Double = DemoConfig.defaultFreezeAfter
     var freezeAt: Double?
+    /// Session seconds between the freeze event and the held frame (default 0.25; 0.12 for the Perfect ring frames).
+    var freezeDelay: Double = DemoConfig.defaultFreezeDelay
     var progress: ProgressPreset?
     var bird: BirdID?
     var sky: SkyID?
@@ -125,6 +130,8 @@ struct DemoConfig: Equatable {
             case "freezeOn": config.freezeOn = Freeze(rawValue: value.lowercased())
             case "freezeAfter":
                 if let s = number(value) { config.freezeAfter = max(s, 0) }
+            case "freezeDelay":
+                if let s = number(value) { config.freezeDelay = min(max(s, 0), 5) }
             case "freezeAt":
                 if let s = number(value) { config.freezeAt = max(s, 0) }
             case "progress": config.progress = ProgressPreset(rawValue: value)

@@ -4,10 +4,10 @@
 01-title|screen=home;progress=mid|5
 02-dive|mode=flight;seed=7;autopilot=perfect;skipCountdown;freezeAt=5|10
 03-soar|mode=flight;seed=7;autopilot=perfect;skipCountdown;freezeOn=flying;freezeAfter=6|20
-04-perfect-chain|mode=flight;seed=7;autopilot=perfect;chain=4;freezeOn=perfect;freezeAfter=0|20
+04-perfect-chain|mode=flight;seed=7;autopilot=perfect;chain=4;freezeOn=perfect;freezeAfter=0;freezeDelay=0.12|20
 05-tailwind|mode=flight;seed=7;autopilot=perfect;skipCountdown;freezeOn=tailwind;freezeAfter=2|24
-06-lighthouse|mode=flight;seed=7;autopilot=perfect;skipTo=3850;freezeOn=lighthouse;freezeAfter=0|30
-07-storm|mode=flight;seed=7;autopilot=casual;lead=0.1;freezeOn=stormclose;freezeAfter=0|20
+06-lighthouse|mode=flight;seed=7;autopilot=perfect;skipTo=3850;freezeOn=lighthouse;freezeAfter=0;freezeDelay=0.4|30
+07-storm|mode=flight;seed=7;autopilot=casual;lead=0.06;freezeOn=stormclose;freezeAfter=0|20
 08-results|screen=results;seed=7;progress=mid;autopilot=casual|8
 09-flocks|screen=goals;progress=mid|5
 10-birds|screen=birds;progress=late;bird=albatross|5
@@ -15,3 +15,5 @@
 12-mirror|mode=flight;seed=7;autopilot=perfect;skipCountdown;mirror;freezeAt=6|11
 13-moonrise|mode=flight;seed=11;autopilot=perfect;skipCountdown;sky=moonrise;bird=heron;freezeAt=7|12
 14-caught|mode=flight;seed=7;autopilot=novice;lead=0.03;freezeOn=caught;freezeAfter=0|20
+15-perfect-storm|mode=flight;seed=7;autopilot=perfect;chain=2;lead=0.25;freezeOn=perfect;freezeAfter=0;freezeDelay=0.12|24
+16-tailwind-callout|mode=flight;seed=7;autopilot=perfect;chain=2;freezeOn=tailwind;freezeAfter=0;freezeDelay=0.12|24

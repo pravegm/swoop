@@ -46,6 +46,10 @@ private func noUnlocks(_ from: Int, _ to: Int) -> (birds: [BirdID], skies: [SkyI
     return (birds: birds, skies: skies)
 }
 
+private func noTrails(_ from: Int, _ to: Int) -> [String] {
+    to == 1 ? ["dawn"] : []
+}
+
 private let dove = ShareText.dove
 private let sunrise = ShareText.sunrise
 private let fire = ShareText.fire
@@ -186,7 +190,7 @@ struct ProgressRulesTests {
         var data = ProgressData()
         // Run 1: meets the distance and the chain goals only.
         let first = ProgressRules.record(makeRun(meters: 1_500, perfects: 2, bestChain: 3), into: &data, today: 300,
-                                         goals: fakeGoals, maxRank: 15, evaluate: fakeEvaluate, unlocks: noUnlocks)
+                                         goals: fakeGoals, maxRank: 15, evaluate: fakeEvaluate, unlocks: noUnlocks, trailUnlocks: noTrails)
         #expect(first.goals.count == 3)
         #expect(first.rankUp == nil)
         #expect(data.rank == 0)
@@ -194,15 +198,15 @@ struct ProgressRulesTests {
         #expect(data.goalProgress["r0.p"] == 0.4)
         // Run 2: worse distance (progress never goes down), but enough Perfects: all three met → rank up.
         let second = ProgressRules.record(makeRun(meters: 400, perfects: 5, bestChain: 1), into: &data, today: 300,
-                                          goals: fakeGoals, maxRank: 15, evaluate: fakeEvaluate, unlocks: noUnlocks)
+                                          goals: fakeGoals, maxRank: 15, evaluate: fakeEvaluate, unlocks: noUnlocks, trailUnlocks: noTrails)
         #expect(second.goals.first { $0.goal.id == "r0.m" }?.after == 1)
         #expect(second.goals.first { $0.goal.id == "r0.p" }?.justMet == true)
-        #expect(second.rankUp == AppRankUp(from: 0, to: 1, birds: [.tern], skies: [.roseDusk]))
+        #expect(second.rankUp == AppRankUp(from: 0, to: 1, birds: [.tern], skies: [.roseDusk], trails: ["dawn"]))
         #expect(data.rank == 1)
         #expect(data.goalProgress["r0.m"] == nil)
         // Rank 1's goals start fresh on the next run.
         let third = ProgressRules.record(makeRun(meters: 1_000), into: &data, today: 300, goals: fakeGoals,
-                                         maxRank: 15, evaluate: fakeEvaluate, unlocks: noUnlocks)
+                                         maxRank: 15, evaluate: fakeEvaluate, unlocks: noUnlocks, trailUnlocks: noTrails)
         #expect(third.goals.map { $0.goal.id } == ["r1.m", "r1.p", "r1.c"])
         #expect(third.goals.first?.before == 0)
     }
@@ -210,15 +214,15 @@ struct ProgressRulesTests {
     @Test func bestsLifetimeAndNewBest() {
         var data = ProgressData()
         let a = ProgressRules.record(makeRun(meters: 2_000, lighthouses: 0), into: &data, today: 10, goals: fakeGoals,
-                                     maxRank: 15, evaluate: fakeEvaluate, unlocks: noUnlocks)
+                                     maxRank: 15, evaluate: fakeEvaluate, unlocks: noUnlocks, trailUnlocks: noTrails)
         #expect(a.isNewBest && !a.showsNewBest)          // the first run is never "New best!"
         let b = ProgressRules.record(makeRun(meters: 3_000, lighthouses: 1, lastLighthouse: "Gull Point"), into: &data,
                                      today: 10, goals: fakeGoals, maxRank: 15, evaluate: fakeEvaluate,
-                                     unlocks: noUnlocks)
+                                     unlocks: noUnlocks, trailUnlocks: noTrails)
         #expect(b.showsNewBest)
         #expect(b.previousBest == 2_000)
         let c = ProgressRules.record(makeRun(meters: 900), into: &data, today: 10, goals: fakeGoals, maxRank: 15,
-                                     evaluate: fakeEvaluate, unlocks: noUnlocks)
+                                     evaluate: fakeEvaluate, unlocks: noUnlocks, trailUnlocks: noTrails)
         #expect(!c.isNewBest)
         #expect(data.bestMeters == 3_000)
         #expect(data.bestLastLighthouse == "Gull Point")
@@ -230,7 +234,7 @@ struct ProgressRulesTests {
     @Test func attractRunsAreNeverRecorded() {
         var data = ProgressData()
         _ = ProgressRules.record(makeRun(mode: .attract), into: &data, today: 1, goals: fakeGoals, maxRank: 15,
-                                 evaluate: fakeEvaluate, unlocks: noUnlocks)
+                                 evaluate: fakeEvaluate, unlocks: noUnlocks, trailUnlocks: noTrails)
         #expect(data == ProgressData())
     }
 
@@ -239,7 +243,7 @@ struct ProgressRulesTests {
         for day in [298, 299, 300] {
             let out = ProgressRules.record(makeRun(mode: .daily(day: day, scored: true), meters: 4_000), into: &data,
                                            today: day, goals: fakeGoals, maxRank: 15, evaluate: fakeEvaluate,
-                                           unlocks: noUnlocks)
+                                           unlocks: noUnlocks, trailUnlocks: noTrails)
             #expect(out.dailyCounted)
         }
         #expect(data.dailyStreak(today: 300) == 3)
@@ -248,7 +252,7 @@ struct ProgressRulesTests {
         #expect(data.bestDailyStreak == 3)
         let practice = ProgressRules.record(makeRun(mode: .daily(day: 300, scored: false), meters: 9_000), into: &data,
                                             today: 300, goals: fakeGoals, maxRank: 15, evaluate: fakeEvaluate,
-                                            unlocks: noUnlocks)
+                                            unlocks: noUnlocks, trailUnlocks: noTrails)
         #expect(!practice.dailyCounted)
         #expect(data.daily[300]?.meters == 4_000)
         // A scored try left early is filed as the day's score.
@@ -423,7 +427,8 @@ struct PoseRuleTests {
         #expect(HintBubble.text(.fold, touch: true) == "Hold on the way down")
         #expect(RankUpBanner.unlockLine(birds: ["Tern"], skies: ["Rose Dusk"]) == "New: Tern, Rose Dusk")
         #expect(RankUpBanner.unlockLine(birds: [], skies: []) == "")
-        #expect(HomeView.dailyStatus(record: nil, streak: 0) == "Everyone's sea today · one try")
+        #expect(HomeView.dailyStatus(record: nil, attempted: false, streak: 0) == "Everyone's sea today · one try")
+        #expect(HomeView.dailyStatus(record: nil, attempted: true, streak: 0) == "Tried · practice")
     }
 }
 
@@ -477,4 +482,96 @@ struct LayoutTests {
         let mirrored = PlayLayout.make(canvas(951, 669, fold: true, mirrored: true))
         #expect(mirrored.pause.minX > 495)
     }
+}
+
+// MARK: - Round 2
+
+struct RoundTwoTests {
+    @Test func dailyPartialKeepsTheLargerDistanceAndNeverReplacesAFinish() {
+        var data = ProgressData()
+        ProgressRules.fileDailyPartial(into: &data, day: 300, meters: 1_000, perfects: 2, lighthouses: 0,
+                                       lastLighthouseName: "", today: 300)
+        ProgressRules.fileDailyPartial(into: &data, day: 300, meters: 2_500, perfects: 5, lighthouses: 0,
+                                       lastLighthouseName: "", today: 300)
+        #expect(data.daily[300]?.meters == 2_500)
+        ProgressRules.fileDailyPartial(into: &data, day: 300, meters: 900, perfects: 1, lighthouses: 0,
+                                       lastLighthouseName: "", today: 300)
+        #expect(data.daily[300]?.meters == 2_500)
+        data.daily[300] = DailyRecord(meters: 2_000, perfects: 3, lighthouses: 0, lastLighthouseName: "", finished: true)
+        ProgressRules.fileDailyPartial(into: &data, day: 300, meters: 9_000, perfects: 9, lighthouses: 2,
+                                       lastLighthouseName: "", today: 300)
+        #expect(data.daily[300]?.meters == 2_000)
+    }
+
+    @Test func leadMeterHasHeadroom() {
+        #expect(abs(AppRules.meterLead(gap: 2_400, fullLead: 3_000) - 2_400 / 3_900) < 1e-9)
+        #expect(AppRules.meterLead(gap: 99_999, fullLead: 3_000) == 1)
+        #expect(AppRules.meterLead(gap: -5, fullLead: 3_000) == 0)
+        #expect(AppRules.meterLead(gap: .nan, fullLead: 3_000) == 0)
+    }
+
+    @Test func milestonesStayOffLighthouses() {
+        let first = Lighthouses.x(index: 0) / Tuning.pointsPerMeter
+        let km = Int((first / 1000).rounded())
+        if abs(Double(km) * 1000 - first) <= AppRules.milestoneLighthouseClearance {
+            #expect(AppRules.milestoneNearLighthouse(km: km))
+        }
+        #expect(!AppRules.milestoneNearLighthouse(km: 1))
+    }
+
+    @Test func nearMissHook() {
+        let first = Lighthouses.x(index: 0) / Tuning.pointsPerMeter
+        let line = AppRules.nextLighthouseLine(meters: first - 550, lighthousesPassed: 0, seed: 7)
+        #expect(line?.hasPrefix("0.6 km short of ") == true)
+        #expect(ResultsView.hookText(past: "Gull Point", next: "0.6 km short of Saltlight")
+                == "Past Gull Point · 0.6 km short of Saltlight")
+        #expect(ResultsView.hookText(past: "", next: nil) == "")
+        #expect(ResultsView.inlineStatsText(perfects: 1, chain: 4, lighthouses: 2) == "1 Perfect · chain 4 · 2 lighthouses")
+    }
+
+    @Test func hudDistanceAndWording() {
+        let short = ShareText.hudDistance(842.9)
+        #expect(short.value == "842" && short.unit == "m")
+        let one = ShareText.hudDistance(1_000)
+        #expect(one.value == "1.00" && one.unit == "km")
+        #expect(ShareText.hudDistance(4_068).value == "4.06")
+        #expect(ShareText.hudDistance(12_345).value == "12.34")
+        #expect(AppRules.touchWording(input: .touch, hasHinge: true))
+        #expect(!AppRules.touchWording(input: .hinge, hasHinge: true))
+        #expect(AppRules.touchWording(input: .autopilot, hasHinge: false))
+        #expect(!AppRules.touchWording(input: .autopilot, hasHinge: true))
+        #expect(PerfectCalloutText.text(chain: 1) == "Perfect")
+        #expect(PerfectCalloutText.text(chain: 3) == "Perfect ×3")
+        #expect(SettingsView.progressLine(runs: 0, rankTitle: "Fledgling", best: 0, lifetime: 0) == "No flights yet")
+    }
+
+    @Test func lifetimeGoalsReadLive() {
+        var data = ProgressData()
+        data.lifetimeMeters = 30_000
+        let total = Goal(id: "t", kind: .totalMeters, target: 25_000, text: "Fly 25 km in total")
+        let reach = Goal(id: "r", kind: .reachMeters, target: 5_000, text: "Fly 5 km")
+        #expect(ProgressRules.liveProgress(total, data: data) == 1)
+        #expect(ProgressRules.liveProgress(reach, data: data) == 0)
+        data.goalProgress["r"] = 0.5
+        #expect(ProgressRules.liveProgress(reach, data: data) == 0.5)
+    }
+
+    @Test func calloutIsOnTheBirdsHalfAndClearOfTheFold() {
+        for c in testCanvases {
+            let p = PlayLayout.make(c)
+            #expect(c.isFoldClear(p.callout))
+            #expect(c.birdPage.contains(CGPoint(x: p.callout.midX, y: c.size.height / 2)))
+            let h = HomeLayout.make(c)
+            #expect(c.isFoldClear(h.textBlock))
+        }
+    }
+
+    #if DEBUG
+    @Test func newDemoKeys() {
+        let c = DemoConfig.parse("freezeOn=countdown;freezeDelay=0.12")
+        #expect(c.freezeOn == .countdown)
+        #expect(c.freezeDelay == 0.12)
+        #expect(DemoConfig.parse("").freezeDelay == DemoConfig.defaultFreezeDelay)
+    }
+    #endif
 }

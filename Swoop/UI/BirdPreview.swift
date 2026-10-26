@@ -81,12 +81,18 @@ struct BirdSideView: View {
     /// Locked birds show as a silhouette.
     var silhouette: Bool = false
 
+    /// How much of the box the reference pose fills (room left for the wings to flap and tuck).
+    var fill: CGFloat = 0.72
+
     var body: some View {
         Canvas(rendersAsynchronously: false) { context, size in
             let parts = BirdArt.path(for: bird, tuck: tuck, flap: flap)
-            let transform = BirdDrawing.fit([parts.body.boundingBoxOfPath, parts.nearWing.boundingBoxOfPath,
-                                             parts.farWing.boundingBoxOfPath, parts.beak.boundingBoxOfPath],
-                                            in: size, flipY: BirdDrawing.sideViewFlipsY, fill: 0.86)
+            // QA-1 P2-5: fit once to a fixed reference pose (spread, no flap), so the bird never "breathes" as its
+            // wings move.
+            let ref = BirdArt.path(for: bird, tuck: 0, flap: 0)
+            let transform = BirdDrawing.fit([ref.body.boundingBoxOfPath, ref.nearWing.boundingBoxOfPath,
+                                             ref.farWing.boundingBoxOfPath, ref.beak.boundingBoxOfPath],
+                                            in: size, flipY: BirdDrawing.sideViewFlipsY, fill: fill)
             let far = Path(parts.farWing).applying(transform)
             let body = Path(parts.body).applying(transform)
             let near = Path(parts.nearWing).applying(transform)

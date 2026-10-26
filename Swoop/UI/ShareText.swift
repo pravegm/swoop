@@ -33,6 +33,17 @@ enum ShareText {
         return "\(grouped(Int(m.rounded(.down)))) m"
     }
 
+    /// The HUD distance (REVIEW-1 P1-9): whole metres below 1 km ("842" "m"), then kilometres with the hundredths still
+    /// ticking ("1.24" "km"), rounded down, whatever the locale.
+    static func hudDistance(_ meters: Double) -> (value: String, unit: String) {
+        let m = meters.isFinite ? max(meters, 0) : 0
+        if m < 1000 { return (String(Int(m.rounded(.down))), "m") }
+        let hundredths = Int((m / 10).rounded(.down))
+        let whole = hundredths / 100
+        let frac = hundredths % 100
+        return ("\(grouped(whole)).\(frac < 10 ? "0" : "")\(frac)", "km")
+    }
+
     static func perfects(_ n: Int) -> String { n == 1 ? "1 Perfect" : "\(n) Perfects" }
 
     /// The flight share line.

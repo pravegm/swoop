@@ -180,9 +180,12 @@ struct ClosedCard: View {
                            center: .bottom, startRadius: 0, endRadius: 420)
                 .ignoresSafeArea()
             VStack(spacing: 16) {
+                // REVIEW-1 P2: bigger bird art, the stack raised ~15 %.
                 BirdGlyph()
-                    .fill(SwoopTheme.foam)
-                    .frame(width: 72, height: 34)
+                    .fill(LinearGradient(colors: [SwoopTheme.foam, SwoopTheme.goldLight], startPoint: .top,
+                                         endPoint: .bottom))
+                    .frame(width: 120, height: 56)
+                    .shadow(color: SwoopTheme.gold.opacity(0.4), radius: 12)
                 Text("Open your wings")
                     .font(SwoopTheme.display(32))
                     .foregroundStyle(SwoopTheme.foam)
@@ -205,11 +208,14 @@ struct ClosedCard: View {
                 .frame(maxWidth: 340)
             }
             .padding(24)
+            .offset(y: -40)
         }
     }
 
     private var dailyValue: String {
         if let record = store.data.dailyRecord(day: today) { return "Flown · \(ShareText.km(record.meters))" }
+        // QA-1 P1-2: a started try is spent even if nothing was filed.
+        if store.hasDailyAttempt(day: today) { return "Tried" }
         return "Ready"
     }
 

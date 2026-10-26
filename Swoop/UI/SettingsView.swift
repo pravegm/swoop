@@ -66,19 +66,6 @@ struct SettingsView: View {
 
     private var rightPage: some View {
         VStack(alignment: .leading, spacing: 10) {
-            PageHeading(text: "Progress")
-            VStack(alignment: .leading, spacing: 8) {
-                Text("\(GoalCatalog.rankTitle(store.data.rank)) · best \(ShareText.km(store.data.bestMeters)) · "
-                     + "\(ShareText.km(store.data.lifetimeMeters)) flown")
-                    .font(SwoopTheme.text(14, .bold))
-                    .foregroundStyle(SwoopTheme.mist)
-                    .fixedSize(horizontal: false, vertical: true)
-                SwoopButton(kind: .danger, height: 56, action: { confirmReset = true }) {
-                    Label("Reset progress", systemImage: "arrow.counterclockwise")
-                        .lineLimit(1)
-                }
-            }
-            .swoopCard(padding: 14, radius: 22)
             PageHeading(text: "About")
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
@@ -136,7 +123,41 @@ struct SettingsView: View {
                 }
             }
             .swoopCard(padding: 14, radius: 22)
+            // REVIEW-1 P1-11: progress last, and Reset as a plain destructive row behind its confirmation.
+            PageHeading(text: "Progress")
+            VStack(alignment: .leading, spacing: 4) {
+                Text(Self.progressLine(runs: store.data.runs, rankTitle: GoalCatalog.rankTitle(store.data.rank),
+                                       best: store.data.bestMeters, lifetime: store.data.lifetimeMeters))
+                    .font(SwoopTheme.text(14, .bold))
+                    .foregroundStyle(SwoopTheme.mist)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    FeedbackDirector.shared.uiTap()
+                    confirmReset = true
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(SwoopTheme.coral)
+                            .frame(width: 32, height: 32)
+                        Text("Reset progress")
+                            .font(SwoopTheme.text(17, .bold))
+                            .foregroundStyle(SwoopTheme.coral)
+                        Spacer(minLength: 0)
+                    }
+                    .frame(minHeight: AppCanvas.minTap)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .swoopCard(padding: 14, radius: 22)
         }
+    }
+
+    /// "No flights yet", else "Crest Hopper · best 6.4 km · 48.3 km flown". Pure; tested.
+    nonisolated static func progressLine(runs: Int, rankTitle: String, best: Double, lifetime: Double) -> String {
+        if runs <= 0 { return "No flights yet" }
+        return "\(rankTitle) · best \(ShareText.km(best)) · \(ShareText.km(lifetime)) flown"
     }
 
     /// The in-app privacy policy (no web link).

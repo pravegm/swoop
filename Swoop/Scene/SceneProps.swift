@@ -1,11 +1,14 @@
 import SpriteKit
 import UIKit
 
-/// World props: the lighthouse on its rock (beam turning, a bright sweep when passed), the personal-best buoy with its
-/// pennant, and the touchable cloud band at cloud height. World-local coordinates.
+/// Props: the lighthouse on its rock (beam turning, a bright sweep when passed), the personal-best buoy with its
+/// pennant, and the touchable cloud band at Core's cloud height.
+///
+/// The buoy and the clouds are world-local. The lighthouse (R2, REVIEW-1 P0-7) stands on the far swells in u-space,
+/// a parallax depth layer placed by the scene, so it is on screen beside the bird at the moment of the pass.
 @MainActor
 final class SceneProps {
-    /// Behind the sea (its rock rises out of the water).
+    /// In the backdrop, between the two far swell layers (u-space).
     let lighthouseRoot: SKNode
     /// Behind the sea fill, so the waterline cuts across the float.
     let buoyRoot: SKNode
@@ -21,11 +24,6 @@ final class SceneProps {
     private var beamPhase: CGFloat = 0
     private var sweep: CGFloat = 0
     private var cheer: CGFloat = 0
-
-    /// World-local lamp position (for sparkles), valid while the lighthouse is shown.
-    var lampPoint: CGPoint {
-        CGPoint(x: lighthouseRoot.position.x, y: lighthouseRoot.position.y + 131 * SceneLook.lighthouseScale)
-    }
 
     var lighthouseShown: Bool { !lighthouseRoot.isHidden }
     var buoyShown: Bool { !buoyRoot.isHidden }
@@ -150,7 +148,7 @@ final class SceneProps {
         buoyRoot.addChild(pennant)
         buoyRoot.isHidden = true
 
-        for _ in 0..<5 {
+        for _ in 0..<8 {
             let c = SKSpriteNode(texture: SceneTextures.cloud)
             c.colorBlendFactor = 1
             cloudRoot.addChild(c)
@@ -174,16 +172,20 @@ final class SceneProps {
         buoyRoot.isHidden = true
     }
 
-    /// The lighthouse was passed: a bright, faster sweep.
-    func sweepBeam() { sweep = 1 }
+    /// The lighthouse was passed: a bright, faster sweep that starts pointing ahead, across the right half.
+    func sweepBeam() {
+        sweep = 1
+        beamPhase = 0
+    }
 
     /// The personal best was beaten: the pennant flutters.
     func cheerBuoy() { cheer = 1 }
 
-    func showLighthouse(at p: CGPoint, dt: CGFloat) {
+    /// `p`: the rock top in u-space; `scale`: the depth layer's scale.
+    func showLighthouse(at p: CGPoint, scale: CGFloat, dt: CGFloat) {
         lighthouseRoot.isHidden = false
         lighthouseRoot.position = p
-        lighthouseRoot.setScale(SceneLook.lighthouseScale)
+        lighthouseRoot.setScale(scale)
         beamPhase += dt * (SceneLook.beamSpeed + 3.2 * sweep)
         let c = cos(beamPhase)
         // The beam turns about the tower: long to one side, foreshortened as it faces us (the lamp flares), the other.
@@ -208,19 +210,23 @@ final class SceneProps {
 
     func hideBuoy() { buoyRoot.isHidden = true }
 
-    /// Recycles the band's clouds around the bird (stable per cell, so they never pop).
+    /// Recycles the band's clouds around the bird (stable per cell, so they never pop). The clouds overlap, and their
+    /// bottoms sit `cloudBandDrop` under Core's cloud height, so a `cloudTouched` always happens inside a cloud.
     func updateClouds(birdX: Double, originX: Double) {
         let cell = SceneLook.nearCloudSpacing
         let base = Int((birdX / cell).rounded(.down))
+        let bottom = CGFloat(Tuning.cloudHeight) - SceneLook.cloudBandDrop
         for (i, c) in clouds.enumerated() {
-            let ci = base + i - 1
+            let ci = base + i - 2
             let h1 = SceneRNG.hash(ci, 5)
             let h2 = SceneRNG.hash(ci, 9)
             let h3 = SceneRNG.hash(ci, 17)
             let seaX = (Double(ci) + 0.6 * Double(h1)) * cell
-            c.position = CGPoint(x: CGFloat(seaX - originX), y: SceneLook.nearCloudHeight + h2 * 160)
-            c.size = CGSize(width: 560 + 260 * h3, height: 170 + 60 * h2)
-            c.alpha = 0.6 + 0.2 * h3
+            let height = 210 + 60 * h2
+            c.size = CGSize(width: 620 + 240 * h3, height: height)
+            // The texture's puffs fill about its lower 70 %: centre it so that part starts at the band's bottom.
+            c.position = CGPoint(x: CGFloat(seaX - originX), y: bottom + height * 0.42 + 30 * h1)
+            c.alpha = 0.62 + 0.2 * h3
         }
     }
 }

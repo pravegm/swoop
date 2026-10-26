@@ -132,7 +132,7 @@ final class SceneParticlePool {
     }
 }
 
-/// An expanding ring on the water (Perfect), animated by the scene's clock (so it freezes with the simulation).
+/// An expanding ring on the water (Perfect), animated by the scene's FX clock (so it freezes with a pause).
 @MainActor
 final class SceneRingFX {
     let node: SKShapeNode
@@ -148,7 +148,7 @@ final class SceneRingFX {
         // Drawn at a 200-pt width (a flat ellipse lying on the water) and scaled, so the stroke thickens as it grows.
         node = SKShapeNode(ellipseOf: CGSize(width: 200, height: 44))
         node.fillColor = .clear
-        node.lineWidth = 4
+        node.lineWidth = 7
         node.isHidden = true
     }
 }

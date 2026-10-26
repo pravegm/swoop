@@ -50,6 +50,21 @@ struct SceneTests {
         }
     }
 
+    /// Each species has its own wing (REVIEW-1 P1-10): the albatross's is long, the puffin's stubby, the swift's a
+    /// swept-back sickle.
+    @Test func speciesWingsDiffer() {
+        let c = RGBA(0.5, 0.5, 0.5)
+        func wing(_ id: BirdID) -> CGRect {
+            let b = Bird(id: id, name: "", blurb: "", body: c, wing: c, wingTip: c, beak: c, trail: c, span: 1,
+                         pointiness: 0.5, unlockRank: 0)
+            return BirdArt.path(for: b, tuck: 0, flap: 0).nearWing.boundingBoxOfPath
+        }
+        let albatross = wing(.albatross), puffin = wing(.puffin), swift = wing(.swift), gull = wing(.gull)
+        #expect(hypot(albatross.width, albatross.height) > hypot(puffin.width, puffin.height) * 1.4)
+        // The sickle sweeps its hand further back than the gull's.
+        #expect(swift.minX < gull.minX)
+    }
+
     @Test func flapPhaseZeroIsTheRestPose() {
         let b = SceneDefaults.bird
         let rest = BirdArt.path(for: b, tuck: 0, flap: 0).nearWing.boundingBoxOfPath
@@ -77,6 +92,13 @@ struct SceneTests {
             let folded = shut.leftWing.boundingBoxOfPath.union(shut.rightWing.boundingBoxOfPath)
             #expect(folded.width <= w * 0.6)
             #expect(folded.width < spread.width * 0.7)
+            // A dart, not a speck: the App only refits the title when it is narrower than a quarter of the width.
+            #expect(folded.width >= w * 0.25)
+            // The tucked tips sweep down and back past the tail (y down), and each wing stays on its own side.
+            let shutBody = shut.body.boundingBoxOfPath
+            #expect(shut.leftWing.boundingBoxOfPath.maxY > shutBody.maxY)
+            #expect(shut.leftWing.boundingBoxOfPath.minX < w * 0.5 - shutBody.width * 0.5)
+            #expect(shut.rightWing.boundingBoxOfPath.maxX > w * 0.5 + shutBody.width * 0.5)
 
             let half = BirdArt.titlePath(for: b, tuck: 0.5, width: w, height: h)
             let mid = half.leftWing.boundingBoxOfPath.union(half.rightWing.boundingBoxOfPath)
@@ -106,8 +128,10 @@ struct SceneTests {
             let y = 120 + 500 * sin(Double(i) * 0.02)
             cam.update(bird: CGPoint(x: x, y: max(y, 0)), water: 40 * sin(x * 0.01), dt: 1.0 / 120.0)
             let p = cam.screenPoint(CGPoint(x: x, y: max(y, 0)))
+            let vis = SceneTests.duo.visibleRect
             #expect(abs(p.x - 952 * 0.30) < 0.01)
-            #expect(p.y >= SceneTests.duo.visibleRect.minY && p.y <= SceneTests.duo.visibleRect.maxY)
+            // Never in the top 22 % (the HUD band, REVIEW-1 P0-5).
+            #expect(p.y >= vis.minY && p.y <= vis.minY + vis.height * 0.78 + 0.5)
         }
         // Ahead is to the right.
         #expect(cam.screenPoint(CGPoint(x: x + 100, y: 0)).x > cam.screenPoint(CGPoint(x: x, y: 0)).x)
@@ -143,6 +167,21 @@ struct SceneTests {
         var cam = SceneCamera(layout: SceneTests.duo)
         cam.snap(bird: CGPoint(x: 0, y: 1100), water: 0)
         #expect(cam.zoom < 0.5)
+    }
+
+    /// The Perfect punch-in / full-speed pull-out scale the world around the bird, which stays put.
+    @Test func displayScaleIsCentredOnTheBird() {
+        var cam = SceneCamera(layout: SceneTests.duo)
+        let bird = CGPoint(x: 3000, y: 240)
+        cam.snap(bird: bird, water: 0)
+        let before = cam.screenPoint(bird)
+        let z0 = cam.zoom
+        cam.setDisplayScale(1.03)
+        let after = cam.screenPoint(bird)
+        #expect(abs(after.x - before.x) < 0.001 && abs(after.y - before.y) < 0.001)
+        #expect(abs(cam.zoom - z0 * 1.03) < 0.0001)
+        cam.setDisplayScale(5)
+        #expect(cam.displayScale <= 1.1)
     }
 
     @Test func pausedCameraHoldsStill() {
@@ -198,6 +237,70 @@ struct SceneTests {
         frames(10)
         #expect(scene.drawnFrames == 350)
         #expect(scene.children.count >= 5)
+        // QA-1 P1-6: the sea surface is cached, not rebuilt every frame.
+        #expect(scene.seaRebuilds < 350 / 3)
+    }
+
+    /// REVIEW-1 P0-7: at the pass (and 0.25 s later, when the frames are frozen) the lighthouse is on screen beside the
+    /// bird.
+    @Test @MainActor func lighthouseIsOnScreenAtThePass() {
+        let scene = FlightScene(layout: SceneTests.duo)
+        let driver = SceneTestsDriver()
+        scene.driver = driver
+        scene.reset()
+        let lx = Lighthouses.x(index: 0)
+        driver.snap.phase = .flying
+        driver.snap.speed = 2000
+        driver.snap.position = CGPoint(x: lx - 1500, y: 200)
+        driver.snap.stormX = lx - 4000
+        driver.snap.nextLighthouseX = lx
+        var now: TimeInterval = 50
+        var passed = false
+        for _ in 0..<150 {
+            if !passed && Double(driver.snap.position.x) >= lx {
+                passed = true
+                driver.snap.lighthousesPassed = 1
+                driver.snap.nextLighthouseX = Lighthouses.x(index: 1)
+                driver.pending = [.lighthouse(index: 0, name: "Gull Point")]
+            }
+            scene.update(now)
+            now += 1.0 / 120.0
+            if Double(driver.snap.position.x) >= lx - 400 && Double(driver.snap.position.x) <= lx + 600 {
+                let u = scene.lighthouseU
+                #expect(u != nil)
+                if let u = u { #expect(u > 0 && u < 952) }
+            }
+        }
+        #expect(passed)
+    }
+
+    /// The Perfect's FX keep moving through the App's hit-stop (the same snapshot for 35 ms) and its punch-in shows.
+    @Test @MainActor func perfectPunchesInThroughAHitStop() {
+        let scene = FlightScene(layout: SceneTests.duo)
+        let driver = SceneTestsDriver()
+        scene.driver = driver
+        scene.reset()
+        driver.snap.phase = .flying
+        var now: TimeInterval = 10
+        for _ in 0..<30 {
+            scene.update(now)
+            now += 1.0 / 120.0
+        }
+        driver.pending = [.touchdown(.perfect, speed: 1400, chain: 2)]
+        driver.hold = true
+        var peak: CGFloat = 1
+        for _ in 0..<6 {
+            scene.update(now)
+            now += 1.0 / 120.0
+            peak = max(peak, scene.displayScale)
+        }
+        driver.hold = false
+        for _ in 0..<12 {
+            scene.update(now)
+            now += 1.0 / 120.0
+            peak = max(peak, scene.displayScale)
+        }
+        #expect(peak > 1.01)
     }
 }
 
@@ -210,8 +313,15 @@ final class SceneTestsDriver: SceneDriver {
     var snap = FlightSnapshot(phase: .countdown(remaining: 3), position: CGPoint(x: 0, y: 260), speed: 520,
                               stormX: -2400, gap: 2400, lead: 0.8, nextLighthouseX: 3000, bestMeters: 150)
     var pending: [FlightEvent] = []
+    /// A hit-stop: hand back the same snapshot.
+    var hold = false
 
     func advance(dt: TimeInterval, now: TimeInterval) -> (FlightSnapshot, [FlightEvent]) {
+        if hold {
+            let e = pending
+            pending = []
+            return (snap, e)
+        }
         snap.time += dt
         if snap.phase == .flying {
             let vx = max(snap.speed, 300)

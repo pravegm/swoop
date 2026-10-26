@@ -16,8 +16,21 @@ struct HomeView: View {
     /// Press-and-hold on the title bird (phones): the touch control's feel, taught on Home.
     @State private var heldSince: Double?
     @State private var releasedAt: Double?
+    /// "Sign in to Game Center…" after a tap while signed out.
+    @State private var gameCenterHint = false
+
+    /// The navy scrim behind the wordmark and caption.
+    static let textScrimOpacity: Double = 0.38
 
     private var layout: HomeLayout { HomeLayout.make(info) }
+
+    private func showSignInHint() {
+        gameCenterHint = true
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_800_000_000)
+            gameCenterHint = false
+        }
+    }
 
     var body: some View {
         let l = layout
@@ -28,6 +41,14 @@ struct HomeView: View {
                 .frame(width: l.menuPanel.width, height: l.menuPanel.height)
                 .position(x: l.menuPanel.midX, y: l.menuPanel.midY)
                 .opacity(appeared ? 1 : 0)
+            // REVIEW-1 P1-2: a feathered night scrim keeps the wordmark and caption readable over the attract bird,
+            // its trail and spray.
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(SwoopTheme.abyss.opacity(Self.textScrimOpacity))
+                .frame(width: l.textBlock.width + 28, height: l.textBlock.height + 20)
+                .blur(radius: 14)
+                .position(x: l.textBlock.midX, y: l.textBlock.midY)
+                .allowsHitTesting(false)
             titleBird(l.bird)
             SwoopWordmark(size: l.wordmark.height * 0.72)
                 .frame(width: l.wordmark.width, height: l.wordmark.height,
@@ -44,10 +65,26 @@ struct HomeView: View {
             SwoopIconButton(systemName: "gearshape.fill", label: "Settings") { controller.show(.settings) }
                 .position(x: l.settings.midX, y: l.settings.midY)
             SwoopIconButton(systemName: "gamecontroller.fill", label: "Game Center") {
-                GameCenterManager.shared.showDashboard()
+                // QA-1 P1-5: never a dead button. Signed out with no sheet to offer: say how to sign in.
+                if GameCenterManager.shared.showDashboard() == .signedOut { showSignInHint() }
             }
             .position(x: l.gameCenter.midX, y: l.gameCenter.midY)
+            if gameCenterHint {
+                Text("Sign in to Game Center in iOS Settings to see leaderboards.")
+                    .font(SwoopTheme.text(14, .bold))
+                    .foregroundStyle(SwoopTheme.foam)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(SwoopTheme.abyss.opacity(0.9))
+                        .overlay(Capsule().stroke(SwoopTheme.gold.opacity(0.4), lineWidth: 1.5)))
+                    .frame(width: max(info.birdPage.width, 120))
+                    .position(x: info.birdPage.midX, y: max(l.gameCenter.minY - 34, 20))
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
         }
+        .animation(.easeInOut(duration: 0.25), value: gameCenterHint)
         .frame(width: info.size.width, height: info.size.height, alignment: .topLeading)
         .onAppear {
             withAnimation(SwoopTheme.pop(reduceMotion).delay(0.05)) { appeared = true }
@@ -172,7 +209,8 @@ struct HomeView: View {
                         .font(SwoopTheme.title(19))
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
-                    Text(Self.dailyStatus(record: store.data.dailyRecord(day: today), streak: streak))
+                    Text(Self.dailyStatus(record: store.data.dailyRecord(day: today),
+                                          attempted: store.hasDailyAttempt(day: today), streak: streak))
                         .font(SwoopTheme.text(13, .bold))
                         .foregroundStyle(SwoopTheme.mist)
                         .lineLimit(1)
@@ -188,9 +226,11 @@ struct HomeView: View {
     }
 
     /// The Daily button's second line. Pure; tested.
-    nonisolated static func dailyStatus(record: DailyRecord?, streak: Int) -> String {
-        let flame = streak > 0 ? " · 🔥 \(streak)" : ""
+    /// QA-1 P1-2: a try that was started (even if the app died before anything was filed) is spent.
+    nonisolated static func dailyStatus(record: DailyRecord?, attempted: Bool, streak: Int) -> String {
+        let flame = streak > 0 ? " · \(ShareText.fire) \(streak)" : ""
         if let record { return "Flown · \(ShareText.km(record.meters)) · practice\(flame)" }
+        if attempted { return "Tried · practice\(flame)" }
         return "Everyone's sea today · one try\(flame)"
     }
 

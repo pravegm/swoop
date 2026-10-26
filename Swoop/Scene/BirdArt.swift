@@ -11,7 +11,8 @@ import Foundation
 /// - `titlePath(for:tuck:width:height:)`: a `width × height` box, origin top-left, **y down** (SwiftUI / UIKit).
 ///
 /// The look: a sleek seabird silhouette (not a ball). Spread, the near wing is held up and back in a shallow V with the
-/// hand swept behind the wrist; tucked, it folds flat along the back, narrow, the tip reaching past the tail.
+/// hand swept behind the wrist; tucked, it folds flat along the back, narrow, the tip reaching past the tail. Each
+/// species has its own wing (R2, REVIEW-1 P1-10): sickle swift, long straight albatross, stubby round puffin…
 enum BirdArt {
     // MARK: Side-view tunables (unit box; angles in radians)
 
@@ -23,17 +24,44 @@ enum BirdArt {
     static let flapAmplitude: CGFloat = 0.62
     /// The far wing is held a little higher so it peeks above the body behind the near wing.
     static let farWingLift: CGFloat = 0.22
-    /// The hand (outer wing) sweeps back from the arm by this much when spread.
+    /// The hand (outer wing) sweeps back from the arm by this much when spread (× the species' sweep).
     static let handSweep: CGFloat = 0.24
-    /// The arm (inner wing) leans forward of the wing's mean direction by this much when spread.
+    /// The arm (inner wing) leans forward of the wing's mean direction by this much when spread (× the species' lead).
     static let armLead: CGFloat = 0.14
+    /// Folded, the wing keeps this fraction of its spread chord.
+    static let tuckedChord: CGFloat = 0.36
 
     // MARK: Title tunables (fractions of the canvas)
 
     /// The spread wingtips stop this far (fraction of the width) from the canvas edges.
     static let titleEdgeMargin: CGFloat = 0.012
-    /// Fully tucked, each wingtip sits this fraction of the half-width out from the centre.
-    static let titleTuckedReach: CGFloat = 0.27
+    /// Fully tucked, each wingtip sits this fraction of the width out from the centre line (a dart ≈ 32 % wide).
+    static let titleTuckedTipX: CGFloat = 0.15
+    /// …and this far down the body (fraction of the body length from the beak): past the tail fan.
+    static let titleTuckedTipY: CGFloat = 1.14
+
+    /// A species' wing, as multipliers on the gull's.
+    struct WingShape {
+        var length: CGFloat
+        var chord: CGFloat
+        var sweep: CGFloat
+        var lead: CGFloat
+        /// Where the wrist sits along the wing (0…1).
+        var arm: CGFloat
+    }
+
+    static func shape(for id: BirdID) -> WingShape {
+        switch id {
+        case .gull: return WingShape(length: 1.0, chord: 1.0, sweep: 1.0, lead: 1.0, arm: 0.40)
+        case .tern: return WingShape(length: 1.05, chord: 0.85, sweep: 1.3, lead: 1.0, arm: 0.38)
+        case .puffin: return WingShape(length: 0.75, chord: 1.1, sweep: 0.6, lead: 0.8, arm: 0.45)
+        case .swift: return WingShape(length: 1.12, chord: 0.75, sweep: 2.1, lead: 0.6, arm: 0.30)
+        case .albatross: return WingShape(length: 1.25, chord: 0.72, sweep: 0.35, lead: 0.4, arm: 0.45)
+        case .petrel: return WingShape(length: 1.0, chord: 0.85, sweep: 1.6, lead: 0.9, arm: 0.36)
+        case .heron: return WingShape(length: 1.08, chord: 1.2, sweep: 0.7, lead: 1.0, arm: 0.42)
+        case .gannet: return WingShape(length: 1.15, chord: 0.8, sweep: 0.8, lead: 0.7, arm: 0.42)
+        }
+    }
 
     // MARK: Public API
 
@@ -46,52 +74,38 @@ enum BirdArt {
         return (bodyPath(for: bird), wingPath(near), wingPath(far), beakPath(for: bird))
     }
 
-    /// The front-on "title" bird whose wings span the whole canvas width (y down, origin top-left): the left wing on
-    /// the left half, the right wing on the right half, the body on the centre line (the fold). The wings fold down
-    /// toward the body as tuck → 1.
+    /// The title bird, seen from above and behind (R2, REVIEW-1 P1-1), its wings spanning the whole canvas width
+    /// (y down, origin top-left): the left wing on the left half, the right wing on the right half, the body on the
+    /// centre line (the fold), head and beak up, a fanned tail down. As tuck → 1 the wings sweep back into a dart, the
+    /// tips pointing down and back past the tail (the same silhouette as the tucked bird in flight).
     static func titlePath(for bird: Bird, tuck: Double, width: CGFloat, height: CGFloat)
         -> (body: CGPath, leftWing: CGPath, rightWing: CGPath) {
         let w = max(width, 1), h = max(height, 1)
         let u = CGFloat(clamp01(tuck))
+        let e = u * u * (3 - 2 * u)
         let pt = CGFloat(clamp01(bird.pointiness))
+        let sh = shape(for: bird.id)
         let cx = w * 0.5, cy = h * 0.5
-        let bodyW = min(w * 0.075, h * 0.24)
-        let bodyH = min(h * 0.62, bodyW * 2.4)
-        let top = cy - bodyH * 0.5
+        let bodyW = min(w * 0.085, h * 0.26)
+        let bodyH = min(h * 0.70, bodyW * 2.6)
+        let top = cy - bodyH * 0.52
         let body = titleBody(cx: cx, top: top, bodyW: bodyW, bodyH: bodyH)
 
-        let halfReach = cx - w * titleEdgeMargin
-        let tipX = cx - halfReach * lerp(1.0, titleTuckedReach, u)
-        let wristX = cx - halfReach * lerp(0.42, 0.19, u)
-        let wristY = cy - h * lerp(0.13, 0.21, u)
-        let tipY = cy + h * lerp(-0.02, 0.24, u)
-        let chord = min(h * 0.17, w * 0.09) * lerp(1.0, 0.62, u) * (1.12 - 0.3 * pt)
-        let rootTop = CGPoint(x: cx - bodyW * 0.36, y: top + bodyH * 0.42)
-        let rootBottom = CGPoint(x: cx - bodyW * 0.30, y: top + bodyH * 0.64)
-        let wrist = CGPoint(x: wristX, y: wristY)
-        let tip = CGPoint(x: tipX, y: tipY)
-        let handTrail = CGPoint(x: lerp(tipX, wristX, 0.42), y: lerp(tipY, wristY, 0.42) + chord * 0.95)
-        let armTrail = CGPoint(x: wristX + chord * 0.15, y: wristY + chord * 1.05)
-        let roundness = 1 - pt
+        let shoulder = CGPoint(x: cx - bodyW * 0.30, y: top + bodyH * 0.36)
+        let spreadTip = CGPoint(x: w * titleEdgeMargin, y: shoulder.y - h * 0.01)
+        let tuckTip = CGPoint(x: cx - w * titleTuckedTipX, y: top + bodyH * titleTuckedTipY)
+        let l0 = hypot(shoulder.x - spreadTip.x, spreadTip.y - shoulder.y)
+        let a0 = atan2(spreadTip.y - shoulder.y, shoulder.x - spreadTip.x)
+        let l1 = hypot(shoulder.x - tuckTip.x, tuckTip.y - shoulder.y)
+        let a1 = atan2(tuckTip.y - shoulder.y, shoulder.x - tuckTip.x)
+        let length = lerp(l0, l1, e)
+        let tipAngle = lerp(a0, a1, e)
+        // The arm is less swept than the hand: a gentle gull arch when spread, a kinked dart when tucked.
+        let bend = lerp(0.07, 0.20, e) * (0.6 + 0.4 * min(sh.sweep, 1.5))
+        let chord = min(bodyH * 0.40, w * 0.09) * (1.1 - 0.25 * pt) * min(max(sh.chord, 0.7), 1.25) * lerp(1, 0.78, e)
 
-        let left = CGMutablePath()
-        left.move(to: rootTop)
-        left.addCurve(to: wrist,
-                      control1: CGPoint(x: rootTop.x - (rootTop.x - wristX) * 0.35, y: rootTop.y - h * 0.06),
-                      control2: CGPoint(x: wristX + (rootTop.x - wristX) * 0.25, y: wristY - h * 0.012))
-        left.addCurve(to: tip,
-                      control1: CGPoint(x: wristX - (wristX - tipX) * 0.35, y: wristY - h * 0.005),
-                      control2: CGPoint(x: tipX + (wristX - tipX) * 0.25, y: tipY - chord * 0.15))
-        left.addQuadCurve(to: handTrail,
-                          control: CGPoint(x: tipX + chord * 0.15, y: tipY + chord * (0.35 + 0.45 * roundness)))
-        left.addCurve(to: armTrail,
-                      control1: CGPoint(x: handTrail.x + (armTrail.x - handTrail.x) * 0.4, y: handTrail.y + chord * 0.05),
-                      control2: CGPoint(x: armTrail.x - (armTrail.x - handTrail.x) * 0.3, y: armTrail.y + chord * 0.05))
-        left.addCurve(to: rootBottom,
-                      control1: CGPoint(x: armTrail.x + (rootBottom.x - armTrail.x) * 0.4, y: armTrail.y + chord * 0.05),
-                      control2: CGPoint(x: rootBottom.x - bodyW * 0.3, y: rootBottom.y + h * 0.01))
-        left.closeSubpath()
-
+        let left = dorsalWing(shoulder: shoulder, length: length, tipAngle: tipAngle, bend: bend, chord: chord,
+                              pointiness: pt, arm: sh.arm)
         let right = CGMutablePath()
         right.addPath(left, transform: CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: w, ty: 0))
         return (body, left, right)
@@ -145,18 +159,19 @@ enum BirdArt {
         let u = CGFloat(clamp01(tuck))
         let pt = CGFloat(clamp01(bird.pointiness))
         let span = CGFloat(min(max(bird.span, 0.5), 1.8))
+        let sh = shape(for: bird.id)
         let hh = bodyHalfHeight(pointiness: pt)
         let phase = CGFloat(flap - floor(flap))
         var elevation = lerp(spreadElevation, tuckedElevation, u)
             + flapAmplitude * (1 - u) * sin(2 * CGFloat.pi * phase)
         if far { elevation += farWingLift * (1 - 0.7 * u) }
         let base = CGFloat.pi - elevation
-        let armAngle = base - lerp(armLead, 0.06, u)
-        let handAngle = base + lerp(handSweep, 0.03, u)
-        let spreadLength = (0.40 + 0.10 * pt) * span
-        let tuckLength = 0.50 + 0.05 * (span - 1) + 0.03 * pt
+        let armAngle = base - lerp(armLead * sh.lead, 0.06, u)
+        let handAngle = base + lerp(handSweep * sh.sweep, 0.03, u)
+        let spreadLength = (0.40 + 0.10 * pt) * span * sh.length
+        let tuckLength = (0.50 + 0.05 * (span - 1) + 0.03 * pt) * (1 + 0.3 * (sh.length - 1))
         let length = lerp(spreadLength, tuckLength, u) * (far ? 0.93 : 1)
-        let chord = (0.15 - 0.05 * pt) * lerp(1, 0.42, u) * (far ? 0.9 : 1)
+        let chord = (0.15 - 0.05 * pt) * sh.chord * lerp(1, tuckedChord, u) * (far ? 0.9 : 1)
         let shoulder = far ? CGPoint(x: 0.10, y: hh * 0.78) : CGPoint(x: 0.08, y: hh * 0.55)
         let root = far ? CGPoint(x: -0.06, y: hh * 0.72) : CGPoint(x: -0.10, y: hh * 0.50)
         let armDir = direction(armAngle)
@@ -164,12 +179,14 @@ enum BirdArt {
         // Toward the trailing edge (behind the leading edge).
         let armN = direction(armAngle + CGFloat.pi / 2)
         let handN = direction(handAngle + CGFloat.pi / 2)
-        let wrist = offset(shoulder, armDir, length * 0.40)
-        let tip = offset(wrist, handDir, length * 0.60)
-        let handTrail = offset(offset(wrist, handDir, length * 0.30), handN, chord * 0.80)
+        let armFraction = min(max(sh.arm, 0.25), 0.5)
+        let wrist = offset(shoulder, armDir, length * armFraction)
+        let tip = offset(wrist, handDir, length * (1 - armFraction))
+        let handTrail = offset(offset(wrist, handDir, length * (1 - armFraction) * 0.5), handN, chord * 0.80)
         let armTrail = offset(offset(wrist, armN, chord), armDir, -0.02)
         let lead1 = offset(mid(shoulder, wrist), armN, -chord * 0.18)
-        let lead2 = offset(mid(wrist, tip), handN, -chord * 0.10)
+        // A sickle (high sweep) bows its leading edge forward.
+        let lead2 = offset(mid(wrist, tip), handN, -chord * (0.10 + 0.12 * max(sh.sweep - 1, 0)))
         let roundness = 1 - pt
         let tipControl = lerpPoint(mid(tip, handTrail), offset(tip, handN, chord * 0.75), roundness * 0.8 + 0.1)
         let trail1 = offset(mid(handTrail, armTrail), handN, chord * 0.12)
@@ -260,28 +277,81 @@ enum BirdArt {
         return p
     }
 
-    // MARK: Title body (front-on, y down)
+    // MARK: Title bird (dorsal view, y down)
 
+    /// The body from above: beak tip at the top, the head, a slim neck, broad shoulders, the flanks and a fanned tail.
     private static func titleBody(cx: CGFloat, top: CGFloat, bodyW: CGFloat, bodyH: CGFloat) -> CGPath {
         let p = CGMutablePath()
-        let bottom = top + bodyH
         func r(_ fx: CGFloat, _ fy: CGFloat) -> CGPoint { CGPoint(x: cx + bodyW * fx, y: top + bodyH * fy) }
         func l(_ fx: CGFloat, _ fy: CGFloat) -> CGPoint { CGPoint(x: cx - bodyW * fx, y: top + bodyH * fy) }
         p.move(to: CGPoint(x: cx, y: top))
-        // Right side: head, neck, shoulder, flank, tail.
-        p.addCurve(to: r(0.30, 0.16), control1: r(0.18, 0), control2: r(0.30, 0.06))
-        p.addCurve(to: r(0.24, 0.32), control1: r(0.30, 0.24), control2: r(0.24, 0.27))
-        p.addCurve(to: r(0.50, 0.50), control1: r(0.26, 0.38), control2: r(0.50, 0.40))
-        p.addCurve(to: r(0.36, 0.78), control1: r(0.50, 0.62), control2: r(0.44, 0.72))
-        p.addCurve(to: CGPoint(x: cx, y: bottom), control1: r(0.26, 0.90), control2: r(0.08, 1.0))
-        // Left side, mirrored, back up to the crown.
-        p.addCurve(to: l(0.36, 0.78), control1: l(0.08, 1.0), control2: l(0.26, 0.90))
-        p.addCurve(to: l(0.50, 0.50), control1: l(0.44, 0.72), control2: l(0.50, 0.62))
-        p.addCurve(to: l(0.24, 0.32), control1: l(0.50, 0.40), control2: l(0.26, 0.38))
-        p.addCurve(to: l(0.30, 0.16), control1: l(0.24, 0.27), control2: l(0.30, 0.24))
-        p.addCurve(to: CGPoint(x: cx, y: top), control1: l(0.30, 0.06), control2: l(0.18, 0))
+        // Right side: beak, head, neck, shoulder, flank, tail base, the fan's corner, across the fan's edge.
+        p.addLine(to: r(0.075, 0.075))
+        p.addCurve(to: r(0.19, 0.15), control1: r(0.15, 0.08), control2: r(0.20, 0.11))
+        p.addCurve(to: r(0.14, 0.26), control1: r(0.18, 0.20), control2: r(0.14, 0.23))
+        p.addCurve(to: r(0.50, 0.42), control1: r(0.16, 0.31), control2: r(0.47, 0.33))
+        p.addCurve(to: r(0.34, 0.68), control1: r(0.53, 0.53), control2: r(0.43, 0.62))
+        p.addCurve(to: r(0.16, 0.77), control1: r(0.26, 0.73), control2: r(0.19, 0.75))
+        p.addLine(to: r(0.34, 0.97))
+        p.addQuadCurve(to: CGPoint(x: cx, y: top + bodyH * 0.95), control: r(0.18, 1.02))
+        // Left side, mirrored, back up to the beak.
+        p.addQuadCurve(to: l(0.34, 0.97), control: l(0.18, 1.02))
+        p.addLine(to: l(0.16, 0.77))
+        p.addCurve(to: l(0.34, 0.68), control1: l(0.19, 0.75), control2: l(0.26, 0.73))
+        p.addCurve(to: l(0.50, 0.42), control1: l(0.43, 0.62), control2: l(0.53, 0.53))
+        p.addCurve(to: l(0.14, 0.26), control1: l(0.47, 0.33), control2: l(0.16, 0.31))
+        p.addCurve(to: l(0.19, 0.15), control1: l(0.14, 0.23), control2: l(0.18, 0.20))
+        p.addCurve(to: l(0.075, 0.075), control1: l(0.20, 0.11), control2: l(0.15, 0.08))
         p.closeSubpath()
         return p
+    }
+
+    /// The left wing from above. Points are placed along the wing's axis (s from the shoulder) with a chord offset
+    /// (c: negative = the leading edge, toward the head; positive = trailing, toward the tail). The axis angle runs
+    /// from `tipAngle − bend` along the arm to `tipAngle` along the hand (radians below the outward horizontal).
+    private static func dorsalWing(shoulder: CGPoint, length: CGFloat, tipAngle: CGFloat, bend: CGFloat, chord: CGFloat,
+                                   pointiness pt: CGFloat, arm: CGFloat) -> CGPath {
+        let p = CGMutablePath()
+        let lead = 16
+        let trail = 30
+        let wrist = min(max(arm, 0.25), 0.5)
+        // Leading edge, root → tip: a gentle forward bow.
+        for i in 0...lead {
+            let t = CGFloat(i) / CGFloat(lead)
+            let c = -length * 0.025 * sin(CGFloat.pi * t) - chord * 0.05 * (1 - t)
+            let q = dorsalPoint(shoulder, length, tipAngle, bend, wrist, t, c)
+            if i == 0 { p.move(to: q) } else { p.addLine(to: q) }
+        }
+        // Trailing edge, tip → root: a rounded (or pointed) tip, dark primaries as finger notches on broad wings,
+        // the secondaries' long straight edge back to the body.
+        let capStart = lerp(0.80, 0.90, pt)
+        for i in 0...trail {
+            let t = 1 - CGFloat(i) / CGFloat(trail)
+            var c = chord * (0.95 - 0.35 * t * t)
+            if t > capStart {
+                let k = (t - capStart) / (1 - capStart)
+                c *= max(0, 1 - k * k).squareRoot()
+            }
+            if t > 0.6 && t < 0.97 {
+                c -= chord * 0.10 * (1 - pt) * abs(sin(CGFloat.pi * (t - 0.6) / 0.0925))
+            }
+            p.addLine(to: dorsalPoint(shoulder, length, tipAngle, bend, wrist, t, max(c, 0)))
+        }
+        p.closeSubpath()
+        return p
+    }
+
+    private static func dorsalPoint(_ shoulder: CGPoint, _ length: CGFloat, _ tipAngle: CGFloat, _ bend: CGFloat,
+                                    _ wrist: CGFloat, _ t: CGFloat, _ c: CGFloat) -> CGPoint {
+        // 0 along the arm, 1 along the hand, smooth across the wrist.
+        let k0 = min(max((t - wrist * 0.75) / (wrist * 0.8), 0), 1)
+        let k = k0 * k0 * (3 - 2 * k0)
+        let a = tipAngle - bend * (1 - k)
+        let s = length * t
+        // Outward (left) along the axis, and the trailing normal (toward the tail / the body).
+        let dx = -cos(a), dy = sin(a)
+        let nx = sin(a), ny = cos(a)
+        return CGPoint(x: shoulder.x + dx * s + nx * c, y: shoulder.y + dy * s + ny * c)
     }
 
     // MARK: Small maths (functions, not operators, so nothing can clash with another module's CGPoint operators)

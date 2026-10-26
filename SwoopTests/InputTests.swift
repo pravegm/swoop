@@ -19,9 +19,10 @@ private final class FakeHinge {
     }
 
     /// Runs for `duration` s; `angle` gives the hand's angle at local time 0…duration. Returns the last tuck and
-    /// collects every frame's tuck into `tucks`.
+    /// collects every frame's tuck into `tucks`. `frames: false` asks no tuck (the resume hold); `snap` calls
+    /// `snapCalibration` every frame (the countdown and the resume hold).
     @discardableResult
-    func run(_ duration: Double, angle: (Double) -> Double) -> Double {
+    func run(_ duration: Double, frames: Bool = true, snap: Bool = false, angle: (Double) -> Double) -> Double {
         let start = time
         let steps = Int((duration / Self.frame).rounded())
         var tuck: Double = 0
@@ -39,8 +40,12 @@ private final class FakeHinge {
                 }
                 nextReport = time + Self.reportInterval
             }
-            tuck = source.tuck(at: time)
-            tucks.append(tuck)
+            // The App snaps before it asks for the tuck (GameController.advance); the resume hold asks no tuck.
+            if snap { source.snapCalibration(at: time) }
+            if frames {
+                tuck = source.tuck(at: time)
+                tucks.append(tuck)
+            }
         }
         return tuck
     }
@@ -137,12 +142,44 @@ struct InputTests {
     }
 
     @Test func calibrationFollowsAHigherRestingAngle() {
+        // Round 2: upward learning is slow (τ 10 s within 6° of open, τ 12 s beyond once held still).
         let source = HingeTuckSource(logs: false)
         let hinge = FakeHinge(source: source)
-        hinge.run(20) { _ in 168 }
-        #expect(source.openAngle > 167.5)
+        hinge.run(30) { _ in 168 }
+        #expect(source.openAngle > 167)
         #expect(source.openAngle <= 168.01)
         #expect(source.lastTuck == 0)
+    }
+
+    /// QA-1 P1-3: a wide-open glide used to drag "open" up to 170°+, so the normal 150° rest then read as a 0.6 tuck.
+    @Test func calibrationDoesNotRatchetUpAfterAWideOpenGlide() {
+        let source = HingeTuckSource(logs: false)
+        let hinge = FakeHinge(source: source)
+        hinge.run(1) { _ in 150 }
+        source.snapCalibration(at: hinge.time)
+        #expect(abs(source.openAngle - 150) < 0.05)
+        hinge.run(6) { _ in 176 }
+        let rest = hinge.run(10) { _ in 150 }
+        #expect(abs(source.openAngle - 150) < 1)
+        #expect(rest < 0.05)
+        // Not from 166° either (well above open + 6°, and moving in and out like a glide, never still for long).
+        hinge.run(8) { t in 158 + 8 * sin(2 * Double.pi * 0.4 * t) }
+        hinge.run(4) { _ in 150 }
+        #expect(source.openAngle < 152)
+    }
+
+    @Test func upwardCalibrationIsSlowAndNearOpenOnly() {
+        let source = HingeTuckSource(logs: false)
+        let hinge = FakeHinge(source: source)
+        hinge.run(1) { _ in 150 }
+        source.snapCalibration(at: hinge.time)
+        hinge.run(10) { _ in 154 }
+        // τ 10 s: about 63 % of the 4° after 10 s (the still-settle path is slower, so it doesn't change that).
+        #expect(source.openAngle > 151.5)
+        #expect(source.openAngle < 153.5)
+        hinge.run(30) { _ in 154 }
+        #expect(source.openAngle > 153.5)
+        #expect(source.openAngle <= 154.01)
     }
 
     @Test func calibrationLearnsALowerRestingAngle() {
@@ -160,30 +197,63 @@ struct InputTests {
     /// Duo CI run 40318165524: a player resting at 146.7° during the countdown started 31 % tucked.
     @Test func readyPoseSnapsTheOpenAngle() {
         let source = HingeTuckSource(logs: false)
-        source.ingest(angleDegrees: 146.7, at: 1)
-        source.snapCalibration()
-        #expect(abs(source.openAngle - 146.7) < 0.01)
-        #expect(source.tuck(at: 1.5) < 0.02)
-        // Never from a fold (a player already diving during the hold) or below the range.
-        source.ingest(angleDegrees: 125, at: 2)
-        source.snapCalibration()
-        #expect(abs(source.openAngle - 146.7) < 0.01)
+        let hinge = FakeHinge(source: source)
+        // The countdown: frames ask for the tuck, and the App snaps on every one of them.
+        hinge.run(1, snap: true) { _ in 146.7 }
+        #expect(abs(source.openAngle - 146.7) < 0.05)
+        #expect(source.lastTuck < 0.02)
+        // Never from a fold (a player already diving during the hold).
+        hinge.run(1) { t in 146.7 - 21.7 * min(t / 0.3, 1) }
+        hinge.run(1, snap: true) { _ in 125 }
+        // (The fold itself nudges it a hair on the way through the near-open band.)
+        #expect(abs(source.openAngle - 146.7) < 0.3)
+        // Below the range it clamps to openMin, above to openMax.
         let low = HingeTuckSource(logs: false)
-        low.ingest(angleDegrees: 141, at: 1)
-        low.snapCalibration()
+        FakeHinge(source: low).run(1, snap: true) { _ in 141 }
         #expect(low.openAngle == HingeTuckTuning.openMin)
+        let high = HingeTuckSource(logs: false)
+        FakeHinge(source: high).run(1, snap: true) { _ in 174 }
+        #expect(high.openAngle == HingeTuckTuning.openMax)
+        // No hinge yet: nothing to snap to (the App's default-argument call compiles and does nothing).
+        let none = HingeTuckSource(logs: false)
+        none.snapCalibration()
+        #expect(none.openAngle == HingeTuckTuning.initialOpen)
+    }
+
+    /// QA-1 P1-4: the resume hold snapped to raw, mid-reopen angles. Now only a still hinge, filtered, defines "open".
+    @Test func resumeSnapIgnoresAHandStillReopening() {
+        let source = HingeTuckSource(logs: false)
+        let hinge = FakeHinge(source: source)
+        hinge.run(1, snap: true) { _ in 150 }
+        #expect(abs(source.openAngle - 150) < 0.05)
+        hinge.run(1) { t in 150 - 30 * min(t / 0.4, 1) }
+        // The resume hold: no tuck is asked, the App snaps every frame, and the hand reopens slowly to 162°.
+        hinge.run(2.5, frames: false, snap: true) { t in 120 + 42 * t / 2.5 }
+        #expect(abs(source.openAngle - 150) < 0.3)
+        // Once the hand rests, the snap lands on the rest.
+        hinge.run(0.5, frames: false, snap: true) { _ in 162 }
+        #expect(abs(source.openAngle - 162) < 0.8)
+        // A fidget in the countdown (a hand still moving, 152°…172°) never snaps to a turnaround (±10°); only the
+        // ordinary calibration nudges it a little.
+        hinge.run(1.5, snap: true) { t in 162 - 10 * sin(2 * Double.pi * 1.2 * t) }
+        #expect(abs(source.openAngle - 162) < 1.5)
     }
 
     @Test func calibrationStaysInsideItsRange() {
+        // Round 2 (QA-1 P1-3): near-flat (177°) and flat (180°) rests never teach "open" at all; they read as open.
         let flat = HingeTuckSource(logs: false)
         FakeHinge(source: flat).run(20) { _ in 177 }
-        #expect(flat.openAngle <= HingeTuckTuning.openMax)
-        #expect(flat.openAngle > HingeTuckTuning.openMax - 0.5)
-        // Fully flat (180°) never teaches it.
+        #expect(flat.openAngle == HingeTuckTuning.initialOpen)
+        #expect(flat.lastTuck == 0)
         let flatter = HingeTuckSource(logs: false)
         FakeHinge(source: flatter).run(10) { _ in 180 }
         #expect(flatter.openAngle == HingeTuckTuning.initialOpen)
         #expect(flatter.lastTuck == 0)
+        // A low rest (146°, a tuck of 0.36 at first) is learned by the still-settle path, never below openMin.
+        let low = HingeTuckSource(logs: false)
+        FakeHinge(source: low).run(60) { _ in 146 }
+        #expect(low.openAngle >= HingeTuckTuning.openMin)
+        #expect(low.openAngle < 147)
     }
 
     // MARK: Closing

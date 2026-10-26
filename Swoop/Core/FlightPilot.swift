@@ -9,7 +9,10 @@ import Foundation
 // - Airborne: wings open; it plans *when* to tuck so that holding the tuck until touchdown lands on a downslope at
 //   the smallest angle. The plan integrates the open path with the session's own physics (Tuning) and, at each
 //   candidate moment, a tucked branch to its touchdown; it aims at the centre of the widest run of Perfect landings.
-//   Once it tucks in the air it holds the tuck to the water (a dive, not a twitch).
+//   Once it tucks in the air it holds the tuck to the water (a dive, not a twitch), unless the dive is now going to
+//   splash and opening would land better: then it pulls out (Round 2; people do).
+// - Planning cost is capped (`planBudget` integration steps per plan, all branches together) so the attract loop on
+//   the main thread stays cheap (QA-1 P2-14).
 // - Every decision is held ≥ `hold` s, and seen through a reaction lag, so it looks like a skilled human, not jitter.
 // - `casual` reacts late (0.15 s lag it doesn't allow for), misjudges gravity a little and mistimes 20 % of its dives;
 //   `novice` ignores the sea and folds in a crude ~0.8 s rhythm.
@@ -75,7 +78,8 @@ public struct FlightPilot {
     static let predictDt: Double = 1.0 / 60.0
     static let branchEvery: Int = 2
     static let maxDelay: Double = 1.6
-    static let maxFlight: Double = 4.0
+    static let maxFlight: Double = 3.0
+    static let planBudget: Int = 2500
     /// Skimming: tuck when the slope ahead is below this.
     static let downslopeThreshold: Double = -0.03
     /// Novice rhythm half-stroke range (s).
@@ -154,7 +158,24 @@ public struct FlightPilot {
             committed = false
             tuckAt = 1e18
         }
-        if committed { return 1 }
+        if committed {
+            // Pull out of a dive that is going to splash if opening the wings would land better.
+            if snap.time >= nextPlan {
+                nextPlan = snap.time + profile.replan
+                let here = CorePilotState(x: Double(snap.position.x), y: Double(snap.position.y),
+                                          vx: Double(snap.velocity.dx), vy: Double(snap.velocity.dy), u: snap.tuck)
+                let dive = FlightPilot.landTucked(here, sea: sea, target: 1, delay: 0, gScale: 1)
+                if dive.rank == 2 {
+                    let open = FlightPilot.landTucked(here, sea: sea, target: 0, delay: 0, gScale: 1)
+                    if open.rank < 2 {
+                        committed = false
+                        tuckAt = 1e18
+                        return 0
+                    }
+                }
+            }
+            return 1
+        }
         if snap.time >= nextPlan {
             nextPlan = snap.time + profile.replan
             let gScale: Double = 1 + (profile.noise > 0 ? rng.range(-profile.noise...profile.noise) : 0)
@@ -192,23 +213,27 @@ public struct FlightPilot {
         if st.vx < Tuning.minSpeed { st.vx = Tuning.minSpeed }
     }
 
-    /// Landing quality rank (0 perfect, 1 good, 2 splash) and angle (deg).
+    /// Landing quality rank (0 perfect, 1 good, 2 splash) and the assisted angle (deg), as the session judges it.
     static func rank(_ st: CorePilotState, at x: Double, sea: SeaProfile) -> (rank: Int, alpha: Double) {
         let phi: Double = atan(sea.slope(at: x))
-        let alpha: Double = abs(atan2(st.vy, st.vx) - phi) * 180 / Double.pi
+        let assisted: Double = Tuning.assistedAngle(velocityAngle: atan2(st.vy, st.vx), surfaceAngle: phi)
+        let alpha: Double = abs(assisted - phi) * 180 / Double.pi
         let phiDeg: Double = phi * 180 / Double.pi
         if alpha <= Tuning.perfectAngleDeg && phiDeg < Tuning.perfectSlopeDeg { return (0, alpha) }
         if alpha <= Tuning.goodAngleDeg { return (1, alpha) }
         return (2, alpha)
     }
 
-    /// Fly a tucked branch (tuck starts after `delay`) to its touchdown.
-    static func landTucked(_ from: CorePilotState, sea: SeaProfile, delay: Double, gScale: Double) -> (rank: Int, alpha: Double) {
+    /// Fly a branch (the tuck goes to `target` after `delay`) to its touchdown. `steps` = integration steps used.
+    static func landTucked(_ from: CorePilotState, sea: SeaProfile, target: Double, delay: Double,
+                           gScale: Double) -> (rank: Int, alpha: Double, steps: Int) {
         var b: CorePilotState = from
         let k: Double = 1 - exp(-predictDt / Tuning.tuckAttack)
         var t: Double = 0
+        var n: Int = 0
         while t < maxFlight {
-            let tu: Double = t >= delay ? 1 : b.u
+            n += 1
+            let tu: Double = t >= delay ? target : b.u
             b.u += (tu - b.u) * k
             let px: Double = b.x
             let d0: Double = b.y - sea.height(at: px)
@@ -218,11 +243,12 @@ public struct FlightPilot {
             if d1 <= 0 {
                 let fr: Double = d0 > 0 ? min(max(d0 / (d0 - d1), 0), 1) : 1
                 let lx: Double = px + (b.x - px) * fr
-                return rank(b, at: lx, sea: sea)
+                let r = rank(b, at: lx, sea: sea)
+                return (r.rank, r.alpha, n)
             }
             t += predictDt
         }
-        return (1, Tuning.goodAngleDeg)
+        return (1, Tuning.goodAngleDeg, n)
     }
 
     /// Seconds from now to start the dive (infinity = stay open to the water).
@@ -237,12 +263,15 @@ public struct FlightPilot {
         var step: Int = 0
         var openRank: Int = -1
         var openAlpha: Double = 1e9
-        while t <= maxDelay {
+        var budget: Int = planBudget
+        while t <= maxDelay && budget > 0 {
             if step % branchEvery == 0 {
-                let r = landTucked(open, sea: sea, delay: lag, gScale: gScale)
+                let r = landTucked(open, sea: sea, target: 1, delay: lag, gScale: gScale)
                 ranks.append(r.rank)
                 alphas.append(r.alpha)
+                budget -= r.steps
             }
+            budget -= 1
             step += 1
             open.u += (0 - open.u) * k
             let px: Double = open.x

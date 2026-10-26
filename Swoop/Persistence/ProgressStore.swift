@@ -47,6 +47,10 @@ struct AppRankUp: Equatable {
     var to: Int
     var birds: [BirdID]
     var skies: [SkyID]
+    /// Trail colours opened (ids from Core's catalogue, ROUND-2 Core 4).
+    var trails: [String] = []
+
+    var trailNames: [String] { trails.map { ProgressRules.trailName($0) } }
 }
 
 /// What recording a finished run changed, for the results card.
@@ -96,6 +100,8 @@ struct ProgressData: Codable, Equatable {
     var bestDailyStreak = 0
     var bird: BirdID = .gull
     var sky: SkyID = .goldenHour
+    /// The chosen trail colour's id (Core's `TrailID` raw value); "" or "natural" = the bird's own trail.
+    var trail = ""
     /// The first-run hints ("Fold on the way down", "Open to fly") are learned after the first Perfect.
     var hintsLearned = false
 
@@ -125,6 +131,7 @@ struct ProgressData: Codable, Equatable {
         bestDailyStreak = (try? c.decodeIfPresent(Int.self, forKey: .bestDailyStreak)) ?? 0
         bird = (try? c.decodeIfPresent(BirdID.self, forKey: .bird)) ?? .gull
         sky = (try? c.decodeIfPresent(SkyID.self, forKey: .sky)) ?? .goldenHour
+        trail = (try? c.decodeIfPresent(String.self, forKey: .trail)) ?? ""
         hintsLearned = (try? c.decodeIfPresent(Bool.self, forKey: .hintsLearned)) ?? false
     }
 
@@ -133,6 +140,33 @@ struct ProgressData: Codable, Equatable {
     func dailyStreak(today: Int) -> Int { ProgressRules.streak(days: Set(daily.keys), today: today) }
     func dailyRecord(day: Int) -> DailyRecord? { daily[day] }
     func goalProgress(for goal: Goal) -> Double { min(max(goalProgress[goal.id] ?? 0, 0), 1) }
+}
+
+// MARK: - Trail colours (rank rewards, ROUND-2)
+
+/// A trail colour the player can pick (the App's view of Core's trail catalogue).
+struct AppTrail: Equatable {
+    var id: String
+    var name: String
+    /// nil = the bird's own trail colour (Core's `Natural`).
+    var color: RGBA?
+    var unlockRank: Int
+}
+
+extension ProgressRules {
+    /// Every trail colour, rank order. The ONLY place that reads Core's trail catalogue (design/NEEDS.md).
+    static func trailOptions() -> [AppTrail] {
+        TrailCatalog.all.map { AppTrail(id: $0.id.rawValue, name: $0.name, color: $0.color, unlockRank: $0.unlockRank) }
+    }
+
+    /// Trail ids whose unlock rank is in (from, to].
+    static func trailUnlocks(from: Int, to: Int) -> [String] {
+        trailOptions().filter { $0.unlockRank > from && $0.unlockRank <= to }.map { $0.id }
+    }
+
+    static func trailName(_ id: String) -> String {
+        trailOptions().first(where: { $0.id == id })?.name ?? id
+    }
 }
 
 // MARK: - The rules (pure, tested)
@@ -197,6 +231,9 @@ enum ProgressRules {
                        },
                        unlocks: (Int, Int) -> (birds: [BirdID], skies: [SkyID]) = { from, to in
                            ProgressRules.unlocks(from: from, to: to)
+                       },
+                       trailUnlocks: (Int, Int) -> [String] = { from, to in
+                           ProgressRules.trailUnlocks(from: from, to: to)
                        }) -> RecordOutcome {
         var outcome = RecordOutcome()
         if case .attract = result.mode { return outcome }
@@ -256,7 +293,8 @@ enum ProgressRules {
             // The finished rank's goal ids are done with; the next rank starts fresh.
             for row in rows { data.goalProgress.removeValue(forKey: row.goal.id) }
             let opened = unlocks(rankBefore, data.rank)
-            outcome.rankUp = AppRankUp(from: rankBefore, to: data.rank, birds: opened.birds, skies: opened.skies)
+            outcome.rankUp = AppRankUp(from: rankBefore, to: data.rank, birds: opened.birds, skies: opened.skies,
+                                       trails: trailUnlocks(rankBefore, data.rank))
         }
 
         let earnedAfter = earnedAchievements(data, allBirdsRank: allBirdsRankDefault())
@@ -271,17 +309,36 @@ enum ProgressRules {
         return (birds, skies)
     }
 
+    /// Everything ranks (from, to] open, by name: birds, then skies, then trails (Flocks ladder, rank-up banner).
+    static func unlockNames(from: Int, to: Int) -> [String] {
+        let opened = unlocks(from: from, to: to)
+        return opened.birds.map { BirdCatalog.bird($0).name } + opened.skies.map { SkyCatalog.sky($0).name }
+            + trailUnlocks(from: from, to: to).map { trailName($0) }
+    }
+
+    /// A goal's progress as the Flocks screen shows it: the stored best, and lifetime goals read live from the
+    /// lifetime metres (QA-1 P2-9: right after a rank-up they read 0 % until the next run). 0…1.
+    static func liveProgress(_ goal: Goal, data: ProgressData) -> Double {
+        let stored = data.goalProgress(for: goal)
+        guard goal.kind == .totalMeters, goal.target > 0, data.lifetimeMeters.isFinite else { return stored }
+        return max(stored, min(max(data.lifetimeMeters / goal.target, 0), 1))
+    }
+
     /// The rank that unlocks the last bird (the "all birds" achievement).
     static func allBirdsRankDefault() -> Int {
         BirdCatalog.all.map { $0.unlockRank }.max() ?? 0
     }
 
-    /// A scored Daily left before the storm caught the bird: the distance so far is the day's score (no free retry).
+    /// A scored Daily left before the storm caught the bird (or backgrounded mid-run, QA-1 P1-2): the distance so far
+    /// is the day's score (no free retry). Filed again later in the same try, the larger distance wins; a finished
+    /// record is never replaced by a partial.
     static func fileDailyPartial(into data: inout ProgressData, day: Int, meters: Double, perfects: Int,
                                  lighthouses: Int, lastLighthouseName: String, today: Int) {
         data.dailyAttempted.insert(day)
-        guard data.daily[day] == nil else { return }
         let m = meters.isFinite ? max(meters, 0) : 0
+        if let existing = data.daily[day] {
+            if existing.finished || existing.meters >= m { return }
+        }
         data.daily[day] = DailyRecord(meters: m, perfects: perfects, lighthouses: lighthouses,
                                       lastLighthouseName: lastLighthouseName, finished: false)
         data.bestDailyStreak = max(data.bestDailyStreak, Self.streak(days: Set(data.daily.keys), today: today))
@@ -300,12 +357,21 @@ final class ProgressStore: ObservableObject {
 
     init(defaults: UserDefaults?) {
         self.defaults = defaults
-        if let raw = defaults?.data(forKey: Self.key), let decoded = Self.decode(raw) {
-            data = decoded
+        if let raw = defaults?.data(forKey: Self.key) {
+            if let decoded = Self.decode(raw) {
+                data = decoded
+            } else {
+                // QA-1 P2-11: keep an unreadable save aside before anything overwrites it.
+                defaults?.set(raw, forKey: Self.corruptKey)
+                data = ProgressData()
+            }
         } else {
             data = ProgressData()
         }
     }
+
+    /// Where an unreadable save is copied before the first write (support can recover it).
+    static let corruptKey = "swoop.progress.corrupt"
 
     init(inMemory data: ProgressData) {
         self.defaults = nil
@@ -336,6 +402,14 @@ final class ProgressStore: ObservableObject {
     /// The chosen bird while it's still unlocked (Reset progress can lock it again), else the gull.
     var activeBird: BirdID {
         BirdCatalog.bird(data.bird).unlockRank <= data.rank ? data.bird : .gull
+    }
+
+    /// The chosen trail while it's still unlocked; nil = the bird's own trail.
+    var activeTrail: AppTrail? {
+        guard !data.trail.isEmpty,
+              let trail = ProgressRules.trailOptions().first(where: { $0.id == data.trail }),
+              trail.unlockRank <= data.rank else { return nil }
+        return trail
     }
 
     var activeSky: SkyID {
@@ -379,6 +453,17 @@ final class ProgressStore: ObservableObject {
     func selectBird(_ id: BirdID) {
         guard isUnlocked(BirdCatalog.bird(id)), data.bird != id else { return }
         data.bird = id
+        save()
+    }
+
+    /// Picks a trail colour ("" = the bird's own). Locked ones are ignored.
+    func selectTrail(_ id: String) {
+        if !id.isEmpty {
+            guard let trail = ProgressRules.trailOptions().first(where: { $0.id == id }),
+                  trail.unlockRank <= data.rank else { return }
+        }
+        guard data.trail != id else { return }
+        data.trail = id
         save()
     }
 

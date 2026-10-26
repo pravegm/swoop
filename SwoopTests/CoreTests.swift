@@ -325,15 +325,30 @@ struct CoreTests {
     // MARK: Touchdown classification
 
     @Test func touchdownClassification() {
+        // Round 2: Perfect ≤ 18° on a slope below −2°, Good ≤ 36°, both after a 7° landing assist.
         let deg: Double = Double.pi / 180
         #expect(FlightSession.classify(velocityAngle: -30 * deg, surfaceAngle: -25 * deg) == .perfect)
-        #expect(FlightSession.classify(velocityAngle: -38 * deg, surfaceAngle: -25 * deg) == .perfect)
-        // Lined up but not downhill: only Good.
-        #expect(FlightSession.classify(velocityAngle: -2 * deg, surfaceAngle: -2 * deg) == .good)
+        // 25° raw − 7° assist = 18°: still Perfect; 26° raw is only Good.
+        #expect(FlightSession.classify(velocityAngle: -49.9 * deg, surfaceAngle: -25 * deg) == .perfect)
+        #expect(FlightSession.classify(velocityAngle: -51.5 * deg, surfaceAngle: -25 * deg) == .good)
+        // Lined up but not downhill enough: only Good.
+        #expect(FlightSession.classify(velocityAngle: -1 * deg, surfaceAngle: -1 * deg) == .good)
         #expect(FlightSession.classify(velocityAngle: 8 * deg, surfaceAngle: 5 * deg) == .good)
-        #expect(FlightSession.classify(velocityAngle: -40 * deg, surfaceAngle: -15 * deg) == .good)
-        #expect(FlightSession.classify(velocityAngle: -45 * deg, surfaceAngle: -10 * deg) == .splash)
+        #expect(FlightSession.classify(velocityAngle: -3 * deg, surfaceAngle: -3 * deg) == .perfect)
+        // 43° raw − 7° = 36°: Good; beyond: splash.
+        #expect(FlightSession.classify(velocityAngle: -52.9 * deg, surfaceAngle: -10 * deg) == .good)
+        #expect(FlightSession.classify(velocityAngle: -54 * deg, surfaceAngle: -10 * deg) == .splash)
         #expect(FlightSession.classify(velocityAngle: -40 * deg, surfaceAngle: 15 * deg) == .splash)
+    }
+
+    @Test func landingAssistTurnsAtMostSevenDegrees() {
+        let deg: Double = Double.pi / 180
+        let a: Double = Tuning.assistedAngle(velocityAngle: -40 * deg, surfaceAngle: -20 * deg)
+        #expect(abs(a - (-33 * deg)) < 1e-12)
+        let b: Double = Tuning.assistedAngle(velocityAngle: -22 * deg, surfaceAngle: -20 * deg)
+        #expect(abs(b - (-20 * deg)) < 1e-12)
+        let c: Double = Tuning.assistedAngle(velocityAngle: 10 * deg, surfaceAngle: 30 * deg)
+        #expect(abs(c - (17 * deg)) < 1e-12)
     }
 
     @Test func perfectLandingKeepsSpeedAndPushesStorm() {
@@ -515,8 +530,9 @@ struct CoreTests {
     }
 
     @Test func cloudTouchedOncePerClimb() {
+        // Round 2: clouds are at Tuning.cloudHeight above the MEAN water (the Scene draws them there).
         let s = flyingSession(seed: 12)
-        s.testPlace(x: 5000, altitude: 950, vx: 900, vy: 0)
+        s.testPlace(x: 5000, altitude: Tuning.cloudHeight + 50 - s.sea.height(at: 5000), vx: 900, vy: 0)
         let isCloud: (FlightEvent) -> Bool = { (e: FlightEvent) -> Bool in
             if case .cloudTouched = e { return true }
             return false
@@ -656,7 +672,7 @@ struct CoreTests {
         #expect(BirdCatalog.bird(.gull).unlockRank == 0)
         #expect(Set(all.map { (b: Bird) -> String in b.name }).count == all.count)
         for b in all {
-            #expect(b.unlockRank >= 0 && b.unlockRank < GoalCatalog.maxRank)
+            #expect(b.unlockRank >= 0 && b.unlockRank <= GoalCatalog.maxRank)
             #expect(b.span > 0.5 && b.span < 1.6)
             #expect(b.pointiness >= 0 && b.pointiness <= 1)
             #expect(!b.blurb.isEmpty)
@@ -671,12 +687,13 @@ struct CoreTests {
         }
         #expect(SkyCatalog.sky(.goldenHour).unlockRank == 0)
         for s in all {
-            #expect(s.unlockRank >= 0 && s.unlockRank < GoalCatalog.maxRank)
+            #expect(s.unlockRank >= 0 && s.unlockRank <= GoalCatalog.maxRank)
         }
     }
 
     @Test func goalLadderIsComplete() {
-        #expect(GoalCatalog.maxRank == 15)
+        // Round 2: 15 ranks (0…14), 14 flocks of 3.
+        #expect(GoalCatalog.maxRank == 14)
         var ids: Set<String> = []
         var rank: Int = 0
         while rank < GoalCatalog.maxRank {
@@ -690,11 +707,212 @@ struct CoreTests {
             #expect(!GoalCatalog.rankTitle(rank).isEmpty)
             rank += 1
         }
-        #expect(ids.count == 45)
+        #expect(ids.count == 42)
+        for goal in GoalCatalog.ladder.joined() {
+            #expect(goal.kind != .speed, "speed goals can't be seen (REVIEW-1 P1-8)")
+        }
         #expect(GoalCatalog.goals(forRank: GoalCatalog.maxRank).isEmpty)
         #expect(GoalCatalog.goals(forRank: -1).isEmpty)
         #expect(GoalCatalog.rankTitle(0) == "Fledgling")
         #expect(GoalCatalog.rankTitle(GoalCatalog.maxRank) == "Storm Rider")
-        #expect(GoalCatalog.goals(forRank: 0)[0].text == "Fly 500 m")
+        #expect(GoalCatalog.goals(forRank: 0)[0].text == "Fly 1 km")
+        #expect(GoalCatalog.titles.count == GoalCatalog.maxRank + 1)
+    }
+
+    @Test func everyRankPaysOut() {
+        #expect(GoalCatalog.rewards(forRank: 0).isEmpty)
+        var rank: Int = 1
+        var seen: Int = 0
+        while rank <= GoalCatalog.maxRank {
+            let r: [RankReward] = GoalCatalog.rewards(forRank: rank)
+            #expect(!r.isEmpty, "rank \(rank) unlocks nothing")
+            seen += r.count
+            rank += 1
+        }
+        // Every bird, sky and trail except the starting ones is unlocked exactly once.
+        #expect(seen == (BirdCatalog.all.count - 1) + (SkyCatalog.all.count - 1) + (TrailCatalog.all.count - 1))
+        #expect(GoalCatalog.rewards(forRank: GoalCatalog.maxRank).contains(.bird(.gannet)))
+    }
+
+    @Test func trailCatalogIsComplete() {
+        #expect(TrailCatalog.all.count == TrailID.allCases.count)
+        for id in TrailID.allCases {
+            #expect(TrailCatalog.trail(id).id == id)
+        }
+        #expect(TrailCatalog.trail(.natural).unlockRank == 0)
+        let gull: Bird = BirdCatalog.bird(.gull)
+        #expect(TrailCatalog.color(.natural, for: gull) == gull.trail)
+        let coral: Bird = TrailCatalog.apply(.coral, to: gull)
+        #expect(coral.trail != gull.trail)
+        #expect(coral.id == .gull)
+        for t in TrailCatalog.all {
+            #expect(t.unlockRank >= 0 && t.unlockRank <= GoalCatalog.maxRank)
+        }
+    }
+
+    // MARK: Round 2
+
+    @Test func samplesIntoMatchesSamples() {
+        let sea = SeaProfile(seed: 9)
+        var buffer: [CGPoint] = []
+        sea.samples(into: &buffer, from: -500, to: 9000, step: 13)
+        #expect(buffer == sea.samples(from: -500, to: 9000, step: 13))
+        sea.samples(into: &buffer, from: 0, to: 100, step: 30)
+        #expect(buffer.count == 5)
+    }
+
+    @Test func tutorialIntroIsSmooth() {
+        let sea = SeaProfile(seed: 4)
+        var worst: Double = 0
+        var x: Double = -3000
+        while x < 6000 {
+            let fd: Double = sea.height(at: x + 0.25) - sea.height(at: x - 0.25)
+            worst = max(worst, abs(fd / 0.5 - sea.slope(at: x)))
+            #expect(abs(sea.slope(at: x)) <= 1.1)
+            x += 3.7
+        }
+        #expect(worst < 2e-3)
+        for k in Tuning.tutorialKnots {
+            #expect(abs(sea.slope(at: k.x)) < 1e-6)
+            #expect(abs(sea.height(at: k.x) - k.y) < 1e-6)
+        }
+    }
+
+    /// One tutorial scenario: tuck = 1 while `tuckWhen` says so. Returns the qualities of the first two touchdowns,
+    /// the time of the first one, and when the bird first skims an upslope after it (the trough).
+    private func tutorialRun(_ tuckWhen: (Double) -> Bool) -> (q: [TouchdownQuality], land: Double, trough: Double) {
+        let s = FlightSession(mode: .flight, seed: 1, bestMeters: 0, bird: .gull)
+        s.skipCountdown()
+        var t: Double = 0
+        var qs: [TouchdownQuality] = []
+        var land: Double = -1
+        var trough: Double = -1
+        while t < 12 && qs.count < 2 {
+            let ev: [FlightEvent] = s.step(dt: 1.0 / 120.0, tuck: tuckWhen(t) ? 1 : 0)
+            t += 1.0 / 120.0
+            for e in ev {
+                if case .touchdown(let q, _, _) = e {
+                    qs.append(q)
+                    if qs.count == 1 { land = t }
+                }
+            }
+            let snap = s.snapshot
+            if land >= 0 && trough < 0 && snap.skimming && s.sea.slope(at: Double(snap.position.x)) >= 0 {
+                trough = t
+            }
+        }
+        return (qs, land, trough)
+    }
+
+    @Test func tutorialGuaranteesPerfects() {
+        // Doing nothing: the drop lands Perfect, and so does the landing on the second swell.
+        let idle = tutorialRun({ (_: Double) -> Bool in false })
+        #expect(idle.q == [.perfect, .perfect])
+        #expect(idle.land > 0 && idle.land < 3)
+        #expect(idle.trough > idle.land)
+        // Tucking at any point on the first downslope (for any length, released by just after the trough) still
+        // lands Perfect on the second swell.
+        let span: Double = idle.trough - idle.land
+        var fails: [String] = []
+        var f: Double = 0
+        while f < 1 {
+            for len in [0.15, 0.3, 0.5, 1.0, 99.0] {
+                let a: Double = idle.land + f * span
+                let b: Double = min(a + len, idle.trough + 0.2)
+                let r = tutorialRun({ (t: Double) -> Bool in t >= a && t < b })
+                if r.q.count < 2 || r.q[1] != .perfect {
+                    fails.append("tuck \(a)…\(b): \(r.q)")
+                }
+            }
+            f += 0.125
+        }
+        #expect(fails.isEmpty, "\(fails)")
+    }
+
+    @Test func aGoodHoldsTheChainAndASplashBreaksIt() {
+        let deg: Double = Double.pi / 180
+        let s = flyingSession(seed: 1)
+        let phi: Double = atan(s.sea.slope(at: 650))
+        func land(_ offsetDeg: Double) -> [FlightEvent] {
+            let beta: Double = phi - offsetDeg * deg
+            s.testPlace(x: 650, altitude: 1, vx: 900 * cos(beta), vy: 900 * sin(beta))
+            var ev: [FlightEvent] = []
+            var i: Int = 0
+            while i < 240 && !s.snapshot.skimming {
+                ev.append(contentsOf: s.step(dt: 1.0 / 240.0, tuck: 0))
+                i += 1
+            }
+            return ev
+        }
+        _ = land(2)
+        #expect(s.snapshot.chain == 1)
+        let good: [FlightEvent] = land(32)
+        let goodsAtOne: Int = count(good, where: { (e: FlightEvent) -> Bool in
+            if case .touchdown(.good, _, let c) = e { return c == 1 }
+            return false
+        })
+        #expect(goodsAtOne == 1)
+        #expect(s.snapshot.chain == 1)
+        #expect(s.snapshot.perfects == 1)
+        _ = land(2)
+        #expect(s.snapshot.chain == 2)
+        _ = land(55)
+        #expect(s.snapshot.chain == 0)
+        #expect(s.snapshot.bestChain == 2)
+    }
+
+    @Test func tailwindEndsWithoutASpeedJolt() {
+        let deg: Double = Double.pi / 180
+        let s = flyingSession(seed: 1)
+        let phi: Double = atan(s.sea.slope(at: 650))
+        var started: Bool = false
+        var k: Int = 0
+        while k < 3 {
+            let beta: Double = phi - 2 * deg
+            let sp: Double = k == 2 ? 2900 : 900
+            s.testPlace(x: 650, altitude: 1, vx: sp * cos(beta), vy: sp * sin(beta))
+            var i: Int = 0
+            while i < 240 && !s.snapshot.skimming {
+                for e in s.step(dt: 1.0 / 240.0, tuck: 0) where e == .tailwindStarted { started = true }
+                i += 1
+            }
+            k += 1
+        }
+        #expect(started)
+        #expect(s.snapshot.speed > Tuning.maxSpeed * 1.05)
+        // End the Tailwind on cue (a Perfect during it would refill it).
+        s.testSetTailwind(0.02)
+        // Fly on (tucked: heavy, fast) through the end of the Tailwind; no single frame may lose more than 1 %
+        // of the speed, except at a touchdown.
+        var last: Double = s.snapshot.speed
+        var worst: Double = 0
+        var sawEnd: Bool = false
+        var after: Double = 0
+        var i: Int = 0
+        while i < 240 * 5 && after < 0.8 {
+            let ev: [FlightEvent] = s.step(dt: 1.0 / 240.0, tuck: 1)
+            var touched: Bool = false
+            for e in ev {
+                if e == .tailwindEnded { sawEnd = true }
+                if case .touchdown = e { touched = true }
+                if case .tailwindStarted = e { sawEnd = false }
+            }
+            let sp: Double = s.snapshot.speed
+            if !touched && last > 0 { worst = max(worst, (last - sp) / last) }
+            last = sp
+            if sawEnd { after += 1.0 / 240.0 }
+            i += 1
+        }
+        #expect(sawEnd)
+        #expect(worst < 0.01, "worst one-frame speed loss \(worst)")
+    }
+
+    @Test func pilotPlanningIsBounded() {
+        // The planner's work per plan is capped (QA-1 P2-14), whatever the state.
+        let sea = SeaProfile(seed: 3)
+        let start = CorePilotState(x: 5000, y: sea.height(at: 5000) + 900, vx: 2400, vy: 600, u: 0)
+        let d: Double = FlightPilot.plan(from: start, sea: sea, gScale: 1, lag: 0.03)
+        #expect(d >= 0)
+        #expect(FlightPilot.planBudget <= 4000)
     }
 }

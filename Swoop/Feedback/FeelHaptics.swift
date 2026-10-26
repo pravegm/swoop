@@ -78,8 +78,10 @@ enum FeelHapticBook {
         return FeelHapticCue(notes: [.tap(0.5 + 0.45 * s, 0.55), .buzz(0.2 + 0.15 * s, 0.4, at: 0.01, duration: 0.05)])
     }
 
-    /// Perfect: a crisp double tap.
-    static let perfect = FeelHapticCue(notes: [.tap(0.85, 0.9), .tap(0.7, 0.95, at: 0.07)])
+    /// Perfect: a crisp double tap that lands exactly on the App's 35 ms hit-stop. The firm tap fires the instant
+    /// the Perfect lands (the frame the world freezes); the lighter, keener one fires as it lets go (the punch-in's
+    /// "pop"). It is prebuilt (`FeelHaptics`), so there is no pattern-building latency in front of it.
+    static let perfect = FeelHapticCue(notes: [.tap(0.9, 0.85), .tap(0.55, 1.0, at: Double(FeelSoundBook.hitStop))])
     /// Good landing: a soft single tap.
     static let good = FeelHapticCue(notes: [.tap(0.4, 0.5)])
     /// Tailwind: a rising ramp that lands on a firm tap.
@@ -134,9 +136,15 @@ final class FeelHaptics {
         didSet {
             guard oldValue != enabled else { return }
             if enabled {
-                if wantsStart { start() }
+                guard wantsStart else { return }
+                if engine == nil { start() } else { restart() }
             } else {
+                // QA-1 P2-12: switched off mid-session, the hardware goes to sleep at once (not at the next menu).
                 setContinuous(rumble: 0, sharpness: 0.5, skim: 0, now: CACurrentMediaTime(), force: true)
+                stopPlayers()
+                perfectPlayer = nil
+                if let engine, isRunning { engine.stop(completionHandler: nil) }
+                isRunning = false
             }
         }
     }
@@ -160,6 +168,8 @@ final class FeelHaptics {
     private var engine: CHHapticEngine?
     private var rumblePlayer: CHHapticAdvancedPatternPlayer?
     private var skimPlayer: CHHapticAdvancedPatternPlayer?
+    /// The Perfect cue, prebuilt per engine start so it fires with no setup in front of it.
+    private var perfectPlayer: CHHapticPatternPlayer?
     private var isRunning = false
     private var wantsStart = false
     private var lastRecovery: CFTimeInterval = 0
@@ -194,6 +204,7 @@ final class FeelHaptics {
                     self.isRunning = false
                     self.rumblePlayer = nil
                     self.skimPlayer = nil
+                    self.perfectPlayer = nil
                 }
             }
             engine.resetHandler = { [weak self] in
@@ -202,6 +213,7 @@ final class FeelHaptics {
                     self.isRunning = false
                     self.rumblePlayer = nil
                     self.skimPlayer = nil
+                    self.perfectPlayer = nil
                     self.restart()
                 }
             }
@@ -231,7 +243,7 @@ final class FeelHaptics {
     }
 
     private func restart() {
-        guard let engine else { return }
+        guard enabled, let engine else { return }
         do {
             try engine.start()
             isRunning = true
@@ -242,6 +254,12 @@ final class FeelHaptics {
         }
         rumblePlayer = nil
         skimPlayer = nil
+        perfectPlayer = nil
+        do {
+            perfectPlayer = try engine.makePlayer(with: try Self.pattern(for: FeelHapticBook.perfect))
+        } catch {
+            record("Couldn't prebuild the Perfect haptic", error)
+        }
         // Menus have no flight: no looping players to keep the hardware awake.
         if idle { return }
         do {
@@ -353,6 +371,25 @@ final class FeelHaptics {
             }
         }
         guard let engine, isRunning else { return }
+        if cue == FeelHapticBook.perfect, let player = perfectPlayer {
+            do {
+                try player.start(atTime: CHHapticTimeImmediate)
+                return
+            } catch {
+                perfectPlayer = nil
+                record("Couldn't play the prebuilt Perfect haptic", error)
+            }
+        }
+        do {
+            let player = try engine.makePlayer(with: try Self.pattern(for: cue))
+            try player.start(atTime: CHHapticTimeImmediate)
+        } catch {
+            record("Couldn't play a haptic", error)
+        }
+    }
+
+    /// The Core Haptics pattern for a cue.
+    private static func pattern(for cue: FeelHapticCue) throws -> CHHapticPattern {
         let events: [CHHapticEvent] = cue.notes.map { (note: FeelHapticNote) -> CHHapticEvent in
             let intensity = CHHapticEventParameter(parameterID: .hapticIntensity, value: min(max(note.intensity, 0), 1))
             let sharpness = CHHapticEventParameter(parameterID: .hapticSharpness, value: min(max(note.sharpness, 0), 1))
@@ -374,13 +411,7 @@ final class FeelHaptics {
             curves.append(CHHapticParameterCurve(parameterID: .hapticIntensityControl, controlPoints: points,
                                                  relativeTime: 0))
         }
-        do {
-            let pattern = try CHHapticPattern(events: events, parameterCurves: curves)
-            let player = try engine.makePlayer(with: pattern)
-            try player.start(atTime: CHHapticTimeImmediate)
-        } catch {
-            record("Couldn't play a haptic", error)
-        }
+        return try CHHapticPattern(events: events, parameterCurves: curves)
     }
 
     // MARK: - Fallback (no Core Haptics)

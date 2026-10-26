@@ -139,6 +139,25 @@ struct HoldStabiliser {
         return abs(newestAngle - angles[count - 2]) / Self.nominalInterval
     }
 
+    /// Spread (max − min, degrees) of the raw reports over the last `window` s, counting the last report before the
+    /// window too (where the hinge was when the window began). 0 when nothing arrived in the window (the Duo sends
+    /// nothing while still). Unlike the net `speed`, a turnaround (a fidget's peak) never reads as still.
+    func spread(over window: Double, at time: Double) -> Double {
+        let count = times.count
+        guard count >= 1, window > 0 else { return 0 }
+        var low = Double.infinity
+        var high = -Double.infinity
+        var index = count - 1
+        while index >= 0 {
+            let angle = angles[index]
+            low = min(low, angle)
+            high = max(high, angle)
+            if times[index] < time - window { break }
+            index -= 1
+        }
+        return high >= low ? high - low : 0
+    }
+
     mutating func filter(_ x: Double, at time: Double, restCutoff: Double = HoldStabiliser.restCutoff) -> Double {
         guard x.isFinite else { return value ?? 180 }
         guard let previous = value else {
@@ -303,9 +322,14 @@ struct FeelClosingLatch {
     }
 }
 
-/// `SWOOP-T …` demo/timing lines for CI, only with the `-swoopDemo` launch argument. Flushed at once.
+/// `SWOOP-T …` demo/timing lines for CI, only with the `-swoopDemo` launch argument, and only in DEBUG builds
+/// (QA-1 P2-13: Release carries neither the check nor the string). Flushed at once.
 enum FeelDemoLog {
+    #if DEBUG
     static let isEnabled: Bool = ProcessInfo.processInfo.arguments.contains("-swoopDemo")
+    #else
+    static let isEnabled: Bool = false
+    #endif
 
     static func emit(_ line: String) {
         guard isEnabled else { return }

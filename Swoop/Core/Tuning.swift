@@ -4,7 +4,8 @@ import Foundation
 //
 // Units: sea points (pt; 10 pt = 1 m), seconds, pt/s, pt/s², degrees where the name says so.
 // The numbers were tuned with the Node port of Core in `tools/balance-sim.js` (keep the two in sync!). Its predicted
-// run lengths (20 seeds, dt 1/120): novice ~50 s, casual ~115 s, expert ~5.5 min, perfect ~10 min (always ends).
+// run lengths (20 seeds, dt 1/120; Round 2 targets in design/ROUND-2.md): novice ~53 s, casual ~157 s, expert ~6.8 min,
+// perfect ~8.8 min (always ends). `tools/storm-fit.js` fits the storm law to those targets.
 // Feel numbers to try first on a held Duo are marked FEEL.
 
 public enum Tuning {
@@ -24,7 +25,8 @@ public enum Tuning {
     /// accelerates 2.9×, which is the whole "pump" of the game.
     public static let tuckGravityFactor: Double = 1.9
     /// FEEL. Airborne: gravity is g · (1 + airTuckGravityFactor · u) — tucking in the air is a dive.
-    public static let airTuckGravityFactor: Double = 1.9
+    /// Round 2: 1.9 → 1.3. A gentler dive forgives a late fold (with the longer swells: casual splashes 7 → 3.5/min).
+    public static let airTuckGravityFactor: Double = 1.3
     /// FEEL. Spread-wing lift while descending: (1 − u) · min(liftMaxFraction · g, liftCoefficient · vx²).
     /// GAME-DESIGN §5 said 0.5 g; 0.65 g gives a calmer glide (the balance harness lands more often with it).
     public static let liftMaxFraction: Double = 0.65
@@ -33,7 +35,8 @@ public enum Tuning {
     /// open wings turns into forward speed instead of being thrown away). Never makes the bird climb: its vertical
     /// part is ≤ liftMaxFraction · g < g.
     public static let liftPerpendicular: Bool = true
-    /// Air drag: dv/dt = −airDrag · v (1/s), applied in the air and on the water (off during a Tailwind).
+    /// Air drag: dv/dt = −airDrag · v (1/s), applied in the air and on the water (off during a Tailwind, then eased
+    /// back in over `tailwindFade`).
     public static let airDrag: Double = 0.04
     /// Extra water friction while skimming (1/s): 0.2 % per second.
     public static let waterFriction: Double = 0.002
@@ -44,6 +47,8 @@ public enum Tuning {
     public static let minSpeed: Double = 260
     /// Maximum speed (pt/s); ×(1 + tailwindSpeedBoost) during a Tailwind.
     public static let maxSpeed: Double = 2600
+    /// "Full speed" (pt/s): 90 % of maxSpeed. Scene: gold speed streaks from here (REVIEW-1 P1-8).
+    public static let fullSpeed: Double = 0.9 * maxSpeed
 
     // MARK: Launch and touchdown
 
@@ -55,30 +60,38 @@ public enum Tuning {
     public static let launchGrace: Double = 0.10
     /// Lifted this far off the water at launch (pt), so the first airborne sub-step doesn't re-touch.
     public static let launchLift: Double = 0.25
-    /// FEEL. Perfect skim: angle between velocity and surface ≤ perfectAngleDeg AND the surface going downhill
-    /// (φ < perfectSlopeDeg).
-    public static let perfectAngleDeg: Double = 14
-    public static let perfectSlopeDeg: Double = -4
-    /// Good landing: angle ≤ goodAngleDeg (keeps cos α of the speed). Above it: a splash.
-    public static let goodAngleDeg: Double = 30
+    /// FEEL. Landing assist (Round 2, REVIEW-1 P0-1): on touchdown the velocity is turned toward the surface
+    /// tangent by up to this many degrees (speed kept) before the landing is judged. Invisible, Alto-style.
+    public static let landingAssistDeg: Double = 7
+    /// FEEL. Perfect skim: the (assisted) angle between velocity and surface ≤ perfectAngleDeg AND the surface going
+    /// downhill (φ < perfectSlopeDeg). Round 2: 14° → 18°, −4° → −2°.
+    public static let perfectAngleDeg: Double = 18
+    public static let perfectSlopeDeg: Double = -2
+    /// Good landing: angle ≤ goodAngleDeg (keeps cos α of the speed, and keeps the chain without adding to it).
+    /// Above it: a splash, the only thing that breaks a chain. Round 2: 30° → 36°.
+    public static let goodAngleDeg: Double = 36
     /// Perfect: keep 100 % of the speed plus this boost.
     public static let perfectBoost: Double = 0.06
-    /// Splash: keep cos α · splashKeep of the speed.
-    public static let splashKeep: Double = 0.75
+    /// Splash: keep cos α · splashKeep of the speed. Round 2: 0.75 → 0.82 (still wet and heavy, less costly).
+    public static let splashKeep: Double = 0.82
 
     // MARK: The storm (GAME-DESIGN §6)
 
-    /// Storm speed n(t) = stormBaseSpeed + stormAccel · t until stormCruiseSpeed (t ≈ 109 s), then it keeps
-    /// accelerating slowly (stormLateAccel) up to stormMaxSpeed (reached at ~13 min), so even a flawless run ends.
-    public static let stormBaseSpeed: Double = 520
-    public static let stormAccel: Double = 9
-    public static let stormCruiseSpeed: Double = 1500
-    public static let stormLateAccel: Double = 2.5
+    /// Storm speed n(t) = stormBaseSpeed + stormAccel · t until stormCruiseSpeed (t ≈ 73 s), then it keeps
+    /// accelerating (stormLateAccel) up to stormMaxSpeed (reached at ~7 min), so even a flawless run ends.
+    /// Round 2: late accel 3.5 (ROUND-2); base, accel and cruise refit by tools/storm-fit.js for the R2 targets.
+    public static let stormBaseSpeed: Double = 480
+    public static let stormAccel: Double = 18
+    public static let stormCruiseSpeed: Double = 1800
+    public static let stormLateAccel: Double = 3.5
     public static let stormMaxSpeed: Double = 3200
     /// The gap bird − storm at the drop (pt).
     public static let gapStart: Double = 2400
     /// The lead meter's "full" gap (pt): lead = gap / fullLead, clamped 0…1.
     public static let fullLead: Double = 3000
+    /// HUD headroom (REVIEW-1 P1-7): draw the meter as gap / (leadMeterScale · fullLead), so the 2400 pt start reads
+    /// ~60 % instead of pinned full. `snapshot.lead` itself is unchanged (stormClose still uses it).
+    public static let leadMeterScale: Double = 1.3
     /// `stormClose` fires when lead < stormCloseLead, once per dip; it re-arms above stormRearmLead.
     public static let stormCloseLead: Double = 0.15
     public static let stormRearmLead: Double = 0.30
@@ -97,14 +110,19 @@ public enum Tuning {
     public static let tailwindDuration: Double = 2.5
     /// Tailwind speed surge (+15 %, applied when it starts) and raised max speed; no drag during it.
     public static let tailwindSpeedBoost: Double = 0.15
+    /// After a Tailwind ends, the raised max speed and the missing drag ease back linearly over this long (s), so
+    /// there is no 13 % jolt at `tailwindEnded` (QA-1 P2-1).
+    public static let tailwindFade: Double = 0.6
     /// Passing a lighthouse pushes the storm back (pt).
     public static let lighthouseGapBonus: Double = 800
 
     // MARK: Clouds
 
-    /// `cloudTouched` fires when the altitude reaches this (pt above the water)…
+    /// The underside of the cloud deck in sea space: pt above the MEAN water, not the local swell. Round 2
+    /// (QA-1 P2-6): `cloudTouched` fires when the bird's y reaches this, and the Scene draws its touchable clouds with
+    /// their underside at this height, so a touch is always on a drawn cloud.
     public static let cloudHeight: Double = 900
-    /// …and re-arms after dropping below this (or touching the water).
+    /// …and re-arms after the bird drops below this y (or touches the water).
     public static let cloudRearmHeight: Double = 650
 
     // MARK: Easing and timing
@@ -157,7 +175,8 @@ public enum Tuning {
     public static let seaFullTier: Double = 5
     /// FEEL. Base ranges are GAME-DESIGN §4's (λ 380–900, A 40–150); the harness wanted longer, taller swells
     /// (windows long enough to time a landing by hand at 1000–2500 pt/s), so they are scaled by these.
-    public static let seaWavelengthScale: Double = 2.0
+    /// Round 2: wavelength ×2 → ×3 (long swell 1860–2700 pt): fewer, longer downslopes forgive a late fold.
+    public static let seaWavelengthScale: Double = 3.0
     public static let seaAmplitudeScale: Double = 1.4
     /// Base wavelength ranges (pt, before scaling) of the three components: long swell, mid swell, short swell.
     public static let seaWavelength0: ClosedRange<Double> = 620...900
@@ -178,11 +197,20 @@ public enum Tuning {
     public static let seaRogueWavelength: ClosedRange<Double> = 1000...1150
     public static let seaRogueMidAmplitude: ClosedRange<Double> = 10...20
     public static let seaRogueMidWavelength: ClosedRange<Double> = 480...620
-    /// The fixed tutorial train for every seed: one long swell, crest just ahead of the start, then a long
-    /// downslope (the first landing), a trough and a long gentle crest (the first launch), fixed until tutorialEnd.
+    /// The fixed tutorial train for every seed (Round 2: it guarantees the first Perfects).
+    /// Half-cosine segments between these extrema (x, y), C¹ because the slope is 0 at every knot:
+    /// - crest A just ahead of the start: the drop lands Perfect on its downslope with no input;
+    /// - a trough, then a small launch crest B;
+    /// - B's long back: whatever the player did on the first downslope, open wings land Perfect on it (the "second
+    ///   swell").
+    /// Then a sine of amplitude |last y| and tutorialWavelength continues from the last knot until tutorialEnd, where the
+    /// seeded sets begin. Found by a search in Node over the scenarios in CoreTests.tutorialGuaranteesPerfects.
+    public static let tutorialKnots: [(x: Double, y: Double)] = [
+        (x: -2400, y: -120), (x: 200, y: 150), (x: 1200, y: -150), (x: 1900, y: 60), (x: 3700, y: -300),
+    ]
     public static let tutorialEnd: Double = 4000
-    public static let tutorialAmplitude: Double = 150
-    public static let tutorialWavelength: Double = 1800
+    public static let tutorialWavelength: Double = 3600
+    /// Crest A's x, for reference and tests.
     public static let tutorialCrestX: Double = 200
 
     // MARK: Lighthouses
@@ -200,6 +228,12 @@ public enum Tuning {
         let cruiseT: Double = (stormCruiseSpeed - stormBaseSpeed) / stormAccel
         if t <= cruiseT { return stormBaseSpeed + stormAccel * max(0, t) }
         return min(stormMaxSpeed, stormCruiseSpeed + stormLateAccel * (t - cruiseT))
+    }
+
+    /// The touchdown velocity angle after the landing assist: beta turned toward phi by ≤ landingAssistDeg (radians).
+    static func assistedAngle(velocityAngle beta: Double, surfaceAngle phi: Double) -> Double {
+        let a: Double = landingAssistDeg * Double.pi / 180
+        return beta + min(max(phi - beta, -a), a)
     }
 
     /// Skimming gravity for tuck u.

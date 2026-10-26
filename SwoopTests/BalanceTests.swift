@@ -6,9 +6,12 @@ import Testing
 // MARK: - Headless balance playtest
 //
 // Every PilotSkill flies real FlightSessions (20 seeds, dt 1/120, each run capped at 15 min of flight) and prints:
-//   SWOOP-BAL skill=casual median=115.2s p10=104.8 p90=125.9 medianMeters=11270 perfects/min=2.8 ...
-// The assertions are loose (targets in GAME-DESIGN §6; tools/balance-sim.js predicts novice ~50 s, casual ~115 s,
-// expert ~5.5 min, perfect ~10 min). Overrides: SWOOP_BAL_SEEDS (number of seeds).
+//   SWOOP-BAL skill=casual median=157.4s p10=135.7 p90=182.5 medianMeters=23247 perfects/min=12.3 splashes/min=3.5 ...
+// The assertions are the Round 2 targets (design/ROUND-2.md, medians over the seeds):
+//   novice 45–80 s and ≥ 2 Perfects/min; casual 130–170 s, ≥ 7 Perfects/min, ≤ 4 splashes/min; expert 300–500 s;
+//   perfect always caught inside the 15-min cap.
+// tools/balance-sim.js predicts novice ~53 s / 2.4 Perfects/min, casual ~157 s / 12.3 / 3.5, expert ~410 s,
+// perfect ~526 s. Overrides: SWOOP_BAL_SEEDS (number of seeds).
 // Each skill is simulated once (memoised per skill), so the comparison test reuses the per-skill runs.
 
 struct SwoopBalanceRun {
@@ -135,18 +138,27 @@ struct BalanceTests {
         // Unbuffered, so the line survives even if a later test crashes the runner.
         FileHandle.standardOutput.write(Data((line + "\n").utf8))
         let med: Double = SwoopBalanceHarness.percentile(runs.map { (r: SwoopBalanceRun) -> Double in r.seconds }, 0.5)
+        let ppm: Double = SwoopBalanceHarness.percentile(runs.map { (r: SwoopBalanceRun) -> Double in
+            Double(r.perfects) / max(r.seconds / 60, 1e-6)
+        }, 0.5)
+        let spm: Double = SwoopBalanceHarness.percentile(runs.map { (r: SwoopBalanceRun) -> Double in
+            Double(r.splashes) / max(r.seconds / 60, 1e-6)
+        }, 0.5)
         switch skill {
         case .novice:
-            #expect(med >= 35 && med <= 110, "\(line)")
+            #expect(med >= 45 && med <= 80, "\(line)")
+            #expect(ppm >= 2, "\(line)")
         case .casual:
-            #expect(med >= 90 && med <= 260, "\(line)")
+            #expect(med >= 130 && med <= 170, "\(line)")
+            #expect(ppm >= 7, "\(line)")
+            #expect(spm <= 4, "\(line)")
         case .expert:
-            #expect(med >= 120, "\(line)")
+            #expect(med >= 300 && med <= 500, "\(line)")
         case .perfect:
             // The storm keeps accelerating: even flawless flying ends inside the cap.
             let capped: Int = runs.filter { (r: SwoopBalanceRun) -> Bool in r.capped }.count
             #expect(capped == 0, "\(line)")
-            #expect(med >= 180, "\(line)")
+            #expect(med >= 300, "\(line)")
         }
     }
 

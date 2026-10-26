@@ -3,7 +3,8 @@ import UIKit
 
 /// The pooled world-space FX (GAME-DESIGN §7): skim spray and wake, launch burst, Perfect rings and sparkles, Splash,
 /// cloud puffs, Tailwind shedding. Positions are world-local (sea x − the scene's origin); sizes are given in canvas
-/// px and divided by the zoom at spawn. Everything runs on the scene's simulation clock.
+/// px and divided by the zoom at spawn. Everything runs on the scene's FX clock (the simulation's, plus wall time
+/// through a short hit-stop).
 @MainActor
 final class SceneEffects {
     /// On the water, under the bird (rings, foam).
@@ -26,6 +27,13 @@ final class SceneEffects {
     private let dotTexture: SKTexture
     private let softTexture: SKTexture
     private let sparkTexture: SKTexture
+    /// The Perfect's gold bloom on the water.
+    private let bloom: SKSpriteNode
+    private var bloomAge: CGFloat = 1
+    private var bloomSize: CGFloat = 0
+    private let goldColor = ScenePaint.ui(ScenePaint.gold)
+    private let paleGoldColor = ScenePaint.ui(ScenePaint.paleGold)
+    private let whiteColor = UIColor.white
 
     init() {
         waterRoot = SKNode()
@@ -34,12 +42,19 @@ final class SceneEffects {
         dotTexture = SceneTextures.dot
         softTexture = SceneTextures.soft
         sparkTexture = SceneTextures.sparkle
+        bloom = SKSpriteNode(texture: SceneTextures.glow)
         spray = SceneParticlePool(capacity: 240, texture: SceneTextures.dot, blend: .alpha)
         foam = SceneParticlePool(capacity: 120, texture: SceneTextures.soft, blend: .alpha)
         glow = SceneParticlePool(capacity: 110, texture: SceneTextures.sparkle, blend: .add)
         waterRoot.addChild(foam.root)
         root.addChild(spray.root)
         glowRoot.addChild(glow.root)
+        bloom.blendMode = .add
+        bloom.colorBlendFactor = 1
+        bloom.color = ScenePaint.ui(ScenePaint.gold)
+        bloom.isHidden = true
+        bloom.zPosition = -0.5
+        waterRoot.addChild(bloom)
         for _ in 0..<5 {
             let r = SceneRingFX()
             waterRoot.addChild(r.node)
@@ -55,6 +70,8 @@ final class SceneEffects {
             r.active = false
             r.node.isHidden = true
         }
+        bloom.isHidden = true
+        bloomAge = 1
         sprayCarry = 0
         wakeCarry = 0
         shedCarry = 0
@@ -65,6 +82,7 @@ final class SceneEffects {
         foam.shift(dx: dx)
         glow.shift(dx: dx)
         for r in rings where r.active { r.node.position.x += dx }
+        bloom.position.x += dx
     }
 
     var activeParticles: Int { spray.activeCount + foam.activeCount + glow.activeCount }
@@ -74,6 +92,13 @@ final class SceneEffects {
         foam.update(dt)
         glow.update(dt)
         guard dt > 0 else { return }
+        if !bloom.isHidden {
+            bloomAge += dt
+            let k = min(bloomAge / 0.45, 1)
+            bloom.alpha = 0.85 * (1 - k) * (1 - k)
+            bloom.setScale(0.6 + 0.6 * k)
+            if k >= 1 { bloom.isHidden = true }
+        }
         for r in rings where r.active {
             r.age += dt
             let t = r.age - r.delay
@@ -148,8 +173,8 @@ final class SceneEffects {
             p.life = rng.range(0.45, 0.8)
             p.drag = 2
             p.spin = rng.range(-4, 4)
-            let c = rng.unit() < 0.7 ? ScenePaint.gold : ScenePaint.paleGold
-            glow.spawn(p, size: rng.range(10, 18) / z, color: ScenePaint.ui(c), texture: sparkTexture)
+            let c = rng.unit() < 0.7 ? goldColor : paleGoldColor
+            glow.spawn(p, size: rng.range(10, 18) / z, color: c, texture: sparkTexture)
         }
     }
 
@@ -176,16 +201,27 @@ final class SceneEffects {
         foamRing(at: point, count: 6, spread: 30, zoom: z, color: color)
     }
 
-    /// A Perfect: a white ring on the water (a gold one after it on a chain), golden sparkles.
+    /// A Perfect (R2, REVIEW-1 P0-3): a gold ring growing 40 → 160 px over 0.35 s on the water (a second, paler one
+    /// 0.08 s later on chains ≥ 2), a gold bloom, golden sparkles. Visible from the first frame.
     func perfect(at point: CGPoint, chain: Int, zoom z: CGFloat, foamColor: UIColor) {
-        ring(at: point, color: UIColor.white, start: 0.3 / z, end: 1.35 / z, duration: 0.6, delay: 0, alpha: 1)
+        // The ring node is 200 pt wide at scale 1.
+        let from = SceneLook.perfectRingFrom / 200 / z
+        let to = SceneLook.perfectRingTo / 200 / z
+        ring(at: point, color: goldColor, start: from, end: to, duration: SceneLook.perfectRingTime, delay: 0, alpha: 1)
         if chain >= 2 {
-            ring(at: point, color: ScenePaint.ui(ScenePaint.gold), start: 0.25 / z, end: 1.8 / z, duration: 0.75,
-                 delay: 0.08, alpha: 0.9)
+            ring(at: point, color: paleGoldColor, start: from, end: to * 1.25, duration: SceneLook.perfectRingTime + 0.1,
+                 delay: SceneLook.perfectRing2Delay, alpha: 0.85)
         }
+        bloomSize = 220 / z
+        bloom.size = CGSize(width: bloomSize, height: bloomSize * 0.45)
+        bloom.position = CGPoint(x: point.x, y: point.y + 4 / z)
+        bloom.setScale(0.6)
+        bloom.alpha = 0.85
+        bloom.isHidden = false
+        bloomAge = 0
         let c = min(max(chain, 1), 8)
         let n = (reduceMotion ? 8 : 14) + 2 * c
-        let colors: [RGBA] = [ScenePaint.gold, ScenePaint.paleGold, ScenePaint.white]
+        let colors: [UIColor] = [goldColor, paleGoldColor, whiteColor]
         for i in 0..<n {
             let a = CGFloat(i) / CGFloat(n) * CGFloat.pi + rng.range(-0.15, 0.15)
             let s = rng.range(160, 340)
@@ -196,8 +232,7 @@ final class SceneEffects {
             p.drag = 2.4
             p.gravity = 120
             p.spin = rng.range(-5, 5)
-            glow.spawn(p, size: rng.range(16, 28) / z, color: ScenePaint.ui(colors[i % colors.count]),
-                       texture: sparkTexture)
+            glow.spawn(p, size: rng.range(16, 28) / z, color: colors[i % colors.count], texture: sparkTexture)
         }
         splashDroplets(at: point, count: reduceMotion ? 5 : 9, speed: 260, zoom: z, color: foamColor)
     }

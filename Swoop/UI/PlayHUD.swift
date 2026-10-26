@@ -1,7 +1,8 @@
 import SwiftUI
+import UIKit
 
-/// The play overlay: the hold-anywhere touch control (touch input only), the HUD, hints, countdown, toasts and the
-/// pause / closing / Ready cards. Positions come from `PlayLayout` (fold-clear).
+/// The play overlay: the hold-anywhere touch control (touch input only), the HUD, hints, countdown, toasts, the
+/// "Perfect ×N" callout and the pause / closing / Ready cards. Positions come from `PlayLayout` (fold-clear).
 struct PlayLayer: View {
     @ObservedObject var controller: GameController
     @ObservedObject var hud: HUDState
@@ -20,27 +21,34 @@ struct PlayLayer: View {
                     .contentShape(Rectangle())
                     .gesture(
                         DragGesture(minimumDistance: 0)
-                            .onChanged { _ in
-                                guard !touching else { return }
-                                touching = true
-                                controller.touchBegan()
-                            }
-                            .onEnded { _ in
-                                touching = false
-                                controller.touchEnded()
-                            }
+                            .onChanged { _ in tuck(true) }
+                            .onEnded { _ in tuck(false) }
                     )
                     .accessibilityElement()
                     .accessibilityLabel("Wings")
-                    .accessibilityHint("Touch and hold to tuck and dive. Let go to open and soar.")
+                    .accessibilityValue(touching ? "Tucked" : "Spread")
+                    .accessibilityHint("Touch and hold to tuck and dive. Let go to open and soar. "
+                                       + "With VoiceOver, swipe down to tuck and up to open.")
                     .accessibilityAddTraits(.allowsDirectInteraction)
+                    // QA-1 P2-15: a VoiceOver-adjustable wing (GAME-DESIGN §3).
+                    .accessibilityAdjustableAction { direction in
+                        switch direction {
+                        case .decrement: tuck(true)
+                        case .increment: tuck(false)
+                        @unknown default: break
+                        }
+                    }
             }
-            HUDView(hud: hud, layout: l, info: info, onPause: { controller.pause() })
-            HintBubble(hint: hud.hint, touch: controller.usesTouch, info: info)
+            HUDView(hud: hud, layout: l, info: info, tag: controller.hudTag, onPause: { controller.pause() })
+            PerfectCalloutView(callout: hud.callout, reduceMotion: reduceMotion, hold: hud.holdFrame)
+                .frame(width: l.callout.width, height: l.callout.height)
+                .position(x: l.callout.midX, y: l.callout.midY)
+                .allowsHitTesting(false)
+            HintBubble(hint: hud.hint, touch: controller.hintTouchWording, info: info)
                 .frame(width: l.hint.width, height: l.hint.height)
                 .position(x: l.hint.midX, y: l.hint.midY)
                 .allowsHitTesting(false)
-            CenterStage(hud: hud, touch: controller.usesTouch, reduceMotion: reduceMotion)
+            CenterStage(hud: hud, touch: controller.hintTouchWording, reduceMotion: reduceMotion)
                 .frame(width: l.center.width, height: l.center.height)
                 .position(x: l.center.midX, y: l.center.midY)
                 .allowsHitTesting(false)
@@ -53,7 +61,7 @@ struct PlayLayer: View {
                     .position(x: l.card.midX, y: l.card.midY)
                     .transition(.opacity)
             } else if controller.isClosingPaused {
-                ClosingCard(info: info)
+                ClosingCard(info: info, onResume: { controller.resumeFromClosing() })
                     .transition(.opacity)
             }
         }
@@ -64,10 +72,19 @@ struct PlayLayer: View {
         // A hold that starts near the bottom edge must tuck, not go Home mid-flight.
         .defersSystemGestures(on: paused ? [] : .all)
         .onChange(of: paused) { _, now in
-            if now && touching {
-                touching = false
-                controller.touchEnded()
-            }
+            if now && touching { tuck(false) }
+        }
+    }
+
+    private func tuck(_ down: Bool) {
+        if down {
+            guard !touching else { return }
+            touching = true
+            controller.touchBegan()
+        } else {
+            guard touching else { return }
+            touching = false
+            controller.touchEnded()
         }
     }
 }
@@ -78,16 +95,23 @@ struct HUDView: View {
     @ObservedObject var hud: HUDState
     let layout: PlayLayout
     let info: AppCanvas
+    /// "DAILY #298" during a Daily (nil for a Flight).
+    let tag: String?
     let onPause: () -> Void
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            SwoopIconButton(systemName: "pause.fill", label: "Pause", action: onPause)
-                .position(x: layout.pause.midX, y: layout.pause.midY)
+            // QA-1 P1-1: no pause once the storm has caught the bird (the run is over).
+            if !hud.caught {
+                SwoopIconButton(systemName: "pause.fill", label: "Pause", action: onPause)
+                    .position(x: layout.pause.midX, y: layout.pause.midY)
+                    .transition(.opacity)
+            }
             LeadMeter(lead: hud.lead, stormClose: hud.stormClose, mirrored: info.mirrored)
                 .frame(width: layout.meter.width, height: layout.meter.height)
                 .position(x: layout.meter.midX, y: layout.meter.midY)
                 .opacity(hud.countdown == nil ? 1 : 0.5)
+                .allowsHitTesting(false)
             distance
                 .frame(width: layout.distance.width, height: layout.distance.height,
                        alignment: info.mirrored ? .topLeading : .topTrailing)
@@ -95,36 +119,50 @@ struct HUDView: View {
                 .allowsHitTesting(false)
         }
         .frame(width: info.size.width, height: info.size.height, alignment: .topLeading)
+        .animation(.easeOut(duration: 0.3), value: hud.caught)
     }
 
     private var distance: some View {
-        VStack(alignment: info.mirrored ? .leading : .trailing, spacing: 4) {
+        let shown = ShareText.hudDistance(Double(hud.meters))
+        return VStack(alignment: info.mirrored ? .leading : .trailing, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(ShareText.grouped(hud.meters))
+                Text(shown.value)
                     .font(SwoopTheme.number(info.isCompact ? 40 : 50))
                     .foregroundStyle(SwoopTheme.foam)
                     .contentTransition(.numericText())
-                Text("m")
+                Text(shown.unit)
                     .font(SwoopTheme.title(info.isCompact ? 18 : 22))
                     .foregroundStyle(SwoopTheme.mist)
             }
+            .shadow(color: SwoopTheme.abyss.opacity(0.25), radius: 8)
             .swoopLegible()
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(hud.meters) metres")
+            .accessibilityLabel("\(shown.value) \(shown.unit == "km" ? "kilometres" : "metres")")
+            if let tag {
+                Text(tag)
+                    .font(SwoopTheme.text(12, .heavy))
+                    .kerning(1)
+                    .foregroundStyle(SwoopTheme.ink)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(SwoopTheme.gold))
+                    .lineLimit(1)
+            }
             HStack(spacing: 8) {
                 if hud.tailwind > 0 {
                     TailwindBadge(seconds: hud.tailwind)
                         .transition(.scale.combined(with: .opacity))
                 }
-                ChainPips(chain: hud.chain, tailwind: hud.tailwind > 0)
+                ChainCount(chain: hud.chain, tailwind: hud.tailwind > 0)
             }
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: hud.tailwind > 0)
         }
     }
 }
 
-/// The lead meter: a thin bar, slate (the storm, behind) → gold (the clear sky, ahead); the bird marker sits at the
-/// lead. Pulses coral when the storm is close.
+/// The lead meter: a storm cloud at the behind end, a thin bar slate (the storm) → gold (the clear sky), and the bird
+/// riding the knob at the lead. It shows the gap with headroom (`AppRules.meterHeadroom`), so it moves all run, and
+/// pulses coral only while the storm is close (QA-1 P2-4: no animation the rest of the time).
 struct LeadMeter: View {
     let lead: Double
     let stormClose: Bool
@@ -134,73 +172,149 @@ struct LeadMeter: View {
 
     var body: some View {
         GeometryReader { geo in
-            let w = geo.size.width
+            let iconW: CGFloat = 22
+            let w = max(geo.size.width - iconW - 6, 1)
             let h = geo.size.height
             let v = CGFloat(min(max(lead, 0), 1))
             let markerX = mirrored ? w * (1 - v) : w * v
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(SwoopTheme.abyss.opacity(0.55))
-                HStack(spacing: 0) {
-                    if mirrored { Spacer(minLength: 0) }
+            HStack(spacing: 6) {
+                if !mirrored { stormIcon.frame(width: iconW) }
+                ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(LinearGradient(colors: mirrored ? [SwoopTheme.gold, SwoopTheme.slate]
-                                                              : [SwoopTheme.slate, SwoopTheme.gold],
-                                             startPoint: .leading, endPoint: .trailing))
-                        .frame(width: max(w * v, h))
-                    if !mirrored { Spacer(minLength: 0) }
+                        .fill(SwoopTheme.abyss.opacity(0.55))
+                    HStack(spacing: 0) {
+                        if mirrored { Spacer(minLength: 0) }
+                        Capsule()
+                            .fill(LinearGradient(colors: mirrored ? [SwoopTheme.gold, SwoopTheme.slate]
+                                                                  : [SwoopTheme.slate, SwoopTheme.gold],
+                                                 startPoint: .leading, endPoint: .trailing))
+                            .frame(width: max(w * v, h))
+                        if !mirrored { Spacer(minLength: 0) }
+                    }
+                    BirdGlyph()
+                        .fill(SwoopTheme.foam)
+                        .frame(width: h + 14, height: (h + 14) * 0.48)
+                        .shadow(color: SwoopTheme.gold.opacity(0.8), radius: 4)
+                        .position(x: min(max(markerX, h / 2), w - h / 2), y: h / 2)
                 }
-                Circle()
-                    .fill(SwoopTheme.foam)
-                    .frame(width: h + 8, height: h + 8)
-                    .shadow(color: SwoopTheme.gold.opacity(0.8), radius: 4)
-                    .position(x: min(max(markerX, h / 2), w - h / 2), y: h / 2)
+                .frame(width: w, height: h)
+                .overlay(
+                    Capsule()
+                        .stroke(SwoopTheme.coral.opacity(stormClose ? (pulse ? 0.95 : 0.35) : 0), lineWidth: 2)
+                )
+                if mirrored { stormIcon.frame(width: iconW) }
             }
-            .overlay(
-                Capsule()
-                    .stroke(SwoopTheme.coral.opacity(stormClose ? (pulse ? 0.95 : 0.35) : 0), lineWidth: 2)
-            )
         }
         .animation(.easeOut(duration: 0.25), value: lead)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) { pulse = true }
+        .onChange(of: stormClose) { _, close in
+            if close {
+                withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) { pulse = true }
+            } else {
+                withAnimation(.easeOut(duration: 0.2)) { pulse = false }
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Lead over the storm, \(Int((lead * 100).rounded())) percent")
     }
+
+    private var stormIcon: some View {
+        Image(systemName: "cloud.bolt.fill")
+            .font(.system(size: 15, weight: .bold))
+            .foregroundStyle(stormClose ? SwoopTheme.coral : SwoopTheme.mist)
+            .swoopLegible()
+    }
 }
 
-/// Three pips toward a Tailwind (3 Perfects in a row), plus the chain count from 2.
-struct ChainPips: View {
+/// The Perfect chain, always as "×N" (REVIEW-1 P0-2: looping pips read as "1"); gold while a Tailwind blows.
+struct ChainCount: View {
     let chain: Int
     let tailwind: Bool
 
     var body: some View {
-        let lit = tailwind ? 3 : (chain % 3)
-        HStack(spacing: 6) {
-            ForEach(0..<3, id: \.self) { i in
-                Circle()
-                    .fill(i < lit ? SwoopTheme.gold : SwoopTheme.abyss.opacity(0.5))
-                    .overlay(Circle().stroke(SwoopTheme.gold.opacity(0.7), lineWidth: 1.5))
-                    .frame(width: 12, height: 12)
-                    .scaleEffect(i < lit ? 1.0 : 0.85)
-            }
-            if chain >= 2 {
+        HStack(spacing: 5) {
+            if chain > 0 {
+                Image(systemName: "sparkle")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(SwoopTheme.gold)
                 Text("×\(chain)")
-                    .font(SwoopTheme.number(18))
-                    .foregroundStyle(SwoopTheme.goldLight)
+                    .font(SwoopTheme.number(20))
+                    .foregroundStyle(tailwind ? SwoopTheme.gold : SwoopTheme.goldLight)
                     .contentTransition(.numericText())
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Capsule().fill(SwoopTheme.abyss.opacity(chain > 0 ? 0.45 : 0)))
+        .padding(.horizontal, chain > 0 ? 10 : 0)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(SwoopTheme.abyss.opacity(chain > 0 ? 0.5 : 0)))
         .animation(.spring(response: 0.28, dampingFraction: 0.6), value: chain)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Perfect chain \(chain)")
     }
 }
 
+/// "Perfect ×N" near the bird on its own half (REVIEW-1 P0-3): pops in, then rises 30 pt and fades (0.6 s in all).
+/// Each Perfect (a new `serial`) re-runs it. Reduce Motion: no pop, no rise, just the fade. `hold` (a demo freeze)
+/// keeps it fully on screen so the CI frame shows it.
+struct PerfectCalloutView: View {
+    let callout: HUDCallout?
+    let reduceMotion: Bool
+    var hold: Bool = false
+
+    var body: some View {
+        ZStack {
+            if let callout {
+                if hold {
+                    PerfectCalloutText.label(chain: callout.chain)
+                } else {
+                    PerfectCalloutText(chain: callout.chain, reduceMotion: reduceMotion)
+                        .id(callout.serial)
+                }
+            }
+        }
+    }
+}
+
+struct PerfectCalloutText: View {
+    let chain: Int
+    let reduceMotion: Bool
+
+    /// The rise (pt), the pop (s) and the fade (s) of one callout.
+    static let rise: CGFloat = 30
+    static let popSeconds: Double = 0.15
+    static let fadeSeconds: Double = 0.45
+
+    @State private var popped = false
+    @State private var faded = false
+
+    /// "Perfect" or "Perfect ×3". Pure; tested.
+    nonisolated static func text(chain: Int) -> String {
+        chain >= 2 ? "Perfect ×\(chain)" : "Perfect"
+    }
+
+    static func label(chain: Int) -> some View {
+        Text(text(chain: chain))
+            .font(SwoopTheme.display(chain >= 5 ? 34 : 30))
+            .foregroundStyle(LinearGradient(colors: [SwoopTheme.goldLight, SwoopTheme.gold],
+                                            startPoint: .top, endPoint: .bottom))
+            .shadow(color: SwoopTheme.gold.opacity(0.6), radius: 10)
+            .swoopLegible()
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .accessibilityHidden(true)
+    }
+
+    var body: some View {
+        Self.label(chain: chain)
+            .scaleEffect(popped || reduceMotion ? 1 : 0.6)
+            .offset(y: faded && !reduceMotion ? -Self.rise : 0)
+            .opacity(faded ? 0 : 1)
+            .onAppear {
+                if !reduceMotion {
+                    withAnimation(.spring(response: 0.2, dampingFraction: 0.55)) { popped = true }
+                }
+                withAnimation(.easeIn(duration: Self.fadeSeconds).delay(Self.popSeconds)) { faded = true }
+            }
+    }
+}
 struct TailwindBadge: View {
     let seconds: Double
 
@@ -434,6 +548,9 @@ struct PauseCard: View {
 /// The Duo is closing (< 95°) mid-flight: the run holds. No buttons: opening it again resumes behind "Ready".
 struct ClosingCard: View {
     let info: AppCanvas
+    /// QA-1 P2-3: if the Duo was reopened while the app slept and iOS sent no fresh hinge reading, the card would stay
+    /// up; Resume clears it (a real close re-pauses on the next reading).
+    var onResume: () -> Void = {}
 
     var body: some View {
         let page = info.farPage
@@ -450,10 +567,16 @@ struct ClosingCard: View {
                 .font(SwoopTheme.text(16, .bold))
                 .foregroundStyle(SwoopTheme.mist)
                 .multilineTextAlignment(.center)
+            SwoopButton(kind: .quiet, height: 56, action: onResume) {
+                Label("Resume", systemImage: "play.fill")
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: 240)
+            .padding(.top, 4)
         }
         .frame(maxWidth: min(page.width, 380))
         .swoopCard(padding: 24)
         .position(x: page.midX, y: info.size.height / 2)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 }

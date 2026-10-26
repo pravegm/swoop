@@ -9,22 +9,28 @@ import UIKit
 /// Composition (canvas 952 × 670, origin bottom-left; "u-space" = canvas x measured from the behind edge, flipped
 /// when `layout.mirrored`):
 ///
-///     backRoot  (z −100, u-space)  sky gradient, stars/aurora, sun + glow + haze, far clouds, 2 far swell layers,
-///                                  sun glitter; the storm's cloud wall, its lightning glow and bolts
-///     world     (z 0, sea space)   touchable clouds −40 · lighthouse −30 · PB buoy −11 · the near sea −10…−8.8 ·
-///                                  rings + foam −6 · trail 14 · spray 15 · bird 20 · sparkles 30
-///     shadeRoot (z 5, u-space)     the storm's grey wash over the sea (under the bird)
+///     backRoot  (z −100, u-space)  sky gradient, stars/aurora, sun + glow + haze, far clouds, 2 far swell layers with
+///                                  the lighthouse between them (a parallax depth layer), sun glitter; the storm's
+///                                  anvil, its lightning glow and bolts
+///     world     (z 0, sea space)   touchable clouds −40 · PB buoy −11 · the near sea −10…−8.8 · rings + foam −6 ·
+///                                  trail 14 · spray 15 · bird 20 · sparkles 30
+///     shadeRoot (z 5, u-space)     the storm's grey wash and rain sheets over the sea (under the bird)
 ///     frontRoot (z 60, u-space)    rain, the caught wash, lightning flash, speed lines, the Tailwind flare
-///     crease    (z 80)             a faint horizon glint on the fold (Duo only; nothing critical there)
+///     crease    (z 80)             a faint glint on the fold at the horizon (Duo only; nothing critical there)
 ///
 /// The world node is the camera: scaled by the zoom (x flipped when mirrored) and positioned so the bird sits at 30 %
 /// (70 % mirrored). World children use sea coordinates minus `originX`, a rebased origin that keeps numbers small on
 /// long flights.
+///
+/// Clocks: the camera follows the simulation's clock (it holds still when the snapshot does). FX run on an "FX clock":
+/// the simulation's, plus wall time while the snapshot is held for up to `hitStopWindow` (the App's 35 ms Perfect
+/// hit-stop), so the burst keeps moving through the hit-stop but a pause or a demo freeze still holds.
 @MainActor
 final class FlightScene: SKScene {
     weak var driver: SceneDriver?
 
-    /// Reduce Motion: no camera bump, no lightning flash, a gentle Tailwind flare, fewer particles and speed lines.
+    /// Reduce Motion: no camera bump or punch-in, no lightning flash, a gentle Tailwind flare, fewer particles and
+    /// speed lines.
     var reduceMotion: Bool = false {
         didSet {
             fx.reduceMotion = reduceMotion
@@ -40,6 +46,13 @@ final class FlightScene: SKScene {
 
     /// Frames drawn since the scene was made (CI waits for 120).
     private(set) var drawnFrames = 0
+    /// The drawn zoom and the camera's display scale this frame (tests, tuning).
+    private(set) var drawnZoom: CGFloat = 1
+    private(set) var displayScale: CGFloat = 1
+    /// Sea surface rebuilds so far (QA-1 P1-6: a few per second, not one per frame).
+    var seaRebuilds: Int { seaView.rebuildCount }
+    /// Whether the lighthouse is on screen, and where (u-space).
+    private(set) var lighthouseU: CGFloat?
 
     private static let demoLogging: Bool = ProcessInfo.processInfo.arguments.contains("-swoopDemo")
 
@@ -61,14 +74,17 @@ final class FlightScene: SKScene {
 
     private var bird: Bird = SceneDefaults.bird
     private var sky: Sky = SceneDefaults.sky
+    private var foamColor: UIColor = .white
+    private var sprayColor: UIColor = .white
+    private var puffColor: UIColor = .white
     private var snapshot = FlightSnapshot()
     private var lastUpdateTime: TimeInterval?
     private var lastSimTime: Double?
+    private var stallTime: Double = 0
     private var needsSnap = true
     private var originX: Double = 0
     private var animTime: Double = 0
     private var lastBirdX: Double?
-    private var seaPoints: [CGPoint] = []
     private weak var lastSea: SeaProfile?
     private var caughtness: CGFloat = 0
     private var goldTimer: CGFloat = 0
@@ -80,8 +96,8 @@ final class FlightScene: SKScene {
     private var bumpVelocity: CGFloat = 0
     private var flareLevel: CGFloat = 0
     private var creasePulse: CGFloat = 0
-    private var lighthouseCacheX: Double = .nan
-    private var lighthouseCacheY: Double = 0
+    private var punchAge: Double = 10
+    private var fastKick: Double = 0
 
     init(layout: ScreenLayout) {
         self.layout = layout
@@ -116,13 +132,15 @@ final class FlightScene: SKScene {
         addChild(backRoot)
         backdrop.root.zPosition = 0
         backRoot.addChild(backdrop.root)
+        // The lighthouse stands between the two far swell layers (−14 and −12 in the backdrop).
+        props.lighthouseRoot.zPosition = -12.5
+        backdrop.root.addChild(props.lighthouseRoot)
         storm.backRoot.zPosition = 5
         backRoot.addChild(storm.backRoot)
 
         world.zPosition = 0
         addChild(world)
         props.cloudRoot.zPosition = -40
-        props.lighthouseRoot.zPosition = -30
         props.buoyRoot.zPosition = -11
         seaView.root.zPosition = -10
         fx.waterRoot.zPosition = -6
@@ -130,8 +148,8 @@ final class FlightScene: SKScene {
         fx.root.zPosition = 15
         birdView.root.zPosition = 20
         fx.glowRoot.zPosition = 30
-        for n in [props.cloudRoot, props.lighthouseRoot, props.buoyRoot, seaView.root, fx.waterRoot,
-                  birdView.trailRoot, fx.root, birdView.root, fx.glowRoot] {
+        for n in [props.cloudRoot, props.buoyRoot, seaView.root, fx.waterRoot, birdView.trailRoot, fx.root,
+                  birdView.root, fx.glowRoot] {
             world.addChild(n)
         }
 
@@ -175,9 +193,11 @@ final class FlightScene: SKScene {
         speedLines.clear()
         birdView.clearTrail()
         props.reset()
+        seaView.invalidate()
         needsSnap = true
         lastSimTime = nil
         lastBirdX = nil
+        stallTime = 0
         caughtness = 0
         goldTimer = 0
         flapPhase = 0
@@ -187,7 +207,9 @@ final class FlightScene: SKScene {
         bumpVelocity = 0
         flareLevel = 0
         creasePulse = 0
-        lighthouseCacheX = .nan
+        punchAge = 10
+        fastKick = 0
+        lighthouseU = nil
     }
 
     // MARK: Frame loop
@@ -205,8 +227,14 @@ final class FlightScene: SKScene {
 
         var events: [FlightEvent] = []
         var simDt = dt
+        var fxDt = dt
         if let d = driver {
-            if d.bird != bird || d.sky != sky { applyCosmetics(bird: d.bird, sky: d.sky) }
+            // Cosmetics rarely change: look every 30 frames (the App builds them from its catalogues).
+            if drawnFrames % SceneLook.cosmeticsCheckFrames == 1 {
+                let b = d.bird
+                let k = d.sky
+                if b != bird || k != sky { applyCosmetics(bird: b, sky: k) }
+            }
             let out = d.advance(dt: dt, now: CACurrentMediaTime())
             snapshot = out.0
             events = out.1
@@ -225,16 +253,23 @@ final class FlightScene: SKScene {
                 }
             }
             lastSimTime = snapshot.time
+            if simDt > 0 {
+                stallTime = 0
+                fxDt = simDt
+            } else {
+                stallTime += dt
+                fxDt = stallTime <= SceneLook.hitStopWindow ? dt : 0
+            }
         }
-        render(simDt: simDt, events: events)
+        render(simDt: simDt, fxDt: fxDt, events: events)
     }
 
     // MARK: Drawing
 
-    private func render(simDt: Double, events: [FlightEvent]) {
+    private func render(simDt: Double, fxDt: Double, events: [FlightEvent]) {
         let s = snapshot
-        let dt = CGFloat(simDt)
-        animTime += simDt
+        let dt = CGFloat(fxDt)
+        animTime += fxDt
         let t = animTime
         let w = layout.size.width
         let h = layout.size.height
@@ -249,7 +284,7 @@ final class FlightScene: SKScene {
         case .caught, .finished: caught = true
         }
         if caught {
-            caughtness = min(1, caughtness + dt / 1.2)
+            caughtness = min(1, caughtness + dt / SceneLook.caughtEase)
         } else {
             caughtness = max(0, caughtness - dt * 2)
         }
@@ -261,7 +296,7 @@ final class FlightScene: SKScene {
         if caught { by = seaHeight(bx) - SceneLook.caughtSink + SceneLook.caughtBob * sin(t * 1.7) }
         let water = seaHeight(bx)
 
-        // Camera.
+        // Camera: framing on the simulation's clock, the punch-in and full-speed pull-out on the FX clock.
         let birdPoint = CGPoint(x: bx, y: by)
         if needsSnap {
             viewCam.snap(bird: birdPoint, water: water)
@@ -271,6 +306,22 @@ final class FlightScene: SKScene {
         } else {
             viewCam.update(bird: birdPoint, water: water, dt: simDt)
         }
+        punchAge += fxDt
+        var punch: Double = 0
+        if !reduceMotion {
+            if punchAge < SceneLook.punchAttack {
+                punch = SceneLook.punchAmount * punchAge / SceneLook.punchAttack
+            } else {
+                let k = max(0, 1 - (punchAge - SceneLook.punchAttack) / SceneLook.punchRelease)
+                punch = SceneLook.punchAmount * k * k
+            }
+        }
+        let kickTarget = caught || countdown ? 0
+            : min(max((s.speed - SceneLook.fastPullOutFrom) / SceneLook.fastPullOutRange, 0), 1)
+        fastKick += (kickTarget - fastKick) * min(1, fxDt * 3)
+        viewCam.setDisplayScale((1 + punch) * (1 - SceneLook.fastPullOut * fastKick))
+        displayScale = CGFloat(viewCam.displayScale)
+
         if abs(bx - originX) > 4096 {
             let newOrigin = (bx / 2048).rounded(.down) * 2048
             let d = CGFloat(originX - newOrigin)
@@ -279,6 +330,7 @@ final class FlightScene: SKScene {
             originX = newOrigin
         }
         let z = CGFloat(viewCam.zoom)
+        drawnZoom = z
         let dir: CGFloat = layout.mirrored ? -1 : 1
         if dt > 0 {
             let k = SceneLook.bumpOmega * SceneLook.bumpOmega
@@ -294,46 +346,36 @@ final class FlightScene: SKScene {
         if let lx = lastBirdX { scrollPx = CGFloat(min(max(bx - lx, -2000), 2000)) * z }
         lastBirdX = bx
 
-        // The near sea.
-        let range = viewCam.visibleSeaRange(margin: SceneLook.seaSideMargin)
-        let step = max(3.0, (range.hi - range.lo) / SceneLook.seaMaxSegments)
-        let raw = seaSamples(from: range.lo, to: range.hi, step: step)
-        seaPoints.removeAll(keepingCapacity: true)
-        let calm = Double(1 - caughtness)
-        for p in raw {
-            let sx = Double(p.x)
-            var y = Double(p.y)
-            y += SceneLook.rippleA * sin(sx * 0.047 - t * 2.3) + SceneLook.rippleB * sin(sx * 0.113 + t * 3.1)
-            let k = min(max(1 - (sx - s.stormX) / SceneLook.chopReach, 0), 1) * calm
-            if k > 0 {
-                y += k * SceneLook.chopAmp * (0.6 * sin(sx * 0.083 + t * 6.1) + 0.4 * sin(sx * 0.041 - t * 4.3))
-            }
-            seaPoints.append(CGPoint(x: CGFloat(sx - originX), y: CGFloat(y)))
-        }
-        let bottomLocal = CGFloat(viewCam.bottomY) - SceneLook.seaBottomMargin / z
-        seaView.update(points: seaPoints, bottom: bottomLocal, zoom: z, time: t, originX: originX)
-
-        // Sky and far swells.
-        let meanY = CGFloat(viewCam.meanWaterScreenY) + bumpY
-        backdrop.update(width: w, height: h, meanY: meanY, zoom: z, scroll: scrollPx, time: t, dt: dt)
-
-        // The storm front.
+        // The storm's geometry (u-space): always on screen, scaled to the gap.
         let anchorU = w * ScreenLayout.birdScreenFraction
         let gapPx = CGFloat(bx - s.stormX) * z
         let edgeRaw = anchorU - gapPx
-        let hintRange = SceneLook.stormHintScreens * w
-        let closeness = min(max((hintRange - gapPx) / max(hintRange - anchorU, 1), 0), 1)
-        let hintEdge = SceneLook.stormHintMin + (SceneLook.stormHintMax - SceneLook.stormHintMin) * closeness
+        let closeness = min(max(1 - (gapPx - anchorU) / max(SceneLook.stormRangeScreens * w, 1), 0), 1)
+        let hintEdge = SceneLook.stormEdgeFar + (SceneLook.stormEdgeNear - SceneLook.stormEdgeFar) * closeness
         // Once the front overtakes the bird its wall stops just past it; the rain and the calm wash do the rest.
         let edgeU = min(max(edgeRaw, hintEdge), anchorU + 160)
-        let fadeRange = max(SceneLook.stormFadeScreens * w, 1)
-        let visibility = min(max(((SceneLook.stormHintScreens * w + fadeRange) - gapPx) / fadeRange, 0), 1)
-        storm.update(edgeU: edgeU, visibility: max(visibility, caughtness), lead: CGFloat(s.lead),
-                     caughtness: caughtness, size: layout.size, minY: visMinY, maxY: visMaxY,
-                     horizonY: backdrop.horizonY, dt: dt)
 
-        // Props: lighthouse, personal-best buoy, the cloud band.
-        updateLighthouse(s, range: range, dt: dt)
+        // The near sea: rebuilt only when the cached surface no longer covers the view.
+        let range = viewCam.visibleSeaRange(margin: SceneLook.seaSideMargin)
+        let calm = Double(1 - caughtness)
+        if let req = seaView.rebuildRequest(visibleLo: range.lo, visibleHi: range.hi, zoom: z, stormX: s.stormX,
+                                            stormNear: gapPx < 1.6 * w, calm: calm, originX: originX) {
+            let raw = seaSamples(from: req.lo, to: req.hi, step: req.step)
+            seaView.rebuild(samples: raw, lo: req.lo, hi: req.hi, zoom: z, stormX: s.stormX, calm: calm,
+                            originX: originX)
+        }
+        seaView.animate(zoom: z, time: t, visibleLo: range.lo, visibleHi: range.hi, originX: originX)
+
+        // Sky and far swells.
+        let meanY = CGFloat(viewCam.meanWaterScreenY) + bumpY
+        backdrop.setDim(caughtness)
+        backdrop.update(width: w, height: h, meanY: meanY, zoom: z, scroll: scrollPx, time: t, dt: dt)
+
+        storm.update(edgeU: edgeU, closeness: closeness, lead: CGFloat(s.lead), caughtness: caughtness,
+                     size: layout.size, minY: visMinY, maxY: visMaxY, horizonY: backdrop.horizonY, dt: dt)
+
+        // Props: the lighthouse (depth layer), the personal-best buoy, the cloud band.
+        updateLighthouse(s, bx: bx, zoom: z, anchorU: anchorU, width: w, dt: dt)
         if s.bestMeters > 0 {
             let bxBest = s.bestMeters * 10
             if bxBest > range.lo - 80 && bxBest < range.hi + 80 {
@@ -351,11 +393,12 @@ final class FlightScene: SKScene {
         // The bird.
         var tuck = s.tuck
         if caught { tuck = 1 } else if countdown { tuck = 0 }
-        updateFlap(s, countdown: countdown, caught: caught, simDt: simDt)
+        updateFlap(s, countdown: countdown, caught: caught, dt: fxDt)
         birdView.pose(tuck: tuck, flap: flapPhase)
         var angle = CGFloat(s.bodyAngle)
         if countdown { angle = CGFloat(0.06 * sin(t * SceneLook.hoverRate + 0.6)) }
-        if caught { angle = CGFloat(atan(seaSlope(bx)) * 0.7 + 0.05 * sin(t * 1.3)) }
+        // Caught: level, gently rocking (REVIEW-1 P1-6: not nose-up on a slope).
+        if caught { angle = CGFloat(0.04 * sin(t * 1.3)) }
         let birdScale = pow(z, -SceneLook.birdZoomResist)
         let birdLocal = CGPoint(x: CGFloat(bx - originX), y: CGFloat(by))
         birdView.place(at: birdLocal, angle: angle, scale: birdScale)
@@ -366,15 +409,13 @@ final class FlightScene: SKScene {
         let tailwind = s.tailwindRemaining > 0
         let goldK: CGFloat = tailwind ? 1 : min(1, goldTimer / SceneLook.perfectGoldTime)
         birdView.updateTrail(emit: birdView.tailPoint, show: !caught && !countdown, time: t, zoom: z, speedK: speedK,
-                             goldK: goldK, tailwind: tailwind, color: bird.trail)
-        let foamColor = ScenePaint.ui(sky.foam)
+                             goldK: goldK, tailwind: tailwind)
         if s.skimming && !caught && !countdown && dt > 0 {
             let tip = birdView.wingtipPoint
             let tipWater = CGFloat(seaHeight(Double(tip.x) + originX))
             let v = s.velocity
             let len = max(hypot(v.dx, v.dy), 1)
             let back = CGVector(dx: -v.dx / len, dy: -v.dy / len)
-            let sprayColor = ScenePaint.ui(sky.foam.mixed(with: bird.trail, 0.25))
             fx.skim(tip: tip, waterY: tipWater, back: back, k: speedK, zoom: z, color: sprayColor, dt: dt)
             fx.wake(at: CGPoint(x: birdLocal.x, y: CGFloat(water)), k: speedK, zoom: z, color: foamColor, dt: dt)
         }
@@ -394,16 +435,17 @@ final class FlightScene: SKScene {
             if tailwind { lineK = max(lineK, 0.35) }
             if reduceMotion { lineK *= 0.4 }
         }
+        speedLines.setGold(s.speed >= SceneLook.goldSpeedFraction * Tuning.maxSpeed)
         speedLines.update(intensity: lineK, width: w, minY: visMinY, maxY: visMaxY, dt: dt)
 
-        handle(events, s: s, bx: bx, birdLocal: birdLocal, zoom: z, foam: foamColor)
+        handle(events, s: s, bx: bx, birdLocal: birdLocal, zoom: z)
         fx.update(dt)
         updateFlare(dt: dt)
-        updateCrease(t: t, dt: dt)
+        updateCrease(dt: dt)
     }
 
-    private func updateFlap(_ s: FlightSnapshot, countdown: Bool, caught: Bool, simDt: Double) {
-        launchFlap = max(0, launchFlap - simDt)
+    private func updateFlap(_ s: FlightSnapshot, countdown: Bool, caught: Bool, dt: Double) {
+        launchFlap = max(0, launchFlap - dt)
         var rate: Double = 0
         if countdown {
             rate = SceneLook.flapRateCountdown
@@ -415,65 +457,64 @@ final class FlightScene: SKScene {
             }
         }
         if rate > 0 {
-            flapPhase += simDt * rate
+            flapPhase += dt * rate
             if flapPhase >= 1 { flapPhase -= floor(flapPhase) }
         } else if flapPhase > 0 {
             // Finish the beat back to the rest pose, then hold.
-            flapPhase += simDt * SceneLook.flapRateSlow
+            flapPhase += dt * SceneLook.flapRateSlow
             if flapPhase >= 1 { flapPhase = 0 }
         }
     }
 
-    private func updateLighthouse(_ s: FlightSnapshot, range: (lo: Double, hi: Double), dt: CGFloat) {
-        var lx: Double?
+    /// The lighthouse stands on the far swells: u = the bird's + `lighthouseLead` + (its x − the bird's) × zoom ×
+    /// parallax. So it comes in from the right well before the pass, stands just ahead of the bird at the pass, and
+    /// drifts back slowly afterwards (REVIEW-1 P0-7).
+    private func updateLighthouse(_ s: FlightSnapshot, bx: Double, zoom z: CGFloat, anchorU: CGFloat, width w: CGFloat,
+                                  dt: CGFloat) {
+        let p = SceneLook.lighthouseParallax
+        var shown: CGFloat?
         if s.lighthousesPassed > 0 {
             let passed = Lighthouses.x(index: s.lighthousesPassed - 1)
-            if s.position.x - CGFloat(passed) < CGFloat(SceneLook.lighthouseKeepBehind) { lx = passed }
+            let u = anchorU + SceneLook.lighthouseLead + CGFloat(passed - bx) * z * p
+            if u > -220 { shown = u }
         }
-        if lx == nil {
-            lx = s.nextLighthouseX > 0 ? s.nextLighthouseX : Lighthouses.x(index: max(s.lighthousesPassed, 0))
+        if shown == nil {
+            let next = s.nextLighthouseX > 0 ? s.nextLighthouseX : Lighthouses.x(index: max(s.lighthousesPassed, 0))
+            let u = anchorU + SceneLook.lighthouseLead + CGFloat(next - bx) * z * p
+            if u < w + 220 { shown = u }
         }
-        guard let x = lx, x > range.lo - 400, x < range.hi + 400 else {
+        lighthouseU = shown
+        guard let u = shown else {
             props.hideLighthouse()
             return
         }
-        if x != lighthouseCacheX {
-            // The rock top clears every crest around it.
-            var top = -Double.greatestFiniteMagnitude
-            var sx = x - 100
-            while sx <= x + 100 {
-                top = max(top, seaHeight(sx))
-                sx += 12.5
-            }
-            lighthouseCacheX = x
-            lighthouseCacheY = top + 16
-        }
-        props.showLighthouse(at: CGPoint(x: CGFloat(x - originX), y: CGFloat(lighthouseCacheY)), dt: dt)
+        let scale = SceneLook.lighthouseScale * (0.55 + 0.45 * z)
+        props.showLighthouse(at: CGPoint(x: u, y: backdrop.frontBaseY + 4), scale: scale, dt: dt)
     }
 
     // MARK: Events → FX
 
-    private func handle(_ events: [FlightEvent], s: FlightSnapshot, bx: Double, birdLocal: CGPoint, zoom z: CGFloat,
-                        foam: UIColor) {
+    private func handle(_ events: [FlightEvent], s: FlightSnapshot, bx: Double, birdLocal: CGPoint, zoom z: CGFloat) {
         guard !events.isEmpty else { return }
         let waterPoint = CGPoint(x: birdLocal.x, y: CGFloat(seaHeight(bx)))
         for e in events {
             switch e {
             case .launched(let speed):
                 let k = CGFloat(min(max((speed - 300) / 1800, 0), 1))
-                fx.launch(at: waterPoint, velocity: s.velocity, k: k, zoom: z, color: foam)
+                fx.launch(at: waterPoint, velocity: s.velocity, k: k, zoom: z, color: foamColor)
                 viewCam.pullOut(reduceMotion ? 0.03 : 0.05 + 0.06 * Double(k))
                 if speed < SceneLook.launchFlapSpeed { launchFlap = 0.42 }
             case .touchdown(let quality, let speed, let chain):
                 let k = CGFloat(min(max((speed - 300) / 1800, 0), 1))
                 switch quality {
                 case .perfect:
-                    fx.perfect(at: waterPoint, chain: chain, zoom: z, foamColor: foam)
+                    fx.perfect(at: waterPoint, chain: chain, zoom: z, foamColor: foamColor)
                     goldTimer = SceneLook.perfectGoldTime
+                    punchAge = 0
                 case .good:
-                    fx.good(at: waterPoint, zoom: z, color: foam)
+                    fx.good(at: waterPoint, zoom: z, color: foamColor)
                 case .splash:
-                    fx.splash(at: waterPoint, k: k, zoom: z, color: foam)
+                    fx.splash(at: waterPoint, k: k, zoom: z, color: foamColor)
                     if !reduceMotion { bumpVelocity -= SceneLook.splashBump * (0.7 + 0.6 * k) }
                     dripTimer = 0.6
                 }
@@ -483,12 +524,8 @@ final class FlightScene: SKScene {
                             colors: [ScenePaint.gold, ScenePaint.paleGold, ScenePaint.white])
             case .lighthouse:
                 props.sweepBeam()
-                if props.lighthouseShown {
-                    fx.sparkles(at: props.lampPoint, count: 12, radius: 30, zoom: z,
-                                colors: [ScenePaint.paleGold, ScenePaint.white])
-                }
             case .cloudTouched:
-                fx.cloudPuff(at: birdLocal, zoom: z, color: ScenePaint.ui(sky.horizon.mixed(with: ScenePaint.white, 0.75)))
+                fx.cloudPuff(at: birdLocal, zoom: z, color: puffColor)
             case .milestone:
                 backdrop.pulse()
                 creasePulse = 1
@@ -527,7 +564,8 @@ final class FlightScene: SKScene {
         flareStreak.alpha = peak * 0.8 * k
     }
 
-    private func updateCrease(t: Double, dt: CGFloat) {
+    /// The fold's glint: a short band at the horizon (REVIEW-1 P1-5), brighter only on a milestone.
+    private func updateCrease(dt: CGFloat) {
         guard layout.hasFold else {
             crease.isHidden = true
             return
@@ -535,7 +573,7 @@ final class FlightScene: SKScene {
         crease.isHidden = false
         creasePulse = max(0, creasePulse - dt * 0.6)
         crease.position = CGPoint(x: (layout.creaseMinX + layout.creaseMaxX) * 0.5, y: backdrop.horizonY)
-        crease.alpha = CGFloat(0.10 + 0.04 * sin(t * 0.8)) + 0.22 * creasePulse
+        crease.alpha = SceneLook.creaseAlpha + (SceneLook.creasePulseAlpha - SceneLook.creaseAlpha) * creasePulse
     }
 
     // MARK: Cosmetics and layout
@@ -544,12 +582,16 @@ final class FlightScene: SKScene {
         bird = b
         sky = k
         backgroundColor = ScenePaint.ui(k.horizon)
+        foamColor = ScenePaint.ui(k.foam)
+        sprayColor = ScenePaint.ui(k.foam.mixed(with: b.trail, 0.25))
+        puffColor = ScenePaint.ui(k.horizon.mixed(with: ScenePaint.white, 0.75))
         backdrop.apply(sky: k)
         seaView.apply(sky: k)
         storm.apply(sky: k)
         props.apply(sky: k)
         birdView.apply(bird: b)
-        speedLines.apply(color: ScenePaint.ui(ScenePaint.lighter(k.horizon, 0.6)))
+        speedLines.apply(color: ScenePaint.ui(ScenePaint.lighter(k.horizon, 0.6)),
+                         gold: ScenePaint.ui(ScenePaint.gold))
         flare.color = ScenePaint.ui(k.sun)
         flareStreak.color = ScenePaint.ui(ScenePaint.lighter(k.sun, 0.3))
         crease.color = ScenePaint.ui(ScenePaint.lighter(k.sun, 0.5))
@@ -559,13 +601,14 @@ final class FlightScene: SKScene {
         size = layout.size
         viewCam = SceneCamera(layout: layout)
         needsSnap = true
+        seaView.invalidate()
         let flipX: CGFloat = layout.mirrored ? -1 : 1
         for r in [backRoot, shadeRoot, frontRoot] {
             r.xScale = flipX
             r.position = CGPoint(x: layout.mirrored ? layout.size.width : 0, y: 0)
         }
         let band = max(layout.creaseMaxX - layout.creaseMinX, 20)
-        crease.size = CGSize(width: band * 1.6, height: layout.size.height * 0.9)
+        crease.size = CGSize(width: band * 1.6, height: SceneLook.creaseHalfHeight * 2)
         crease.isHidden = !layout.hasFold
     }
 
@@ -593,7 +636,7 @@ final class FlightScene: SKScene {
     }
 }
 
-/// Speed lines at high speed (canvas u-space): thin streaks rushing from ahead to behind.
+/// Speed lines at high speed (canvas u-space): thin streaks rushing from ahead to behind, gold at full speed.
 @MainActor
 final class SceneSpeedLines {
     let root: SKNode
@@ -601,6 +644,9 @@ final class SceneSpeedLines {
     private var pos: [CGPoint] = []
     private var speeds: [CGFloat] = []
     private var rng = SceneRNG(seed: 0x5EED_11)
+    private var plainColor: UIColor = .white
+    private var goldColor: UIColor = .yellow
+    private var gold = false
 
     init(count: Int) {
         root = SKNode()
@@ -617,12 +663,23 @@ final class SceneSpeedLines {
         }
     }
 
-    func apply(color: UIColor) {
-        for l in lines { l.color = color }
+    func apply(color: UIColor, gold g: UIColor) {
+        plainColor = color
+        goldColor = g
+        let c = gold ? goldColor : plainColor
+        for l in lines { l.color = c }
+    }
+
+    /// Gold streaks at full speed (REVIEW-1 P1-8: "hit full speed" is something you can see).
+    func setGold(_ on: Bool) {
+        guard on != gold else { return }
+        gold = on
+        let c = gold ? goldColor : plainColor
+        for l in lines { l.color = c }
     }
 
     func clear() {
-        for l in lines { l.isHidden = true }
+        for l in lines where !l.isHidden { l.isHidden = true }
     }
 
     func update(intensity: CGFloat, width: CGFloat, minY: CGFloat, maxY: CGFloat, dt: CGFloat) {
@@ -630,6 +687,7 @@ final class SceneSpeedLines {
             clear()
             return
         }
+        let boost: CGFloat = gold ? 1.5 : 1
         for i in 0..<lines.count {
             var p = pos[i]
             if dt > 0 {
@@ -642,8 +700,8 @@ final class SceneSpeedLines {
             let l = lines[i]
             l.isHidden = false
             l.position = p
-            l.size = CGSize(width: 60 + 110 * intensity * speeds[i], height: 2)
-            l.alpha = 0.32 * intensity
+            l.size = CGSize(width: (60 + 110 * intensity * speeds[i]) * boost, height: gold ? 2.6 : 2)
+            l.alpha = min(1, 0.32 * intensity * boost)
         }
     }
 }

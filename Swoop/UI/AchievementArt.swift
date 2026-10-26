@@ -103,8 +103,15 @@ enum BadgePainter {
         swell.addLine(to: CGPoint(x: 924, y: 924))
         swell.addLine(to: CGPoint(x: 100, y: 924))
         swell.closeSubpath()
-        inside.fill(swell, with: .linearGradient(Gradient(colors: [goldLight, gold, goldDeep]),
+        // Sea, not sand (REVIEW-1 P2): a teal swell with a gold-lit crest and a foam line.
+        inside.fill(swell, with: .linearGradient(Gradient(colors: [Color(swoopHex: 0x2C6A8F), tide, night]),
                                                  startPoint: CGPoint(x: 512, y: 680), endPoint: CGPoint(x: 512, y: 900)))
+        var foam = Path()
+        foam.move(to: CGPoint(x: 100, y: 760))
+        foam.addCurve(to: CGPoint(x: 924, y: 720), control1: CGPoint(x: 360, y: 660), control2: CGPoint(x: 640, y: 800))
+        inside.stroke(foam, with: .linearGradient(Gradient(colors: [white.opacity(0.9), goldLight, white.opacity(0.9)]),
+                                                  startPoint: CGPoint(x: 100, y: 0), endPoint: CGPoint(x: 924, y: 0)),
+                      style: StrokeStyle(lineWidth: 12, lineCap: .round))
         if tier == .gold {
             for i in 0..<12 {
                 let a = Double(i) / 12 * 2 * Double.pi
@@ -149,21 +156,17 @@ enum BadgePainter {
     }
 
     static func chain(_ ctx: inout GraphicsContext, links: Int) {
-        // Rings skimming the swell, one per Perfect, rising toward the right.
-        let count = min(max(links, 1), 10)
-        let start: CGFloat = 230
-        let step: CGFloat = count > 5 ? 62 : 120
+        // The game's gold Perfect rings, growing outward (REVIEW-1 P2: plain ovals read as nothing).
+        let count = min(max(links, 1), 10) >= 10 ? 4 : 3
         for i in 0..<count {
-            let x = start + CGFloat(i) * step + (count > 5 ? 0 : 40)
-            let y = 620 - CGFloat(i) * (count > 5 ? 18 : 30)
-            let r: CGFloat = count > 5 ? 34 : 50
-            ctx.stroke(Path(ellipseIn: CGRect(x: x - r, y: y - r * 0.45, width: 2 * r, height: r * 0.9)),
-                       with: .color(white), lineWidth: 14)
+            let r = CGFloat(150 + i * 70)
+            let alpha = 1.0 - Double(i) * 0.22
+            ctx.stroke(Path(ellipseIn: CGRect(x: 512 - r, y: 600 - r * 0.42, width: 2 * r, height: r * 0.84)),
+                       with: .color(goldLight.opacity(alpha)), lineWidth: CGFloat(22 - i * 4))
         }
-        ctx.draw(Text("\(links)").font(.system(size: 220, weight: .black, design: .rounded)).foregroundColor(white),
-                 at: CGPoint(x: 512, y: 380))
+        ctx.draw(Text("\(links)").font(.system(size: 240, weight: .black, design: .rounded)).foregroundColor(white),
+                 at: CGPoint(x: 512, y: 400))
     }
-
     static func tailwind(_ ctx: inout GraphicsContext) {
         bird(&ctx, at: CGPoint(x: 600, y: 470), span: 300, color: white)
         for (i, y) in [CGFloat(400), 480, 560].enumerated() {

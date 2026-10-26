@@ -83,6 +83,172 @@ struct FeedbackTests {
         }
     }
 
+    // MARK: Round 2: the Perfect moment
+
+    @Test func chimeGetsBrighterWithTheChainButNeverLouder() {
+        #expect(abs(FeelSoundBook.chimeBrightness(chain: 1) - FeelSoundBook.chimeBrightnessBase) < 1e-12)
+        var previous: Double = 0
+        for chain in 1...20 {
+            let brightness = FeelSoundBook.chimeBrightness(chain: chain)
+            #expect(brightness >= previous)
+            #expect(brightness <= FeelSoundBook.chimeBrightnessMax)
+            previous = brightness
+        }
+        #expect(FeelSoundBook.chimeBrightness(chain: 10) > FeelSoundBook.chimeBrightness(chain: 2))
+        var dice = FeelDice(seed: 4)
+        let one = FeelSoundBook.perfect(chain: 1, dice: &dice)
+        let ten = FeelSoundBook.perfect(chain: 10, dice: &dice)
+        var oneRing: FeelRingSpec?
+        var tenRing: FeelRingSpec?
+        if case .ring(let ring) = one[0] { oneRing = ring }
+        if case .ring(let ring) = ten[0] { tenRing = ring }
+        #expect(oneRing != nil)
+        #expect(tenRing != nil)
+        #expect((tenRing?.brightness ?? 0) > (oneRing?.brightness ?? 1))
+        #expect((tenRing?.partials ?? 0) >= (oneRing?.partials ?? 9))
+        #expect((tenRing?.gain ?? 1) <= (oneRing?.gain ?? 0))
+        // The glassy glint joins from chain 3.
+        let glints = { (commands: [FeelSynthCommand]) -> Int in
+            var count = 0
+            for command in commands {
+                if case .ring(let ring) = command, ring.kind == .glass { count += 1 }
+            }
+            return count
+        }
+        // (Built outside `#expect`: the macro can't pass `&dice`.)
+        let three = FeelSoundBook.perfect(chain: 3, dice: &dice)
+        #expect(glints(one) == 0)
+        #expect(glints(three) == 1)
+        #expect(glints(ten) == 1)
+    }
+
+    @Test func perfectHasAWhooshPopOnTheHitStopAndItsHapticLandsThere() {
+        var dice = FeelDice(seed: 5)
+        let cue = FeelSoundBook.perfect(chain: 4, dice: &dice)
+        var whoosh = false
+        var popAtRelease = false
+        for command in cue {
+            if case .noise(let noise) = command, noise.delay == 0, noise.cutoffEnd > noise.cutoff,
+               noise.sweep <= FeelSoundBook.hitStop + 0.001 {
+                whoosh = true
+            }
+            if case .drop(let drop) = command, abs(drop.delay - FeelSoundBook.hitStop) < 0.0001 {
+                popAtRelease = true
+                #expect(drop.gain <= 0.1)
+            }
+        }
+        #expect(whoosh)
+        #expect(popAtRelease)
+        #expect(abs(FeelSoundBook.hitStop - 0.035) < 0.0001)
+        // The haptic: a firm tap the instant the Perfect lands, a lighter keen one as the hit-stop releases.
+        let notes = FeelHapticBook.perfect.notes
+        #expect(notes.count == 2)
+        #expect(notes.allSatisfy { $0.kind == .transient })
+        #expect(notes[0].time == 0)
+        #expect(abs(notes[1].time - Double(FeelSoundBook.hitStop)) < 1e-6)
+        #expect(notes[0].intensity > notes[1].intensity)
+        #expect(notes[1].sharpness >= notes[0].sharpness)
+    }
+
+    @Test func chainBreakIsSoftFallingAndOnlyAfterARealChain() {
+        #expect(FeedbackDirector.chainBroke(previousChain: 5, quality: .splash))
+        #expect(FeedbackDirector.chainBroke(previousChain: 2, quality: .splash))
+        #expect(FeedbackDirector.chainBroke(previousChain: 1, quality: .splash) == false)
+        #expect(FeedbackDirector.chainBroke(previousChain: 6, quality: .good) == false)
+        #expect(FeedbackDirector.chainBroke(previousChain: 6, quality: .perfect) == false)
+        var dice = FeelDice(seed: 6)
+        for chain in [2, 5, 12, 40] {
+            let notes = FeelSoundBook.chainBreak(previousChain: chain, dice: &dice)
+            #expect(notes.count == 2)
+            var pitches: [Float] = []
+            for command in notes {
+                // Soft bell notes only: no noise, nothing loud, after the splash has spoken.
+                #expect(command.gain <= 0.06)
+                #expect(command.delay >= 0.2)
+                if case .ring(let ring) = command {
+                    pitches.append(ring.fundamental)
+                    #expect(ring.brightness <= 0.25)
+                    #expect(ring.fundamental < 1000)
+                } else {
+                    Issue.record("chain break should be ring notes only")
+                }
+            }
+            #expect(pitches.count == 2)
+            if pitches.count == 2 { #expect(pitches[1] < pitches[0]) }
+        }
+    }
+
+    /// The 3-minute fatigue check at a casual Perfect rate (7/min): 8 s of a typical casual stretch (a swell every
+    /// 2.5 s: skim, launch, tuck down the next face; a Perfect every 8.6 s, a Good in between), rendered at 48 kHz.
+    @Test func aCasualMixStaysComfortableForThreeMinutes() {
+        let rate: Float = 48_000
+        let synth = FeelSynth(sampleRate: rate)
+        let bedOnly = FeelSynth(sampleRate: rate)
+        var dice = FeelDice(seed: 9)
+        let block = 512
+        let buffer = UnsafeMutablePointer<Float>.allocate(capacity: block)
+        defer { buffer.deallocate() }
+        let seconds = 8.0
+        let blocks = Int(seconds * Double(rate) / Double(block))
+        var mixSum: Double = 0
+        var bedSum: Double = 0
+        var samples = 0
+        var hot = 0
+        var finite = true
+        var nextLaunch = 1.0
+        var nextPerfect = 2.0
+        var nextGood = 5.0
+        var chain = 0
+        for index in 0..<blocks {
+            let t = Double(index * block) / Double(rate)
+            let phase = t.truncatingRemainder(dividingBy: 2.5) / 2.5
+            let skimming = phase < 0.45
+            let tuck: Double = (phase > 0.55 && phase < 0.95) ? 1 : 0
+            let speed = 1000 + 400 * sin(2 * Double.pi * t / 2.5)
+            let telemetry = FlightTelemetry(speed: speed, tuck: tuck, skimming: skimming,
+                                            altitude: skimming ? 0 : 150, tailwind: false, lead: 0.6, playing: true)
+            let bed = FeelSoundBook.flightBed(telemetry: telemetry, master: FeelAudioEngine.masterGain)
+            synth.send(.bed(bed))
+            bedOnly.send(.bed(bed))
+            if t >= nextLaunch {
+                for command in FeelSoundBook.launch(speed: speed) { synth.send(command) }
+                nextLaunch += 2.5
+            }
+            if t >= nextPerfect {
+                chain += 1
+                for command in FeelSoundBook.perfect(chain: chain, dice: &dice) { synth.send(command) }
+                nextPerfect += 60.0 / 7
+            }
+            if t >= nextGood {
+                for command in FeelSoundBook.good(speed: speed, dice: &dice) { synth.send(command) }
+                nextGood += 8.6
+            }
+            synth.render(frames: block, into: buffer)
+            for frame in 0..<block {
+                let value = buffer[frame]
+                if !value.isFinite { finite = false }
+                mixSum += Double(value * value)
+                if abs(value) > 0.6 { hot += 1 }
+            }
+            bedOnly.render(frames: block, into: buffer)
+            for frame in 0..<block {
+                let value = buffer[frame]
+                bedSum += Double(value * value)
+            }
+            samples += block
+        }
+        let mixRMS = (mixSum / Double(max(samples, 1))).squareRoot()
+        let bedRMS = (bedSum / Double(max(samples, 1))).squareRoot()
+        #expect(finite)
+        // The wind is there, but the bed sits at or under −24 dBFS: something you can listen to for 3 minutes.
+        #expect(bedRMS > 0.004)
+        #expect(bedRMS < 0.063)
+        // With every moment on top it stays under −21 dBFS, and the limiter almost never has to work.
+        #expect(mixRMS < 0.09)
+        #expect(mixRMS >= bedRMS * 0.9)
+        #expect(Double(hot) / Double(max(samples, 1)) < 0.002)
+    }
+
     // MARK: The continuous bed
 
     @Test func windRisesWithSpeedAndBrightensWithTheTuck() {

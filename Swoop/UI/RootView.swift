@@ -124,6 +124,9 @@ struct RootView: View {
     private func handleCanvas(_ canvas: CGSize) {
         guard canvas.width > 1, canvas.height > 1 else { return }
         lastCanvas = canvas
+        // QA-1 P2-8: "Play with touch" from the portrait card lasts only while the canvas is portrait; held like a
+        // book again, the hinge flies the bird.
+        if canvas.width > canvas.height && controller.touchOverride { controller.clearTouchOverride() }
         let pose = currentPose(canvas)
         controller.setPose(pose)
         if pose == .turn && controller.forcedPose == nil && !controller.hasHinge

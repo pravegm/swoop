@@ -11,7 +11,7 @@ struct FlocksView: View {
     private var goals: [Goal] { rank < GoalCatalog.maxRank ? GoalCatalog.goals(forRank: rank) : [] }
 
     var body: some View {
-        SwoopPages(info: info, title: "Flocks", onBack: { controller.goHome() }) {
+        SwoopPages(info: info, title: "Flocks", onBack: { controller.goHome() }, scrollRightTo: rank) {
             leftPage
         } right: {
             ladder
@@ -21,7 +21,7 @@ struct FlocksView: View {
     // MARK: Left: the current rank and its goals
 
     private var leftPage: some View {
-        let done = goals.filter { store.data.goalProgress(for: $0) >= 1 }.count
+        let done = goals.filter { ProgressRules.liveProgress($0, data: store.data) >= 1 }.count
         return VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("RANK \(rank + 1) OF \(GoalCatalog.maxRank + 1)")
@@ -39,10 +39,15 @@ struct FlocksView: View {
                         .foregroundStyle(SwoopTheme.mist)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    Text("Complete all three goals to rank up · \(done) of \(goals.count) done")
+                    // REVIEW-1 P1-12: the count on its own line (no "1 of / 3 done" widow).
+                    Text("Complete all three goals to rank up")
                         .font(SwoopTheme.text(15, .bold))
                         .foregroundStyle(SwoopTheme.mist)
                         .fixedSize(horizontal: false, vertical: true)
+                    Text("\(done) of \(goals.count) done")
+                        .font(SwoopTheme.text(15, .heavy))
+                        .foregroundStyle(SwoopTheme.goldLight)
+                        .lineLimit(1)
                     SwoopProgressBar(value: Double(done) / Double(max(goals.count, 1)), height: 10,
                                      done: done == goals.count)
                 }
@@ -52,8 +57,10 @@ struct FlocksView: View {
                 PageHeading(text: "Goals")
                 VStack(alignment: .leading, spacing: 16) {
                     ForEach(goals) { goal in
-                        GoalProgressRow(goal: goal, progress: store.data.goalProgress(for: goal),
-                                        done: store.data.goalProgress(for: goal) >= 1)
+                        // QA-1 P2-9: lifetime goals read live from the lifetime metres.
+                        GoalProgressRow(goal: goal, progress: ProgressRules.liveProgress(goal, data: store.data),
+                                        done: ProgressRules.liveProgress(goal, data: store.data) >= 1,
+                                        compact: info.isCompact)
                     }
                 }
                 .swoopCard(padding: 18, radius: 22)
@@ -69,8 +76,7 @@ struct FlocksView: View {
     }
 
     private var nextUnlockText: String? {
-        let opened = ProgressRules.unlocks(from: rank, to: rank + 1)
-        let names = opened.birds.map { BirdCatalog.bird($0).name } + opened.skies.map { SkyCatalog.sky($0).name }
+        let names = ProgressRules.unlockNames(from: rank, to: rank + 1)
         guard !names.isEmpty else { return nil }
         return "Next rank unlocks " + names.joined(separator: " and ")
     }
@@ -82,6 +88,7 @@ struct FlocksView: View {
             PageHeading(text: "The ladder")
             ForEach(0...max(GoalCatalog.maxRank, 0), id: \.self) { r in
                 ladderRow(r)
+                    .id(r)
             }
         }
     }
@@ -89,8 +96,7 @@ struct FlocksView: View {
     private func ladderRow(_ r: Int) -> some View {
         let reached = r <= rank
         let current = r == rank
-        let opened = ProgressRules.unlocks(from: r - 1, to: r)
-        let names = opened.birds.map { BirdCatalog.bird($0).name } + opened.skies.map { SkyCatalog.sky($0).name }
+        let names = ProgressRules.unlockNames(from: r - 1, to: r)
         return HStack(spacing: 12) {
             ZStack {
                 Circle()

@@ -34,25 +34,67 @@ final class GameCenterManager {
     func authenticate() {
         guard !started else { return }
         started = true
+        #if DEBUG
+        // Demo runs (CI) never touch Game Center. DEBUG only, so Release carries no demo strings (QA-1 P2-13).
         if ProcessInfo.processInfo.arguments.contains("-swoopDemo") {
             disabled = true
             return
         }
+        #endif
         GKAccessPoint.shared.isActive = false
-        GKLocalPlayer.local.authenticateHandler = { _, _ in
-            // The sign-in view controller (if any) is ignored on purpose: no surprise sheets over the game.
+        GKLocalPlayer.local.authenticateHandler = { viewController, _ in
+            // The sign-in view controller is kept, never shown by itself: no surprise sheets over the game. It is shown
+            // only when the player taps the Game Center button (QA-1 P1-5).
             Task { @MainActor in
-                GameCenterManager.shared.authenticationChanged()
+                GameCenterManager.shared.authenticationChanged(signIn: viewController)
             }
         }
     }
 
-    /// Home's Game Center button: the system dashboard (leaderboards, achievements). Quietly nothing when signed out.
-    func showDashboard() {
-        guard !disabled, GKLocalPlayer.local.isAuthenticated else { return }
-        GKAccessPoint.shared.trigger(handler: {
-            Task { @MainActor in GKAccessPoint.shared.isActive = false }
-        })
+    /// What Home's Game Center button did.
+    enum DashboardResult: Equatable {
+        /// The dashboard (leaderboards, achievements) is up.
+        case shown
+        /// The system sign-in sheet is up (the player asked for it with the tap).
+        case signingIn
+        /// Signed out with no sign-in sheet to offer: Home shows "Sign in to Game Center in Settings".
+        case signedOut
+    }
+
+    /// Home's Game Center button (QA-1 P1-5: it must never do nothing).
+    func showDashboard() -> DashboardResult {
+        if disabled { return .signedOut }
+        if GKLocalPlayer.local.isAuthenticated {
+            GKAccessPoint.shared.trigger(handler: {})
+            return .shown
+        }
+        if let signIn = signInController, let top = Self.topViewController() {
+            signInController = nil
+            top.present(signIn, animated: true)
+            return .signingIn
+        }
+        return .signedOut
+    }
+
+    /// The sign-in sheet iOS handed us (shown only on the player's tap).
+    private var signInController: UIViewController?
+
+    private static func topViewController() -> UIViewController? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let windows = scenes.flatMap { $0.windows }
+        guard let window = windows.first(where: { $0.isKeyWindow }) ?? windows.first else { return nil }
+        var top = window.rootViewController
+        while let presented = top?.presentedViewController { top = presented }
+        return top
+    }
+
+    /// A scored Daily left early (or the app backgrounded after the drop): its distance so far goes to the Daily board
+    /// too (QA-1 P2-10). The board keeps the best, so a later finished run replaces it.
+    func reportDailyPartial(meters: Double, day: Int, progress: ProgressData) {
+        guard !disabled else { return }
+        let m = meters.isFinite ? Int(max(meters, 0)) : 0
+        guard m > 0 else { return }
+        queueScore(m, leaderboard: Leaderboard.daily, day: day)
     }
 
     /// After a run: leaderboard scores (metres) and every achievement the progress now holds.
@@ -116,8 +158,10 @@ final class GameCenterManager {
 
     // MARK: - Internals
 
-    private func authenticationChanged() {
+    private func authenticationChanged(signIn: UIViewController?) {
+        if let signIn { signInController = signIn }
         isAuthenticated = GKLocalPlayer.local.isAuthenticated
+        if isAuthenticated { signInController = nil }
         GKAccessPoint.shared.isActive = false
         flush()
     }
@@ -143,7 +187,8 @@ final class GameCenterManager {
         for entry in kept where !inFlight.contains(entry) {
             guard let parsed = Self.parse(entry) else { continue }
             inFlight.insert(entry)
-            GKLeaderboard.submitScore(parsed.score, context: 0, player: GKLocalPlayer.local,
+            // The day rides along as the score context (QA-1 P2-10), so a Daily score names its own sea.
+            GKLeaderboard.submitScore(parsed.score, context: max(parsed.day ?? 0, 0), player: GKLocalPlayer.local,
                                       leaderboardIDs: [parsed.leaderboard]) { error in
                 let ok = error == nil
                 Task { @MainActor in

@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - Birds (GAME-DESIGN §8): cosmetic, all balanced the same. Personality = wing shape and trail colour.
+// Round 2: every rank 1…14 unlocks something (a bird, a sky or a trail; see GoalCatalog.rewards(forRank:)).
 
 public enum BirdCatalog {
 
@@ -21,7 +22,7 @@ public enum BirdCatalog {
         Bird(id: .tern, name: "Tern", blurb: "A sea swallow. Light, quick, never still.",
              body: RGBA(hex: 0xFAFAF7), wing: RGBA(hex: 0xC9D3DC), wingTip: RGBA(hex: 0x1E2228),
              beak: RGBA(hex: 0xE84A2F), trail: RGBA(hex: 0xBFE8F2),
-             span: 0.95, pointiness: 0.8, unlockRank: 2),
+             span: 0.95, pointiness: 0.8, unlockRank: 1),
         Bird(id: .puffin, name: "Puffin", blurb: "Stubby wings, huge heart, brilliant beak.",
              body: RGBA(hex: 0x2A2C33), wing: RGBA(hex: 0x1E2026), wingTip: RGBA(hex: 0x121318),
              beak: RGBA(hex: 0xF26B2A), trail: RGBA(hex: 0xFFD6B0),
@@ -29,19 +30,19 @@ public enum BirdCatalog {
         Bird(id: .swift, name: "Swift", blurb: "Scythe wings. Sleeps on the wind.",
              body: RGBA(hex: 0x3B3A40), wing: RGBA(hex: 0x4A4950), wingTip: RGBA(hex: 0x2A292E),
              beak: RGBA(hex: 0x1F1E22), trail: RGBA(hex: 0xC7D8FF),
-             span: 0.85, pointiness: 1.0, unlockRank: 6),
+             span: 0.85, pointiness: 1.0, unlockRank: 7),
         Bird(id: .albatross, name: "Albatross", blurb: "Eleven feet of wing. Circles the world.",
              body: RGBA(hex: 0xFFFFFF), wing: RGBA(hex: 0x3D3F45), wingTip: RGBA(hex: 0x26282C),
              beak: RGBA(hex: 0xF4C9A0), trail: RGBA(hex: 0xE9F6FF),
-             span: 1.35, pointiness: 0.95, unlockRank: 8),
+             span: 1.35, pointiness: 0.95, unlockRank: 10),
         Bird(id: .petrel, name: "Storm Petrel", blurb: "Dances on the waves ahead of the weather.",
              body: RGBA(hex: 0x2B2730), wing: RGBA(hex: 0x342F3A), wingTip: RGBA(hex: 0x1D1A21),
              beak: RGBA(hex: 0x141216), trail: RGBA(hex: 0xA9E7E0),
-             span: 0.78, pointiness: 0.7, unlockRank: 10),
+             span: 0.78, pointiness: 0.7, unlockRank: 11),
         Bird(id: .heron, name: "Night Heron", blurb: "Slow, broad wings. Flies by moonlight.",
              body: RGBA(hex: 0x9DA7B5), wing: RGBA(hex: 0x6E7B8C), wingTip: RGBA(hex: 0x3E4A5A),
              beak: RGBA(hex: 0x2C2F36), trail: RGBA(hex: 0xB8A6FF),
-             span: 1.15, pointiness: 0.3, unlockRank: 12),
+             span: 1.15, pointiness: 0.3, unlockRank: 13),
         Bird(id: .gannet, name: "Golden Gannet", blurb: "The legend of the Storm Riders. Dives like a dart.",
              body: RGBA(hex: 0xFFF6E0), wing: RGBA(hex: 0xF2C14E), wingTip: RGBA(hex: 0x9C6B1E),
              beak: RGBA(hex: 0x8FA3B8), trail: RGBA(hex: 0xFFD36E),
@@ -84,4 +85,61 @@ public enum SkyCatalog {
             seaNear: RGBA(hex: 0x0E1E3A), seaFar: RGBA(hex: 0x233A63), foam: RGBA(hex: 0xDCE6FF),
             storm: RGBA(hex: 0x2A3142), unlockRank: 12),
     ]
+}
+
+// MARK: - Trails (Round 2): unlockable slipstream colours, so every rank pays out something you can see.
+
+public enum TrailID: String, Codable, CaseIterable, Sendable {
+    /// The bird's own trail colour (`Bird.trail`).
+    case natural
+    case coral, aurora, ember, stormGold
+}
+
+public struct Trail: Hashable, Sendable {
+    public var id: TrailID
+    public var name: String
+    /// nil = the bird's own `trail` colour.
+    public var color: RGBA?
+    public var unlockRank: Int
+}
+
+public enum TrailCatalog {
+
+    public static var all: [Trail] {
+        return trails
+    }
+
+    public static func trail(_ id: TrailID) -> Trail {
+        for t in trails where t.id == id { return t }
+        return trails[0]
+    }
+
+    /// The trail colour for `bird` with trail `id`.
+    public static func color(_ id: TrailID, for bird: Bird) -> RGBA {
+        return trail(id).color ?? bird.trail
+    }
+
+    /// `bird` with its `trail` colour replaced by trail `id` (hand this to the scene as the run's bird).
+    public static func apply(_ id: TrailID, to bird: Bird) -> Bird {
+        var b: Bird = bird
+        b.trail = color(id, for: bird)
+        return b
+    }
+
+    private static let trails: [Trail] = [
+        Trail(id: .natural, name: "Natural", color: nil, unlockRank: 0),
+        Trail(id: .coral, name: "Coral", color: RGBA(hex: 0xFF8A70), unlockRank: 2),
+        Trail(id: .aurora, name: "Aurora", color: RGBA(hex: 0x7CF5C8), unlockRank: 5),
+        Trail(id: .ember, name: "Ember", color: RGBA(hex: 0xFFB347), unlockRank: 8),
+        Trail(id: .stormGold, name: "Storm Gold", color: RGBA(hex: 0xFFD75E), unlockRank: 14),
+    ]
+}
+
+// MARK: - Rank rewards
+
+/// Something a rank unlocks.
+public enum RankReward: Equatable, Sendable {
+    case bird(BirdID)
+    case sky(SkyID)
+    case trail(TrailID)
 }

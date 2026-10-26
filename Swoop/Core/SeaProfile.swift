@@ -13,8 +13,9 @@ import Foundation
 // is checked numerically against `seaBlendSlopeCap` when it is generated (scaled down, else the previous set simply
 // continues), so |h'| ≤ 1.1 everywhere.
 //
-// Set 0 is the fixed tutorial train (the same for every seed) up to `Tuning.tutorialEnd`; the seeded sets follow and
-// get bigger every `seaTierLength` (3 km), with the odd rogue set. Sets are generated lazily (only ever forward) and
+// Round 2: before the last tutorial knot the sea is the fixed intro (`Tuning.tutorialKnots`: half-cosine segments
+// between extrema, C¹), the same for every seed; it guarantees the first Perfects. Set 0 is the sine that continues
+// from that knot up to `Tuning.tutorialEnd` (also fixed); the seeded sets follow and get bigger every `seaTierLength` (3 km), with the odd rogue set. Sets are generated lazily (only ever forward) and
 // cached in an array; a query walks from the last index used, so sequential queries are O(1) amortised.
 
 /// One sine component: A · sin(phase + 2π·freq·(x − set.bodyStart)) in a set's body.
@@ -73,14 +74,27 @@ public final class SeaProfile {
 
     static let tau: Double = Double.pi * 2
 
+    /// The intro knots and where they end (the sine set 0 takes over there).
+    private let knots: [(x: Double, y: Double)]
+    private let introEnd: Double
+
     public init(seed: UInt64) {
         self.seed = seed
         self.rng = SeededRandom(seed: seed ^ 0x5EA_5EA5_EA5E_A5EA)
+        var k: [(x: Double, y: Double)] = Tuning.tutorialKnots
+        if k.count < 2 {
+            k = [(x: -2400, y: 0), (x: 0, y: 0)]
+        }
+        self.knots = k
+        let last: (x: Double, y: Double) = k[k.count - 1]
+        self.introEnd = last.x
+        // The sine continues from the last knot (an extremum): amplitude |y|, a crest or a trough there.
         let f0: Double = 1.0 / Tuning.tutorialWavelength
-        let phase0: Double = SeaProfile.wrap(Double.pi / 2 - SeaProfile.tau * f0 * Tuning.tutorialCrestX)
+        let theta0: Double = last.y >= 0 ? Double.pi / 2 : -Double.pi / 2
+        let phase0: Double = SeaProfile.wrap(theta0 - SeaProfile.tau * f0 * last.x)
         let tutorial = CoreSeaSet(
-            centre: -1e12, bodyStart: 0, end: Tuning.tutorialEnd,
-            s0: CoreSwell(amp: Tuning.tutorialAmplitude, freq: f0, phase: phase0),
+            centre: -1e12, bodyStart: 0, end: max(Tuning.tutorialEnd, last.x + 300),
+            s0: CoreSwell(amp: abs(last.y), freq: f0, phase: phase0),
             s1: CoreSwell(amp: 0, freq: 1.0 / 560.0, phase: 0),
             s2: CoreSwell(amp: 0, freq: 1.0 / 420.0, phase: 0),
             rogue: false)
@@ -119,6 +133,25 @@ public final class SeaProfile {
         return out
     }
 
+    /// The same points written into `buffer` (cleared first, capacity kept), so a caller can reuse one array every
+    /// frame without allocating (QA-1 P1-6).
+    public func samples(into buffer: inout [CGPoint], from x0: Double, to x1: Double, step: Double) {
+        buffer.removeAll(keepingCapacity: true)
+        if !(x0.isFinite && x1.isFinite && step.isFinite) || x1 < x0 { return }
+        let st: Double = max(step, 0.5)
+        let n: Int = min(Int(((x1 - x0) / st).rounded(.down)), 100_000)
+        var i: Int = 0
+        while i <= n {
+            let x: Double = x0 + Double(i) * st
+            buffer.append(CGPoint(x: CGFloat(x), y: CGFloat(height(at: x))))
+            i += 1
+        }
+        let lastX: Double = x0 + Double(n) * st
+        if x1 - lastX > 1e-6 {
+            buffer.append(CGPoint(x: CGFloat(x1), y: CGFloat(height(at: x1))))
+        }
+    }
+
     // MARK: Internal queries
 
     /// Signed curvature numerator h'' (central difference of the analytic slope).
@@ -130,6 +163,7 @@ public final class SeaProfile {
     /// Height and slope at x.
     func surface(at x: Double) -> (h: Double, d: Double) {
         if !x.isFinite { return (0, 0) }
+        if x < introEnd { return introSurface(x) }
         let j: Int = index(for: x)
         let s: CoreSeaSet = sets[j]
         if j > 0 && x < s.bodyStart {
@@ -160,6 +194,24 @@ public final class SeaProfile {
         var r: Double = p.truncatingRemainder(dividingBy: tau)
         if r < 0 { r += tau }
         return r
+    }
+
+    /// The fixed intro: half-cosine segments between the knots (flat before the first knot).
+    private func introSurface(_ x: Double) -> (h: Double, d: Double) {
+        let first: (x: Double, y: Double) = knots[0]
+        if x <= first.x { return (first.y, 0) }
+        var i: Int = 0
+        while i < knots.count - 2 && x >= knots[i + 1].x {
+            i += 1
+        }
+        let a: (x: Double, y: Double) = knots[i]
+        let b: (x: Double, y: Double) = knots[i + 1]
+        let w: Double = max(b.x - a.x, 1e-6)
+        let t: Double = (x - a.x) / w
+        let dy: Double = b.y - a.y
+        let h: Double = a.y + dy * (1 - cos(Double.pi * t)) / 2
+        let d: Double = dy * Double.pi * sin(Double.pi * t) / (2 * w)
+        return (h, d)
     }
 
     private static func smooth(_ t: Double) -> Double {

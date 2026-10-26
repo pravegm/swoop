@@ -126,6 +126,8 @@ struct HomeLayout: Equatable {
     var wordmark: CGRect
     var caption: CGRect
     var menuPanel: CGRect
+    /// The wordmark + caption block (its navy scrim keeps it readable over the attract bird).
+    var textBlock: CGRect
     var fly: CGRect
     var daily: CGRect
     var flocks: CGRect
@@ -140,7 +142,11 @@ struct HomeLayout: Equatable {
     static let dailyHeight: CGFloat = 62
     static let rowHeight: CGFloat = 58
     static let gap: CGFloat = 10
-    static let maxMenuWidth: CGFloat = 400
+    /// The menu column (REVIEW-1 P2: narrowed ~8 % so more of the sea ahead shows).
+    static let maxMenuWidth: CGFloat = 368
+    static let menuPageFraction: CGFloat = 0.92
+    /// The wordmark's left inset from the page edge (REVIEW-1 P1-2: 24 pt from the screen edge on the Duo).
+    static let wordmarkInset: CGFloat = 10
 
     static func make(_ c: AppCanvas) -> HomeLayout {
         let w = c.size.width
@@ -179,7 +185,7 @@ struct HomeLayout: Equatable {
         }
 
         let page = c.farPage
-        let menuW = min(page.width, maxMenuWidth)
+        let menuW = min(page.width * menuPageFraction, maxMenuWidth)
         let mx = c.mirrored ? page.minX : page.maxX - menuW
         let y0 = max(menuTop, bottom - need)
         let fly = CGRect(x: mx, y: y0, width: menuW, height: flyH)
@@ -200,11 +206,17 @@ struct HomeLayout: Equatable {
             settings = CGRect(x: bp.minX, y: cornerY, width: minTap, height: minTap)
             gameCenter = CGRect(x: settings.maxX + gap, y: cornerY, width: minTap, height: minTap)
         }
-        let wordH = min(max(h * 0.11, 44), 72)
-        let wordmark = CGRect(x: bp.minX, y: menuTop, width: bp.width, height: wordH)
+        // REVIEW-1 P1-2: a bigger wordmark (64–72 pt type on the Duo), inset from the edge.
+        let wordH = min(max(h * 0.14, 46), 96)
+        let tx = c.mirrored ? bp.minX : bp.minX + wordmarkInset
+        let tw = max(bp.width - wordmarkInset, 0)
+        let wordmark = CGRect(x: tx, y: menuTop, width: tw, height: wordH)
         let captionTop = wordmark.maxY + 2
-        let caption = CGRect(x: bp.minX, y: captionTop, width: bp.width, height: max(cornerY - 8 - captionTop, 0))
-        return HomeLayout(bird: bird, wordmark: wordmark, caption: caption, menuPanel: panel, fly: fly, daily: daily,
+        let caption = CGRect(x: tx, y: captionTop, width: tw, height: max(cornerY - 8 - captionTop, 0))
+        let textBlock = CGRect(x: tx, y: wordmark.minY, width: tw,
+                               height: wordH + 2 + min(caption.height, c.isCompact ? 70 : 110))
+        return HomeLayout(bird: bird, wordmark: wordmark, caption: caption, menuPanel: panel, textBlock: textBlock,
+                          fly: fly, daily: daily,
                           flocks: flocks, birds: birds, settings: settings, gameCenter: gameCenter)
     }
 }
@@ -225,9 +237,14 @@ struct PlayLayout: Equatable {
     var center: CGRect
     /// Cards (pause, closing, lighthouse): the far half.
     var card: CGRect
+    /// "Perfect ×N": above the bird on its own half (x follows the bird's fixed screen x), never on the fold.
+    var callout: CGRect
 
     static let pauseSize: CGFloat = 56
-    static let meterHeight: CGFloat = 12
+    static let meterHeight: CGFloat = 14
+    /// The callout's box and its height on the canvas (fraction from the top; the camera keeps the bird lower).
+    static let calloutSize = CGSize(width: 260, height: 70)
+    static let calloutY: CGFloat = 0.34
 
     static func make(_ c: AppCanvas) -> PlayLayout {
         let top = c.top
@@ -246,12 +263,19 @@ struct PlayLayout: Equatable {
             let x0 = pause.maxX + 18
             meter = CGRect(x: x0, y: top + (s - meterHeight) / 2, width: max(bp.maxX - x0, 0), height: meterHeight)
         }
-        let distance = CGRect(x: fp.minX, y: top - 6, width: fp.width, height: 110)
+        let distance = CGRect(x: fp.minX, y: top - 6, width: fp.width, height: 130)
         let hint = CGRect(x: bp.minX, y: c.size.height * 0.62, width: bp.width, height: 64)
         let centerTop = distance.maxY + 4
         let center = CGRect(x: fp.minX, y: centerTop, width: fp.width, height: max(c.bottom - centerTop, 0))
         let card = CGRect(x: fp.minX, y: c.top, width: fp.width, height: max(c.bottom - c.top, 0))
-        return PlayLayout(pause: pause, distance: distance, meter: meter, hint: hint, center: center, card: card)
+        let f = ScreenLayout.birdScreenFraction
+        let birdX = c.screenX(c.layout.size.width * (c.mirrored ? 1 - f : f))
+        let cw = min(calloutSize.width, bp.width)
+        let cx = min(max(birdX - cw / 2, bp.minX), max(bp.maxX - cw, bp.minX))
+        let callout = CGRect(x: cx, y: c.size.height * calloutY - calloutSize.height / 2, width: cw,
+                             height: calloutSize.height)
+        return PlayLayout(pause: pause, distance: distance, meter: meter, hint: hint, center: center, card: card,
+                          callout: callout)
     }
 }
 

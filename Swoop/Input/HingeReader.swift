@@ -60,7 +60,8 @@ struct HingeReader: ViewModifier {
 /// `SWOOP-H <t> <angle>` stdout lines for CI (`ci/duo.sh` greps them), only with the `-swoopDemo` launch argument,
 /// at most 10 per second. Don't rename the prefix. Called on the main thread only (hinge callbacks).
 enum FeelHingeLog {
-    static let isEnabled: Bool = ProcessInfo.processInfo.arguments.contains("-swoopDemo")
+    /// DEBUG only (QA-1 P2-13); CI runs Debug builds.
+    static let isEnabled: Bool = FeelDemoLog.isEnabled
     nonisolated(unsafe) private static var lastLine: TimeInterval = -.infinity
 
     static func record(angle: Double, at time: TimeInterval) {

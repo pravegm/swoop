@@ -201,29 +201,32 @@ enum SceneTextures {
         }
     }
 
-    /// The storm's cloud wall: solid on the left, a billowing edge on the right, darker at the top.
-    static func stormWall(key: String, dark: UIColor, base: UIColor, light: UIColor) -> SKTexture {
-        make("storm-\(key)", width: 320, height: 480, scale: 1) { ctx, s in
+    /// A trail segment: flat along its length, soft across it (sprites chained along the path, so the trail tapers and
+    /// fades without rebuilding a path).
+    static var ribbon: SKTexture {
+        make("ribbon", width: 32, height: 16, scale: 2) { ctx, s in
+            linear(ctx, [white(0), white(0.7), white(1), white(0.7), white(0)], [0, 0.28, 0.5, 0.72, 1],
+                   from: CGPoint(x: 0, y: 0), to: CGPoint(x: 0, y: s.height))
+        }
+    }
+
+    /// A rain sheet hanging from the storm's base: streaks fading downward inside a soft column.
+    static var rainSheet: SKTexture {
+        make("rainsheet", width: 64, height: 256, scale: 1) { ctx, s in
             ctx.saveGState()
-            ctx.clip(to: CGRect(x: 0, y: 0, width: 205, height: s.height))
-            linear(ctx, [dark, base, base], [0, 0.55, 1], from: CGPoint(x: 0, y: 0), to: CGPoint(x: 0, y: s.height))
+            ctx.clip(to: CGRect(x: 8, y: 0, width: s.width - 16, height: s.height))
+            linear(ctx, [white(0.22), white(0.10), white(0)], [0, 0.6, 1], from: CGPoint(x: 0, y: 0),
+                   to: CGPoint(x: 0, y: s.height))
             ctx.restoreGState()
-            var rng = SceneRNG(seed: 0x57_0F_A1)
-            var y: CGFloat = -24
-            while y < s.height + 30 {
-                let r = rng.range(36, 74)
-                let cx = rng.range(186, 246)
-                let col = y < s.height * 0.45 ? dark : base
-                radial(ctx, [col, col, col.withAlphaComponent(0)], [0, 0.8, 1], center: CGPoint(x: cx, y: y), radius: r)
-                // A lit upper rim on each billow.
-                radial(ctx, [light.withAlphaComponent(0.35), light.withAlphaComponent(0)], [0, 1],
-                       center: CGPoint(x: cx + r * 0.15, y: y - r * 0.35), radius: r * 0.55)
-                y += rng.range(22, 40)
-            }
-            for _ in 0..<12 {
-                let r = rng.range(10, 22)
-                radial(ctx, [base.withAlphaComponent(0.45), base.withAlphaComponent(0)], [0, 1],
-                       center: CGPoint(x: rng.range(250, 300), y: rng.range(0, s.height)), radius: r)
+            var rng = SceneRNG(seed: 0x5EE7_0A)
+            for _ in 0..<26 {
+                let x = rng.range(6, s.width - 6)
+                let w = rng.range(1, 3)
+                let len = s.height * rng.range(0.55, 1.0)
+                ctx.saveGState()
+                ctx.clip(to: CGRect(x: x, y: 0, width: w, height: len))
+                linear(ctx, [white(0.55), white(0)], [0, 1], from: CGPoint(x: 0, y: 0), to: CGPoint(x: 0, y: len))
+                ctx.restoreGState()
             }
         }
     }

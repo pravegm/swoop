@@ -6,6 +6,8 @@ struct SwoopPages<Left: View, Right: View>: View {
     let info: AppCanvas
     let title: String
     let onBack: () -> Void
+    /// Scroll the right page to this child id on open (Flocks: the current rank, REVIEW-1 P1-12).
+    var scrollRightTo: Int? = nil
     @ViewBuilder let left: () -> Left
     @ViewBuilder let right: () -> Right
 
@@ -36,11 +38,16 @@ struct SwoopPages<Left: View, Right: View>: View {
             .padding(.top, top)
             .frame(width: lp.width, height: info.size.height, alignment: .topLeading)
             .position(x: lp.midX, y: info.size.height / 2)
-            ScrollView(showsIndicators: false) {
-                right()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, top + 4)
-                    .padding(.bottom, bottomPad)
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    right()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, top + 4)
+                        .padding(.bottom, bottomPad)
+                }
+                .onAppear {
+                    if let target = scrollRightTo { proxy.scrollTo(target, anchor: .center) }
+                }
             }
             .frame(width: rp.width, height: info.size.height)
             .position(x: rp.midX, y: info.size.height / 2)

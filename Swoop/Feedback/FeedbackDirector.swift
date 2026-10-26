@@ -63,6 +63,8 @@ final class FeedbackDirector: FeedbackSink {
     private var lastTouchdown: CFTimeInterval = -Double.infinity
     private var lastCloud: CFTimeInterval = -Double.infinity
     private var lastThunder: CFTimeInterval = -Double.infinity
+    /// The Perfect chain as of the last touchdown (Round 2: only a splash breaks it).
+    private var currentChain = 0
 
     init() {
         // Menus play before any flight frame: start from an audible, empty bed (a master of 0 mutes one-shots too).
@@ -70,6 +72,12 @@ final class FeedbackDirector: FeedbackSink {
     }
 
     private var master: Float { soundOn ? FeelAudioEngine.masterGain : 0 }
+
+    /// True when this touchdown broke a chain worth mourning: a splash after 2+ Perfects (a lone Perfect lost is not
+    /// worth a sound on top of the splash). Pure.
+    nonisolated static func chainBroke(previousChain: Int, quality: TouchdownQuality) -> Bool {
+        quality == .splash && previousChain >= 2
+    }
 
     /// True while the engines idle (menus, a long pause).
     var idling: Bool { isIdle }
@@ -172,6 +180,7 @@ final class FeedbackDirector: FeedbackSink {
             haptics.play(FeelHapticBook.countdownTick)
         case .started:
             caughtAt = -Double.infinity
+            currentChain = 0
             audio.play(FeelSoundBook.started())
             haptics.play(FeelHapticBook.started)
         case .launched(let speed):
@@ -180,21 +189,27 @@ final class FeedbackDirector: FeedbackSink {
             audio.play(FeelSoundBook.launch(speed: speed))
             haptics.play(FeelHapticBook.launch(speed: speed))
         case .touchdown(let quality, let speed, let chain):
-            // A splash always speaks (it is the mistake); repeats of the soft ones are thinned.
-            if quality != .splash {
+            // A Perfect and a splash always speak; repeats of the soft Good touch are thinned.
+            let previousChain = currentChain
+            currentChain = max(chain, 0)
+            if quality == .good {
                 guard now - lastTouchdown >= Self.touchdownGap else { return }
             }
             lastTouchdown = now
             switch quality {
             case .perfect:
-                audio.play(FeelSoundBook.perfect(chain: max(chain, 1), dice: &dice))
+                // The haptic first: it must land on the App's hit-stop, which starts this very frame.
                 haptics.play(FeelHapticBook.perfect)
+                audio.play(FeelSoundBook.perfect(chain: max(chain, 1), dice: &dice))
             case .good:
                 audio.play(FeelSoundBook.good(speed: speed, dice: &dice))
                 haptics.play(FeelHapticBook.good)
             case .splash:
-                audio.play(FeelSoundBook.splash(speed: speed, dice: &dice))
                 haptics.play(FeelHapticBook.splash)
+                audio.play(FeelSoundBook.splash(speed: speed, dice: &dice))
+                if Self.chainBroke(previousChain: previousChain, quality: quality) {
+                    audio.play(FeelSoundBook.chainBreak(previousChain: previousChain, dice: &dice))
+                }
             }
         case .tailwindStarted:
             audio.play(FeelSoundBook.tailwindStarted(dice: &dice))

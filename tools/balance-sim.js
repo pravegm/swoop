@@ -5,6 +5,8 @@
 //   node tools/balance-sim.js                 # 20 seeds x 4 skills at dt 1/120, prints SWOOP-BAL lines
 //   node tools/balance-sim.js seeds=40 skills=casual,expert dt=0.008333
 //   node tools/balance-sim.js sea             # sea checks (max slope over 200 km, continuity) for a few seeds
+//   node tools/storm-fit.js [grid=1]          # fit the storm law to the Round 2 run-length targets (uses this file)
+//   Any Tuning value can be overridden: T.perfectAngleDeg=17
 //
 // Numbers will not be bit-identical to Swift (libm differs), but the statistics match.
 // Session differences (cosmetic only): Swift also eases the tuck during the countdown and moves the storm while caught;
@@ -15,28 +17,30 @@
 const T = {
   gravity: 1500,
   tuckGravityFactor: 1.9,
-  airTuckGravityFactor: 1.9,
-  seaWavelengthScale: 2,
+  airTuckGravityFactor: 1.3,
+  seaWavelengthScale: 3,
   seaAmplitudeScale: 1.4,
   liftPerpendicular: 1,
   pilotBranchEvery: 2,
+  pilotPullOut: 1,
   liftMaxFraction: 0.65,
   liftCoefficient: 0.012,
   airDrag: 0.04,
   waterFriction: 0.002,
   minSpeed: 260,
   maxSpeed: 2600,
-  perfectAngleDeg: 14,
-  perfectSlopeDeg: -4,
-  goodAngleDeg: 30,
+  perfectAngleDeg: 18,
+  perfectSlopeDeg: -2,
+  goodAngleDeg: 36,
+  landingAssistDeg: 7,
   perfectBoost: 0.06,
-  splashKeep: 0.75,
+  splashKeep: 0.82,
   launchMargin: 0.04,
   launchGrace: 0.1,
-  stormBaseSpeed: 520,
-  stormAccel: 9,
-  stormCruiseSpeed: 1500,
-  stormLateAccel: 2.5,
+  stormBaseSpeed: 480,
+  stormAccel: 18,
+  stormCruiseSpeed: 1800,
+  stormLateAccel: 3.5,
   stormMaxSpeed: 3200,
   gapStart: 2400,
   fullLead: 3000,
@@ -45,6 +49,7 @@ const T = {
   tailwindGapBonus: 600,
   tailwindDuration: 2.5,
   tailwindSpeedBoost: 0.15,
+  tailwindFade: 0.6,
   lighthouseGapBonus: 800,
   cloudHeight: 900,
   cloudRearmHeight: 650,
@@ -72,8 +77,10 @@ const T = {
   tierLength: 30000,
   tutorialEnd: 4000,
   tutorialAmplitude: 150,
-  tutorialWavelength: 1800,
+  tutorialWavelength: 3600,
   tutorialCrestX: 200,
+  // R2: piecewise-cosine intro between these extrema (x, y), then the sine set 0 from the last knot.
+  tutorialKnots: [[-2400, -120], [200, 150], [1200, -150], [1900, 60], [3700, -300]],
 };
 
 // MARK: SeededRandom (SplitMix64) using BigInt
@@ -103,8 +110,12 @@ class SeaProfile {
     this.rng = new SeededRandom(BigInt.asUintN(64, BigInt(seed) ^ 0x5EA5EA5EA5EA5EAn));
     // sets[j] = { centre (blend centre, j>=1), bodyStart, end (= next centre - W/2), A:[3], f:[3], phi:[3] }
     const f0 = 1 / T.tutorialWavelength;
-    const t0 = { centre: -1e12, bodyStart: 0, end: T.tutorialEnd, A: [T.tutorialAmplitude, 0, 0],
-      f: [f0, 1 / 560, 1 / 420], phi: [wrapPhase(Math.PI / 2 - TAU * f0 * T.tutorialCrestX), 0, 0], rogue: false };
+    const K = T.tutorialKnots; const last = K[K.length - 1];
+    this.introEnd = last[0];
+    // the sine continues from the last knot (an extremum): amplitude |y|, crest or trough there
+    const th0 = last[1] >= 0 ? Math.PI / 2 : -Math.PI / 2;
+    const t0 = { centre: -1e12, bodyStart: 0, end: Math.max(T.tutorialEnd, this.introEnd + 300), A: [Math.abs(last[1]), 0, 0],
+      f: [f0, 1 / 560, 1 / 420], phi: [wrapPhase(th0 - TAU * f0 * this.introEnd), 0, 0], rogue: false };
     this.sets = [t0];
     this.last = 0;
     this.blendFallbacks = 0; this.blendScales = 0;
@@ -200,7 +211,16 @@ class SeaProfile {
     this.last = j;
     return j;
   }
+  introEval(x) {
+    const K = T.tutorialKnots;
+    if (x <= K[0][0]) return [K[0][1], 0];
+    let i = 0; while (i < K.length - 2 && x >= K[i + 1][0]) i++;
+    const x0 = K[i][0], y0 = K[i][1], x1 = K[i + 1][0], y1 = K[i + 1][1];
+    const t = (x - x0) / (x1 - x0);
+    return [y0 + (y1 - y0) * (1 - Math.cos(Math.PI * t)) / 2, (y1 - y0) * Math.PI * Math.sin(Math.PI * t) / (2 * (x1 - x0))];
+  }
   eval(x) {
+    if (x < this.introEnd) return this.introEval(x);
     const j = this.index(x);
     const s = this.sets[j];
     if (j > 0 && x < s.bodyStart) return this.blendEval(this.sets[j - 1], s, x);
@@ -221,6 +241,7 @@ function stormSpeed(t) {
   if (t <= cruiseT) return T.stormBaseSpeed + T.stormAccel * t;
   return Math.min(T.stormMaxSpeed, T.stormCruiseSpeed + T.stormLateAccel * (t - cruiseT));
 }
+function assistedAlpha(beta, phi) { const a = T.landingAssistDeg * Math.PI / 180; const b = beta + clamp(phi - beta, -a, a); return Math.abs(b - phi) * 180 / Math.PI; }
 function gEff(u) { return T.gravity * (1 + T.tuckGravityFactor * u); }
 function gAir(u) { return T.gravity * (1 + T.airTuckGravityFactor * u); }
 function liftAccel(u, vx, vy) { return vy < 0 ? (1 - u) * Math.min(T.liftMaxFraction * T.gravity, T.liftCoefficient * vx * vx) : 0; }
@@ -244,7 +265,7 @@ class FlightSession {
     this.chain = 0; this.bestChain = 0; this.perfects = 0; this.goods = 0; this.splashes = 0; this.tailwinds = 0;
     this.tailwindLeft = 0; this.lighthouses = 0; this.cloudTouches = 0; this.cloudArmed = true;
     this.maxSpeed = 0; this.maxAlt = 0; this.caughtElapsed = 0; this.finished = false; this.airTime = 0;
-    this.launches = 0; this.skimTime = 0;
+    this.launches = 0; this.skimTime = 0; this.tailwindFadeLeft = 0;
   }
   snapshot() {
     const sp = Math.hypot(this.vx, this.vy);
@@ -277,28 +298,30 @@ class FlightSession {
     }
     this.flightTime += dt;
     this.physics(dt, this.u, ev, false);
-    if (this.tailwindLeft > 0) { this.tailwindLeft -= dt; if (this.tailwindLeft <= 0) { this.tailwindLeft = 0; ev.push('tailwindEnded'); } }
+    if (this.tailwindFadeLeft > 0) this.tailwindFadeLeft = Math.max(0, this.tailwindFadeLeft - dt);
+    if (this.tailwindLeft > 0) { this.tailwindLeft -= dt; if (this.tailwindLeft <= 0) { this.tailwindLeft = 0; this.tailwindFadeLeft = T.tailwindFade; ev.push('tailwindEnded'); } }
     // storm
     if (this.mode === 'attract') this.stormX = this.x - T.attractStormLag;
     else this.stormX += stormSpeed(this.flightTime) * dt;
     while (this.x >= Lighthouses.x(this.lighthouses)) { this.lighthouses++; this.stormX -= T.lighthouseGapBonus; ev.push('lighthouse'); }
     const alt = this.y - this.sea.height(this.x);
-    if (this.cloudArmed && alt >= T.cloudHeight) { this.cloudArmed = false; this.cloudTouches++; ev.push('cloud'); }
-    if (!this.cloudArmed && alt < T.cloudRearmHeight) this.cloudArmed = true;
+    if (this.cloudArmed && this.y >= T.cloudHeight) { this.cloudArmed = false; this.cloudTouches++; ev.push('cloud'); }
+    if (!this.cloudArmed && this.y < T.cloudRearmHeight) this.cloudArmed = true;
     this.maxSpeed = Math.max(this.maxSpeed, Math.hypot(this.vx, this.vy)); this.maxAlt = Math.max(this.maxAlt, alt);
     if (this.mode !== 'attract' && this.x - this.stormX <= 0) { this.phase = 'caught'; this.caughtElapsed = 0; ev.push('caught'); this.caughtAt = this.flightTime; this.caughtX = this.x; }
   }
   physics(dt, u, ev, calm) {
     const sea = this.sea;
     const tailwind = this.tailwindLeft > 0;
-    const vmax = T.maxSpeed * (tailwind ? 1 + T.tailwindSpeedBoost : 1);
+    const tw = tailwind ? 1 : this.tailwindFadeLeft / T.tailwindFade; // 1 during, fading to 0 after
+    const vmax = T.maxSpeed * (1 + T.tailwindSpeedBoost * tw);
     const minS = calm ? 0 : T.minSpeed;
     if (this.skimming) {
       const p = sea.slope(this.x); const phi = Math.atan(p);
       const g = gEff(u);
       let s = this.s;
       s += -g * Math.sin(phi) * dt;
-      const drag = calm ? T.caughtDrag : (tailwind ? 0 : T.airDrag);
+      const drag = calm ? T.caughtDrag : T.airDrag * (1 - tw);
       s *= Math.exp(-(drag + T.waterFriction) * dt);
       if (calm) s = Math.max(s, T.caughtDriftSpeed);
       if (s * Math.cos(phi) < minS) s = minS / Math.cos(phi);
@@ -317,7 +340,7 @@ class FlightSession {
       return;
     }
     // airborne
-    const drag = calm ? T.caughtDrag * 0.3 : (tailwind ? 0 : T.airDrag);
+    const drag = calm ? T.caughtDrag * 0.3 : T.airDrag * (1 - tw);
     const acc = airAccel(u, this.vx, this.vy, drag, calm);
     this.vx += acc[0] * dt;
     this.vy += acc[1] * dt;
@@ -336,7 +359,10 @@ class FlightSession {
   }
   touchdown(ev, calm, vmax) {
     const p = this.sea.slope(this.x); const phi = Math.atan(p);
-    const beta = Math.atan2(this.vy, this.vx);
+    const beta0 = Math.atan2(this.vy, this.vx);
+    // landing assist: the velocity is turned toward the tangent by up to landingAssistDeg
+    const asst = T.landingAssistDeg * Math.PI / 180;
+    const beta = beta0 + clamp(phi - beta0, -asst, asst);
     const alpha = Math.abs(beta - phi) * 180 / Math.PI;
     const sp = Math.hypot(this.vx, this.vy);
     let q, s;
@@ -360,7 +386,7 @@ class FlightSession {
         }
         this.tailwindLeft = T.tailwindDuration;
       }
-    } else { this.chain = 0; if (q === 'good') this.goods++; else this.splashes++; }
+    } else if (q === 'good') { this.goods++; } else { this.chain = 0; this.splashes++; }
     ev.push(q);
   }
 }
@@ -378,7 +404,8 @@ const SKILLS = {
 };
 const PRED_DT = 1 / 60;      // planning integration step (s)
 const PRED_MAX_DELAY = 1.6;  // latest tuck the plan considers (s from now)
-const PRED_MAX_FLIGHT = 4;   // give up on paths longer than this (s)
+const PRED_MAX_FLIGHT = 3;   // give up on paths longer than this (s)
+const PRED_BUDGET = 2500;    // integration steps per plan, all branches together (QA-1 P2-14: main-thread cost)
 class FlightPilot {
   constructor(skill, seed) {
     this.skill = skill; this.p = SKILLS[skill]; this.rng = new SeededRandom(BigInt.asUintN(64, BigInt(seed) ^ 0x9170A7n));
@@ -398,8 +425,9 @@ class FlightPilot {
   static landTucked(b0, sea, uTarget, delay, gScale, maxT) {
     const b = { x: b0.x, y: b0.y, vx: b0.vx, vy: b0.vy, u: b0.u };
     const k = 1 - Math.exp(-PRED_DT / T.tuckAttack);
-    let t = 0;
+    let t = 0, n = 0;
     while (t < maxT) {
+      n++;
       const tu = t >= delay ? uTarget : b.u; // before `delay`, hold whatever u it had
       b.u += (tu - b.u) * k;
       const px = b.x, py = b.y; const d0 = py - sea.height(px);
@@ -409,14 +437,14 @@ class FlightPilot {
         const fr = d0 > 0 ? clamp(d0 / (d0 - d1), 0, 1) : 1;
         const lx = px + (b.x - px) * fr;
         const phi = Math.atan(sea.slope(lx));
-        const alpha = Math.abs(Math.atan2(b.vy, b.vx) - phi) * 180 / Math.PI;
+        const alpha = assistedAlpha(Math.atan2(b.vy, b.vx), phi);
         const phiDeg = phi * 180 / Math.PI;
         const rank = (alpha <= T.perfectAngleDeg && phiDeg < T.perfectSlopeDeg) ? 0 : (alpha <= T.goodAngleDeg ? 1 : 2);
-        return { rank, alpha };
+        return { rank, alpha, n };
       }
       t += PRED_DT;
     }
-    return { rank: 1, alpha: T.goodAngleDeg }; // no landing in sight: neutral
+    return { rank: 1, alpha: T.goodAngleDeg, n }; // no landing in sight: neutral
   }
   // Plan: seconds from now to start the tuck (Infinity = stay open to touchdown).
   plan(snap, sea, gScale) {
@@ -425,12 +453,13 @@ class FlightPilot {
     const k = 1 - Math.exp(-PRED_DT / T.tuckRelease);
     const ranks = [], alphas = [];
     let t = 0, landedOpen = null;
-    let step = 0;
-    while (t <= PRED_MAX_DELAY) {
+    let step = 0, budget = PRED_BUDGET;
+    while (t <= PRED_MAX_DELAY && budget > 0) {
       if (step % T.pilotBranchEvery === 0) {
         const r = FlightPilot.landTucked(open, sea, 1, lag, gScale, PRED_MAX_FLIGHT);
-        ranks.push(r.rank); alphas.push(r.alpha);
+        ranks.push(r.rank); alphas.push(r.alpha); budget -= r.n;
       }
+      budget--;
       step++;
       // advance the open path one step
       open.u += (0 - open.u) * k;
@@ -442,7 +471,7 @@ class FlightPilot {
         const fr = d0 > 0 ? clamp(d0 / (d0 - d1), 0, 1) : 1;
         const lx = px + (open.x - px) * fr;
         const phi = Math.atan(sea.slope(lx));
-        const alpha = Math.abs(Math.atan2(open.vy, open.vx) - phi) * 180 / Math.PI;
+        const alpha = assistedAlpha(Math.atan2(open.vy, open.vx), phi);
         const phiDeg = phi * 180 / Math.PI;
         landedOpen = { rank: (alpha <= T.perfectAngleDeg && phiDeg < T.perfectSlopeDeg) ? 0 : (alpha <= T.goodAngleDeg ? 1 : 2), alpha };
         break;
@@ -482,7 +511,19 @@ class FlightPilot {
       return sea.slope(ahead) < -0.03 ? 1 : 0;
     }
     if (this.wasSkimming) { this.wasSkimming = false; this.nextPlan = snap.time; this.committed = false; this.tuckAt = 1e18; }
-    if (this.committed) return 1;
+    if (this.committed) {
+      // Pull out of a dive that is going to splash if opening the wings would land better (humans do this).
+      if (T.pilotPullOut > 0 && snap.time >= this.nextPlan) {
+        this.nextPlan = snap.time + P.replan;
+        const st = { x: snap.x, y: snap.y, vx: snap.vx, vy: snap.vy, u: snap.tuck };
+        const dive = FlightPilot.landTucked(st, sea, 1, 0, 1, PRED_MAX_FLIGHT);
+        if (dive.rank === 2) {
+          const open = FlightPilot.landTucked(st, sea, 0, 0, 1, PRED_MAX_FLIGHT);
+          if (open.rank < 2) { this.committed = false; this.tuckAt = 1e18; this.pulledOut = true; return 0; }
+        }
+      }
+      return 1;
+    }
     if (snap.time >= this.nextPlan) {
       this.nextPlan = snap.time + P.replan;
       const gScale = 1 + (P.noise > 0 ? this.rng.range(-P.noise, P.noise) : 0);
@@ -542,7 +583,7 @@ function main() {
     const ppm = rs.map(r => r.perfects / Math.max(r.sec / 60, 1e-6));
     const avg = (f) => rs.reduce((a, r) => a + f(r), 0) / rs.length;
     console.log(`SWOOP-BAL skill=${sk} median=${pct(secs, .5).toFixed(1)}s p10=${pct(secs, .1).toFixed(1)} p90=${pct(secs, .9).toFixed(1)} ` +
-      `medianMeters=${pct(m, .5).toFixed(0)} perfects/min=${pct(ppm, .5).toFixed(1)} splash/min=${avg(r => r.splashes / (r.sec / 60)).toFixed(1)} ` +
+      `medianMeters=${pct(m, .5).toFixed(0)} perfects/min=${pct(ppm, .5).toFixed(1)} splashes/min=${pct(rs.map(r => r.splashes / Math.max(r.sec / 60, 1e-6)), .5).toFixed(1)} ` +
       `good/min=${avg(r => r.goods / (r.sec / 60)).toFixed(1)} chain=${avg(r => r.chain).toFixed(1)} tail=${avg(r => r.tail).toFixed(1)} vmax=${avg(r => r.maxSpeed).toFixed(0)} ` +
       `alt=${avg(r => r.maxAlt).toFixed(0)} clouds=${avg(r => r.clouds).toFixed(1)} lh=${avg(r => r.lh).toFixed(1)} capped=${rs.filter(r => r.capped).length}`);
     if (args.v) console.log('   secs', secs.map(x => x.toFixed(0)).join(' '));
@@ -568,4 +609,4 @@ function seaCheck(args) {
 }
 
 if (require.main === module) main();
-module.exports = { T, SeaProfile, FlightSession, FlightPilot, SeededRandom, runOne };
+module.exports = { T, SKILLS, SeaProfile, FlightSession, FlightPilot, SeededRandom, runOne };

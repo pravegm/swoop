@@ -47,6 +47,8 @@ public final class FlightSession {
     private var splashes: Int = 0
     private var tailwinds: Int = 0
     private var tailwindLeft: Double = 0
+    /// Seconds left of the post-Tailwind ease-out (Tuning.tailwindFade).
+    private var tailwindFadeLeft: Double = 0
     private var lighthouseCount: Int = 0
     private var nextLighthouseX: Double
     private var nextLighthouseName: String
@@ -212,10 +214,14 @@ public final class FlightSession {
         physics(dt, tuckEased, calm: false, &events)
         updateBodyAngle(dt)
 
+        if tailwindFadeLeft > 0 {
+            tailwindFadeLeft = max(0, tailwindFadeLeft - dt)
+        }
         if tailwindLeft > 0 {
             tailwindLeft -= dt
             if tailwindLeft <= 0 {
                 tailwindLeft = 0
+                tailwindFadeLeft = Tuning.tailwindFade
                 events.append(.tailwindEnded)
             }
         }
@@ -252,13 +258,13 @@ public final class FlightSession {
             events.append(.newBest)
         }
 
-        // Clouds.
+        // Clouds: the deck's underside sits at Tuning.cloudHeight above the MEAN water (the Scene draws it there).
         let alt: Double = skimming ? 0 : max(0, y - sea.height(at: x))
-        if cloudArmed && alt >= Tuning.cloudHeight {
+        if cloudArmed && !skimming && y >= Tuning.cloudHeight {
             cloudArmed = false
             cloudTouches += 1
             events.append(.cloudTouched)
-        } else if !cloudArmed && alt < Tuning.cloudRearmHeight {
+        } else if !cloudArmed && y < Tuning.cloudRearmHeight {
             cloudArmed = true
         }
 
@@ -304,7 +310,9 @@ public final class FlightSession {
 
     private func physics(_ dt: Double, _ u: Double, calm: Bool, _ events: inout [FlightEvent]) {
         let tailwind: Bool = tailwindLeft > 0
-        let vmax: Double = Tuning.maxSpeed * (tailwind ? 1 + Tuning.tailwindSpeedBoost : 1)
+        // 1 during a Tailwind, easing linearly to 0 over Tuning.tailwindFade after it (no speed jolt at the end).
+        let tw: Double = tailwind ? 1 : min(max(tailwindFadeLeft / Tuning.tailwindFade, 0), 1)
+        let vmax: Double = Tuning.maxSpeed * (1 + Tuning.tailwindSpeedBoost * tw)
         let minS: Double = calm ? 0 : Tuning.minSpeed
 
         if skimming {
@@ -313,7 +321,7 @@ public final class FlightSession {
             let g: Double = Tuning.skimGravity(u)
             var s: Double = skimSpeed
             s += -g * sin(phi) * dt
-            let drag: Double = calm ? Tuning.caughtDrag : (tailwind ? 0 : Tuning.airDrag)
+            let drag: Double = calm ? Tuning.caughtDrag : Tuning.airDrag * (1 - tw)
             s *= exp(-(drag + Tuning.waterFriction) * dt)
             if calm { s = max(s, Tuning.caughtDriftSpeed) }
             if s * cos(phi) < minS { s = minS / cos(phi) }
@@ -339,7 +347,7 @@ public final class FlightSession {
         }
 
         // Airborne.
-        let drag: Double = calm ? Tuning.caughtDrag * 0.3 : (tailwind ? 0 : Tuning.airDrag)
+        let drag: Double = calm ? Tuning.caughtDrag * 0.3 : Tuning.airDrag * (1 - tw)
         let acc = Tuning.airAcceleration(u: u, vx: vx, vy: vy, drag: drag, lift: !calm)
         vx += acc.ax * dt
         vy += acc.ay * dt
@@ -365,9 +373,11 @@ public final class FlightSession {
         }
     }
 
-    /// Classify a touchdown (GAME-DESIGN §5). Pure, for tests.
+    /// Classify a touchdown (GAME-DESIGN §5) from the raw velocity and surface angles (radians), after the landing
+    /// assist (Tuning.landingAssistDeg). Pure, for tests and the pilot.
     static func classify(velocityAngle beta: Double, surfaceAngle phi: Double) -> TouchdownQuality {
-        let alphaDeg: Double = abs(beta - phi) * 180 / Double.pi
+        let assisted: Double = Tuning.assistedAngle(velocityAngle: beta, surfaceAngle: phi)
+        let alphaDeg: Double = abs(assisted - phi) * 180 / Double.pi
         let phiDeg: Double = phi * 180 / Double.pi
         if alphaDeg <= Tuning.perfectAngleDeg && phiDeg < Tuning.perfectSlopeDeg { return .perfect }
         if alphaDeg <= Tuning.goodAngleDeg { return .good }
@@ -377,7 +387,8 @@ public final class FlightSession {
     private func touchdown(calm: Bool, vmax: Double, _ events: inout [FlightEvent]) {
         let phi: Double = atan(sea.slope(at: x))
         let beta: Double = atan2(vy, vx)
-        let alpha: Double = abs(beta - phi)
+        // The landing assist turns the velocity toward the tangent (speed kept) before it is judged.
+        let alpha: Double = abs(Tuning.assistedAngle(velocityAngle: beta, surfaceAngle: phi) - phi)
         let impact: Double = (vx * vx + vy * vy).squareRoot()
         let q: TouchdownQuality = FlightSession.classify(velocityAngle: beta, surfaceAngle: phi)
         let s: Double
@@ -415,10 +426,11 @@ public final class FlightSession {
                 tailwindLeft = Tuning.tailwindDuration
             }
         case .good:
-            chain = 0
+            // Round 2 (REVIEW-1 P0-2): a Good holds the chain (it neither adds to it nor refills a Tailwind).
             goods += 1
-            events.append(.touchdown(.good, speed: impact, chain: 0))
+            events.append(.touchdown(.good, speed: impact, chain: chain))
         case .splash:
+            // Only a splash breaks the chain.
             chain = 0
             splashes += 1
             longestCleanPt = max(longestCleanPt, x - lastSplashX)
@@ -459,6 +471,11 @@ public final class FlightSession {
     /// Set the gap to the storm (pt).
     func testSetGap(_ gap: Double) {
         stormX = x - gap
+    }
+
+    /// Set the Tailwind's remaining time (s); only while one is running.
+    func testSetTailwind(_ seconds: Double) {
+        if tailwindLeft > 0 { tailwindLeft = max(seconds, 1e-6) }
     }
 
     // MARK: Result

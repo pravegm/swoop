@@ -60,10 +60,17 @@ enum FeelSoundBook {
     static let windCutoffRange = 15.0
     /// The whistle fades in from this speed (0…1) and peaks at this level.
     static let whistleStart = 0.45
-    static let whistlePeak: Float = 0.26
-    /// Skim hiss level at rest and at full speed (before master).
+    /// Round 2 (the 3-minute fatigue pass): the whistle is the only tonal part of the bed, so it stays a hint
+    /// (0.26 → 0.2, Q 7…12 → 6…10).
+    static let whistlePeak: Float = 0.2
+    static let whistleQLow = 6.0
+    static let whistleQSpan = 4.0
+    /// Skim hiss level at rest and at full speed (before master). Round 2: its band tops out at 5.4 kHz (was 6.6), out
+    /// of the harshest part of a phone speaker.
     static let skimRestGain: Float = 0.03
-    static let skimTopGain: Float = 0.12
+    static let skimTopGain: Float = 0.11
+    static let skimCenterLow = 3000.0
+    static let skimCenterSpan = 2400.0
     /// Rain starts when the lead falls under this fraction, full at 0.
     static let rainLead = 0.3
     static let rainPeak: Float = 0.14
@@ -119,12 +126,12 @@ enum FeelSoundBook {
         let whistle = smoothstep((s - whistleStart) / (1 - whistleStart)) * (0.55 + 0.45 * tuck)
         bed.whistleGain = whistlePeak * Float(whistle)
         bed.whistleHz = Float(650 + 1100 * s + 350 * tuck + 300 * air)
-        bed.whistleQ = Float(7 + 5 * s)
+        bed.whistleQ = Float(whistleQLow + whistleQSpan * s)
 
         // Skim hiss with spray crackle.
         if telemetry.skimming {
             bed.skimGain = skimRestGain + (skimTopGain - skimRestGain) * Float(s)
-            bed.skimCenter = Float(3400 + 3200 * s)
+            bed.skimCenter = Float(skimCenterLow + skimCenterSpan * s)
             bed.sprayRate = Float(120 + 900 * s)
         }
 
@@ -179,19 +186,70 @@ enum FeelSoundBook {
         ]
     }
 
-    /// Perfect: a soft bell chime on the rising pentatonic, a quiet octave shimmer, and a light kiss of water.
+    // MARK: The Perfect moment (Round 2: brighter with the chain, a whoosh-pop on the punch-in)
+
+    /// The chime's partial roll-off: 0.3 for the first Perfect, +0.035 per chain step, at most 0.62 (chain 10+).
+    static let chimeBrightnessBase = 0.3
+    static let chimeBrightnessStep = 0.035
+    static let chimeBrightnessMax = 0.62
+    /// The App's hit-stop (ROUND-2): the pop lands as the world starts moving again.
+    static let hitStop: Float = 0.035
+
+    /// How bright the n-th Perfect's chime rings (0.3 … 0.62).
+    static func chimeBrightness(chain: Int) -> Double {
+        let steps = Double(max(chain - 1, 0))
+        return min(chimeBrightnessBase + chimeBrightnessStep * steps, chimeBrightnessMax)
+    }
+
+    /// 0…1: how far up the brightness ramp this chain is (drives the glint layer).
+    static func chimeGlow(chain: Int) -> Double {
+        (chimeBrightness(chain: chain) - chimeBrightnessBase) / (chimeBrightnessMax - chimeBrightnessBase)
+    }
+
+    /// Perfect: a soft bell chime on the rising pentatonic that gets brighter (more and stronger upper partials, a
+    /// glassy glint from chain 3) as the chain grows; its level is compensated so brighter never means louder. Under
+    /// it, the punch-in: a short soft whoosh through the 35 ms hit-stop and a round "pop" as it releases, and a light
+    /// kiss of water.
     static func perfect(chain: Int, dice: inout FeelDice) -> [FeelSynthCommand] {
         let frequency = chimeFrequency(chain: chain)
-        // Higher notes sit in the ear's most sensitive band: a touch quieter.
-        let gain = Float(0.2 * pow(chimeBaseHz / frequency, 0.3))
+        let glow = chimeGlow(chain: chain)
+        // Higher notes sit in the ear's most sensitive band, and brighter partials add loudness: both a touch quieter.
+        let gain = Float(0.2 * pow(chimeBaseHz / frequency, 0.3) * (1 - 0.18 * glow))
         let f = Float(frequency)
-        return [
-            .ring(FeelRingSpec(.chime, fundamental: f, partials: 5, decay: 0.9, brightness: 0.32, gain: gain,
-                               seed: dice.seed32())),
-            .ring(FeelRingSpec(.chime, fundamental: f * 2, partials: 2, decay: 0.35, brightness: 0.3, gain: 0.045,
-                               delay: 0.04, seed: dice.seed32())),
+        let brightness = Float(chimeBrightness(chain: chain))
+        var commands: [FeelSynthCommand] = [
+            .ring(FeelRingSpec(.chime, fundamental: f, partials: glow > 0.4 ? 6 : 5, decay: 0.9,
+                               brightness: brightness, gain: gain, seed: dice.seed32())),
+            .ring(FeelRingSpec(.chime, fundamental: f * 2, partials: 2, decay: 0.35, brightness: 0.3,
+                               gain: Float(0.04 + 0.025 * glow), delay: 0.04, seed: dice.seed32())),
+            // The punch-in: whoosh (in the hit-stop), then the pop (on its release).
+            .noise(FeelNoiseSpec(.bandPass, cutoff: 800, to: 3000, sweep: hitStop, q: 0.8, attack: 0.01,
+                                 decay: 0.018, gain: 0.035)),
+            .drop(FeelDropSpec(frequency: 520, chirp: 1.9, decay: 0.014, gain: 0.07, delay: hitStop)),
             .noise(FeelNoiseSpec(.bandPass, cutoff: 2600, to: 1400, sweep: 0.08, q: 0.9, attack: 0.002, decay: 0.05,
-                                 gain: 0.05)),
+                                 gain: 0.045)),
+        ]
+        if chain >= 3 {
+            // A glassy glint an octave up, growing with the chain (short, so it sparkles rather than rings).
+            commands.append(.ring(FeelRingSpec(.glass, fundamental: f * 2, partials: 2, decay: 0.16, brightness: 0.3,
+                                               gain: Float(0.015 + 0.03 * glow), delay: 0.02, seed: dice.seed32())))
+        }
+        return commands
+    }
+
+    /// The chain breaks (a splash after a chain of 2+): never harsh, a soft "oh well". Two quiet, dull chime notes
+    /// falling a fourth from the chain's current scale degree (in the base octave), after the splash has had its moment.
+    /// Longer chains sound a little more rueful (a touch longer), never louder.
+    static func chainBreak(previousChain: Int, dice: inout FeelDice) -> [FeelSynthCommand] {
+        let degree = pentatonic[max(previousChain - 1, 0) % pentatonic.count]
+        let top = Float(chimeBaseHz * pow(2, Double(degree) / 12))
+        let fall = top * Float(pow(2, -5.0 / 12))
+        let length = Float(min(max(previousChain, 2), 10)) * 0.02
+        return [
+            .ring(FeelRingSpec(.chime, fundamental: top, partials: 3, decay: 0.3 + length, brightness: 0.22,
+                               gain: 0.05, delay: 0.22, seed: dice.seed32())),
+            .ring(FeelRingSpec(.chime, fundamental: fall, partials: 3, decay: 0.45 + length, brightness: 0.2,
+                               gain: 0.045, delay: 0.36, seed: dice.seed32())),
         ]
     }
 

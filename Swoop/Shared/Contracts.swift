@@ -143,7 +143,7 @@ public enum FlightEvent: Equatable, Sendable {
     case tailwindStarted
     case tailwindEnded
     case lighthouse(index: Int, name: String)
-    case cloudTouched                       // reached cloud height (≥ 900 pt above the water)
+    case cloudTouched                       // reached Tuning.cloudHeight (900 pt) above the MEAN water level
     case milestone(km: Int)                 // every whole km
     case newBest                            // passed the personal best distance during the run (fires once)
     case stormClose                         // the gap fell under 15 % of a full lead (fires once per dip)
