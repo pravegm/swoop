@@ -39,7 +39,7 @@ Endless flights of one to four minutes, a seeded Daily Flight that is the same f
 
 ### Helpful Details
 ```
-Optimized for iPhone Duo: built for book pose on the inner display, with a pose card in portrait or tabletop and a pause card on the outer display when closed. Uses the public iOS 27.1 hinge API with short, slow strokes of about 30 degrees from a relaxed, self-calibrating book pose; it never asks players to close the phone, lay it flat or fold fast. A small studio: every sound is synthesized in the app. Also from us: Squish, and Brim (launching 17 Nov).
+Optimized for iPhone Duo: built for book pose on the inner display, with a pose card in portrait or tabletop and a pause card on the outer display when closed. Uses the public iOS 27.1 hinge API with short, unhurried strokes of 30–36 degrees from a relaxed, self-calibrating book pose; it never asks players to close the phone, lay it flat or fold fast. A small studio: every sound is synthesized in the app. Also from us: Squish, and Brim (launching 17 Nov).
 ```
 
 **Why this copy:**

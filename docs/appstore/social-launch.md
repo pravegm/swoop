@@ -63,7 +63,7 @@ Count before posting with the real link (X and Mastodon count a link as 23 chara
 
 ### r/iPhoneDuo (only if the rules allow a launch post; otherwise the megathread)
 **Title:** [Dev] I made the Duo's two halves into a bird's wings: Swoop is out
-> Developer here, so this is self-promo. Swoop is a momentum flyer for book pose: fold the halves in a little and the bird tucks and dives down a wave, open them and it soars. The hinge angle sets how tucked the bird is continuously (it's not an open/closed switch), the open position calibrates to however you naturally hold it, and it never asks you to close the phone, lay it flat or fold fast. Strokes are about 30°, one per wave.
+> Developer here, so this is self-promo. Swoop is a momentum flyer for book pose: fold the halves in a little and the bird tucks and dives down a wave, open them and it soars. The hinge angle sets how tucked the bird is continuously (it's not an open/closed switch), the open position calibrates to however you naturally hold it, and it never asks you to close the phone, lay it flat or fold fast. Strokes are 30–36°, about one per wave.
 >
 > £1.99/$1.99, no ads, no IAP, no data collected. There's a Daily Flight that's the same sea for everyone, so post your result here if you like.
 >

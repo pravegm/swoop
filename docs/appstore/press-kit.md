@@ -46,7 +46,7 @@
 - **Perfects and Tailwinds.** Land on a downslope at a shallow angle for a Perfect skim: a white ring, a chime that climbs a scale, a little extra speed. Three in a row catch a golden Tailwind.
 - **A storm with a face.** Slate cloud and slanting rain behind you, clear gold sky ahead across the fold. Perfects push it back; lighthouses buy you a lead. When it catches you, the bird just tucks its head and rides the swell.
 - **One more go.** Runs last one to four minutes. The Daily Flight is the same sea for everyone, with one scored try and a streak.
-- **Kind to the hinge.** Short, slow strokes of about 30° from a relaxed book pose. It never asks you to close the phone, lay it flat or fold fast.
+- **Kind to the hinge.** Short, unhurried strokes of 30–36° from a relaxed book pose. It never asks you to close the phone, lay it flat or fold fast.
 
 ## Founder quote (placeholder; founder writes it)
 
@@ -108,7 +108,7 @@ Plain text, under 150 words, clip link in the first two lines, never attach vide
 >
 > Could you add Swoop to your iPhone Duo games list? The hinge is the control in book pose: fold the halves in a little and the bird tucks and dives; open them and it soars.
 >
-> - Uses the hinge angle continuously (short strokes of about 30° from a relaxed, self-calibrating book pose), never needs closing or flat; a pose card in portrait and a pause card on the outer display.
+> - Uses the hinge angle continuously (short strokes of 30–36° from a relaxed, self-calibrating book pose), never needs closing or flat; a pose card in portrait and a pause card on the outer display.
 > - Game Center leaderboards and a Daily Flight.
 > - £1.99/$1.99, no ads, no IAP. Out Tue 24 Nov.
 > - Clip: [clip link] · Screenshots and icon: [press folder]

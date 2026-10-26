@@ -244,7 +244,7 @@ The build didn't exist when this was written. Before submission, Claude (or whoe
 |---|---|---|
 | Book pose: fold a little = tuck and dive, open = soar (everywhere) | Bible §3, `HingeTuckSource` | [ ] |
 | "Press and hold anywhere to tuck, let go to soar" on other iPhones (description, promo, review notes) | Bible §3, `TouchTuckSource` | [ ] |
-| Never needs closing, flat or fast folds; one swell every 2–3 s | Bible §2.4, §3 (play band 100–178°, ready pose 130–170°) | [ ] |
+| Never needs closing, flat or fast folds; strokes of 30–36°, about 40 a minute in active play (balance sim, casual player) | Bible §2.4, §3 (play band 100–178°, ready pose 130–170°) | [ ] |
 | Perfect = a little extra speed; Tailwind = 3 Perfects, golden trail, burst of speed | Bible §5–6, `Tuning` | [ ] |
 | Storm follows from behind, speeds up, Perfects push it back; caught = rides the swell | Bible §6 | [ ] |
 | Lighthouses with names, beam, bell, lead | Bible §6, `Lighthouses` | [ ] |

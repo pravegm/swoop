@@ -31,7 +31,7 @@ d) Closed: the outer display shows a pause card ("Open your wings"). Nothing hap
 e) Portrait or tabletop: a card asks the player to turn the Duo sideways and hold it like a book, with a "Play with touch" option.
 
 3. KIND TO THE DEVICE (Guidelines 2.4.2 and 1.4.5)
-- Strokes are short (about 30 degrees) and slow (one wave every 2 to 3 seconds), in the middle of the hinge's range.
+- Strokes are short (30 to 36 degrees) and unhurried: during active play a player folds and opens about once per wave, roughly 40 times a minute, always in the middle of the hinge's range (about 100 to 170 degrees). Folding faster gains nothing: the game eases the tuck, so speed is never rewarded.
 - Swoop never asks the user to close the phone, lay it flat, fold quickly or slam it. Fully flat simply reads as "wings open".
 - No score, achievement or bonus rewards folding speed or the number of folds. Folding at the wrong moment causes a splash, which costs speed.
 - During play the game reads the angle, never the closed state.
