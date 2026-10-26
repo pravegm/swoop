@@ -129,3 +129,17 @@ Precise enough to build without questions.
 - **Three fresh first-time testers** (agents with no prior context) walk the frame sequence. Each answers the four
   questions above in their own words; any wrong answer is a P0.
 - **Then the full panel.**
+
+## Specs (27 Oct): build exactly these
+- `design/UX-FLIGHT-SCHOOL.md` (flows, copy, states, the Wing check, the objective UI, the D4 audit, 25 CI scenarios)
+- `design/ART-FLIGHT-SCHOOL.md` (the DuoDiagram, the practice sea, the goal chip, the lighthouse-reached moment, the
+  route map, the mirrored composition, tasks SC1–SC8 and AP1–AP11)
+
+**Founder decisions on the open points**
+- Lighthouse names are **fixed by index in every mode**: Gull Point, Saltlight, Kestrel Head… A route only works if
+  each name is a place. This is a Core change.
+- The pause button stays visible during Flight School as the way out (quiet styling).
+- Distance text size: Art's call.
+- **The storm:** two critics still read it as "rows of river stones". This round, try a different technique: a
+  noise-based SKShader (fbm billows with soft edges, lit from the sun side), or a pre-rendered soft texture, in place
+  of stacked vector lobes. It must still follow `SceneStormMap`.
