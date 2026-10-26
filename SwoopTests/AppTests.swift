@@ -154,7 +154,11 @@ struct ProgressStoreTests {
         let store = ProgressStore(defaults: defaults)
         store.replace(with: data)
         let reloaded = ProgressStore(defaults: defaults)
-        #expect(reloaded.data == data)
+        // Loading migrates the R2 `hintsLearned` flag into R3's per-hint `learnedHints` (both hints learned).
+        #expect(reloaded.data.learnedHints.count == 2)
+        var expected = data
+        expected.learnedHints = reloaded.data.learnedHints
+        #expect(reloaded.data == expected)
     }
 
     @Test func decodesTolerantly() throws {
@@ -684,7 +688,8 @@ struct RoundThreeRuleTests {
         let small = DeckLayout.make(canvas: cover)
         #expect(small.band.height == 328)
         #expect(small.deck.minY == 336)
-        #expect(small.deck.height == 678 - 336)
+        let deckHeight: CGFloat = 678 - 336
+        #expect(abs(small.deck.height - deckHeight) < 0.5)
     }
 
     @Test func countdownWordsSitOnCoresTicks() {

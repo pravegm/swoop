@@ -552,7 +552,10 @@ struct CoreTests {
         #expect(ev.contains(FlightEvent.lighthouse(index: 0, name: expectedName)))
         #expect(s.snapshot.lighthousesPassed == 1)
         #expect(s.snapshot.nextLighthouseX == Lighthouses.x(index: 1))
-        #expect(s.snapshot.gap > gapBefore + Tuning.lighthouseGapBonus - 200)
+        // The R3 storm leash closes any gap beyond stormLeashGap at stormLeashRate/s, so over these 0.05 s it takes
+        // back part of the bonus when the test bird is far ahead (gap ≈ 42 km here).
+        let leashLoss: Double = Tuning.stormLeashSpeed(gap: gapBefore + Tuning.lighthouseGapBonus) * 0.05
+        #expect(s.snapshot.gap > gapBefore + Tuning.lighthouseGapBonus - 200 - leashLoss)
     }
 
     @Test func snapshotIsPopulated() {
