@@ -172,7 +172,10 @@ struct SceneTests {
         let birdPage: CGFloat = 456
         let anchor: CGFloat = 952 * 0.30
         // The meter and the picture use one formula.
-        #expect(abs(SceneStormMap.meterFill(gap: 2400) - 0.4) < 0.001)
+        // sqrt(gap / (leadMeterScale × fullLead)); the start gap reads ~37–40 % (scale 5.0–5.7, R4b).
+        let startFill: Double = (2400.0 / (Tuning.leadMeterScale * Tuning.fullLead)).squareRoot()
+        #expect(abs(SceneStormMap.meterFill(gap: 2400) - startFill) < 0.001)
+        #expect(startFill > 0.33 && startFill < 0.45)
         #expect(SceneStormMap.meterFill(gap: 1e9) == 1)
         #expect(SceneStormMap.meterFill(gap: -50) == 0)
         // A hint at a full lead, 40 % of the bird page at storm-close, right behind the bird at contact.
