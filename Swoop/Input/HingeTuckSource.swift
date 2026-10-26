@@ -8,7 +8,7 @@ enum HingeTuckTuning {
     /// Initial open angle before any calibration.
     static let initialOpen = 160.0
     /// The open angle is always kept inside this range.
-    static let openMin = 150.0
+    static let openMin = 145.0
     static let openMax = 172.0
     /// At or above this the phone is (nearly) flat: wings fully spread.
     static let flatAngle = 175.0
@@ -161,6 +161,19 @@ final class HingeTuckSource: TuckSource {
     /// Tuck for a hinge angle (see `HingeTuckTuning.tuck(forAngle:open:)`).
     nonisolated static func tuck(forAngle angle: Double, open: Double) -> Double {
         HingeTuckTuning.tuck(forAngle: angle, open: open)
+    }
+
+    /// The ready pose defines "wings spread": called every frame of the countdown (and the resume hold). Snaps the open
+    /// angle to the player's current book angle (clamped to openMin…openMax), so a player resting at 147° starts with
+    /// wings fully spread instead of 30 % tucked (Duo CI run 40318165524: the slow calibration took ~20 s to get there).
+    /// Ignored when the phone is clearly being folded (below `calibrationLow`) or there is no reading yet.
+    func snapCalibration() {
+        guard let raw = lastRawAngle, raw >= T.calibrationLow else { return }
+        openAngle = FeelMath.clamp(min(raw, T.flatAngle), T.openMin, T.openMax)
+        if logs && abs(openAngle - loggedOpen) > T.calibrationLogStep {
+            loggedOpen = openAngle
+            FeelDemoLog.emit(String(format: "SWOOP-T calib open=%.1f (ready pose)", openAngle))
+        }
     }
 
     // MARK: Calibration

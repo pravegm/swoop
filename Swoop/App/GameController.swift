@@ -338,6 +338,11 @@ final class GameController: ObservableObject, SceneDriver {
         if isPausedByReason || frozen {
             return (session.snapshot, [])
         }
+        // The ready pose (countdown, resume hold) defines "wings spread" for this player.
+        if input == .hinge {
+            if case .countdown = session.snapshot.phase { hinge.snapCalibration() }
+            if readyUntil != nil { hinge.snapCalibration() }
+        }
         if let until = readyUntil {
             let left = until - now
             if left > 0 {

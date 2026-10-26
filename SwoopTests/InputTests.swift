@@ -157,6 +157,23 @@ struct InputTests {
         #expect(far.lastTuck < 0.05)
     }
 
+    /// Duo CI run 40318165524: a player resting at 146.7° during the countdown started 31 % tucked.
+    @Test func readyPoseSnapsTheOpenAngle() {
+        let source = HingeTuckSource(logs: false)
+        source.ingest(angleDegrees: 146.7, at: 1)
+        source.snapCalibration()
+        #expect(abs(source.openAngle - 146.7) < 0.01)
+        #expect(source.tuck(at: 1.5) < 0.02)
+        // Never from a fold (a player already diving during the hold) or below the range.
+        source.ingest(angleDegrees: 125, at: 2)
+        source.snapCalibration()
+        #expect(abs(source.openAngle - 146.7) < 0.01)
+        let low = HingeTuckSource(logs: false)
+        low.ingest(angleDegrees: 141, at: 1)
+        low.snapCalibration()
+        #expect(low.openAngle == HingeTuckTuning.openMin)
+    }
+
     @Test func calibrationStaysInsideItsRange() {
         let flat = HingeTuckSource(logs: false)
         FakeHinge(source: flat).run(20) { _ in 177 }

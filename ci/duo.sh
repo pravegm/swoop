@@ -93,26 +93,31 @@ freeze_wait() {
 # ---- pass: real hinge flight ------------------------------------------------------------------------------
 if [[ " $PASSES " == *" hinge "* ]]; then
   # Held like a book at 150°: the countdown, then a slow tuck/open rhythm (one swell every ~2 s), like a player.
-  hinge_set 150
-  launch hinge-flight "mode=flight;seed=7;hints=fresh"
-  sleep 1.5; shoot duo-01-countdown inner
-  sleep 2.5; shoot duo-02-first-drop inner
-  for i in 1 2 3 4 5 6 7 8; do
-    hinge_sweep 124 0.7; sleep 0.5
-    [[ $i == 3 ]] && shoot duo-03-tucked inner
-    hinge_sweep 156 0.6; sleep 0.4
-    [[ $i == 4 ]] && shoot duo-04-open inner
+  # Run 40318165524: each shot takes ~15 s, so shots inside the rhythm let the storm catch the idle bird before the
+  # first sweep. Now: `mode=attract` (the storm never catches it; the hinge still drives it because no autopilot is
+  # asked for), the rhythm runs with no shots in it, and the frames are taken in holds afterwards.
+  hinge_set 147
+  launch hinge-flight "mode=attract;seed=7;hints=fresh"
+  shoot duo-01-countdown inner
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    hinge_sweep 122 0.7; sleep 0.6
+    hinge_sweep 150 0.6; sleep 0.5
   done
-  shoot duo-05-midflight inner
+  hinge_sweep 122 0.7; shoot duo-03-tucked inner
+  hinge_sweep 150 0.6; shoot duo-04-open inner
   HL="$OUT_ABS/logs/hinge-flight.txt"
   {
     echo "== hinge flight check"
     echo "hinge lines: $(grep -c 'SWOOP-H' "$HL")"
-    grep -E "SWOOP-T (canvas|input|calib|event)" "$HL" | head -40
+    grep -E "SWOOP-T (canvas|input|calib|event)" "$HL" | head -60
   } >>"$RUNLOG"
   tucks=$(grep -cE "SWOOP-T tuck [0-9.]+ angle" "$HL")
   launches=$(grep -c "SWOOP-T event launched" "$HL")
   touchdowns=$(grep -c "SWOOP-T event touchdown" "$HL")
+  # The ready pose (147°) must read as wings spread: the first tuck line after the drop is under 0.05.
+  first=$(sed -n '/SWOOP-T event started/,$p' "$HL" | grep -m1 -oE "SWOOP-T tuck [0-9.]+" | awk '{print $3}')
+  if [[ -n "$first" ]] && awk "BEGIN{exit !($first < 0.05)}"; then log "READY-CALIB PASS (tuck $first after the drop)"
+  else log "READY-CALIB FAIL (tuck ${first:-none} after the drop)"; fi
   if grep -q "SWOOP-T input hinge" "$HL" && (( launches > 0 && touchdowns > 0 )); then
     log "HINGE-FLIGHT PASS (input hinge, launches=$launches touchdowns=$touchdowns tuck-lines=$tucks)"
   else
