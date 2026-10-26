@@ -20,15 +20,21 @@ enum SceneAdapter {
     /// The bird's on-screen radius (view points) used to keep the callout clear of it.
     static let birdRadius: CGFloat = 44
 
-    /// The bird's centre in the play view's own points (y down) and its radius: the scene's last `onBirdPoint` report
-    /// when there is one, else the bird's fixed screen x at mid-height.
+    /// The bird's centre in the play view's own points (y down) and its radius: the scene's last `onBirdPoint` report,
+    /// or nil (R5: `ScreenLayout.size` is the 952 × 670 DESIGN canvas, so a fallback from it landed in the wrong place;
+    /// the views fall back to `defaultBirdPoint` in their own canvas instead).
     static func birdPoint(_ scene: FlightScene?, layout: ScreenLayout?,
                           reported: CGPoint?) -> (point: CGPoint, radius: CGFloat)? {
-        guard scene != nil, let layout else { return nil }
-        if let reported { return (reported, birdRadius) }
+        guard scene != nil, layout != nil, let reported else { return nil }
+        return (reported, birdRadius)
+    }
+
+    /// Where the bird sits when the scene hasn't said: its fixed design x (30 %, mirrored 70 %) at mid-height, in the
+    /// view's points. Pure; tested.
+    nonisolated static func defaultBirdPoint(_ c: AppCanvas) -> CGPoint {
         let f = ScreenLayout.birdScreenFraction
-        let x = layout.size.width * (layout.mirrored ? 1 - f : f)
-        return (CGPoint(x: x, y: layout.size.height * 0.5), birdRadius)
+        let x = ScreenLayout.canvasWidth * (c.mirrored ? 1 - f : f)
+        return c.screenPoint(CGPoint(x: x, y: ScreenLayout.canvasHeight * 0.5))
     }
 
     /// Subscribes to the scene's bird point (≤ 30 Hz, view points, y down).
@@ -57,13 +63,13 @@ enum SceneAdapter {
         scene?.playTitleMorph(tuck: tuck)
     }
 
-    /// The sun's centre in the play view's points (y down), from Scene's `sunCanvasPoint` (canvas, y up), in 8 pt
-    /// steps so the HUD doesn't republish every frame.
-    static func sunScreenPoint(_ scene: FlightScene?, layout: ScreenLayout?) -> CGPoint? {
-        guard let scene, let layout else { return nil }
+    /// The sun's centre in DESIGN canvas points (Scene's `sunCanvasPoint`, y up), in 8 pt steps so the HUD doesn't
+    /// republish every frame. The view converts it with `AppCanvas.screenPoint` (R5: R4 treated it as view points).
+    static func sunDesignPoint(_ scene: FlightScene?) -> CGPoint? {
+        guard let scene else { return nil }
         let p = scene.sunCanvasPoint
         guard p != .zero, p.x.isFinite, p.y.isFinite else { return nil }
-        return CGPoint(x: (p.x / 8).rounded() * 8, y: ((layout.size.height - p.y) / 8).rounded() * 8)
+        return CGPoint(x: (p.x / 8).rounded() * 8, y: (p.y / 8).rounded() * 8)
     }
 
     /// Store captures (demo runs): no book-gutter shade (juror R3 #26).

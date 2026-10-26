@@ -26,26 +26,29 @@ struct ResultsView: View {
 
     /// What kind of card this is: it picks the overline and the buttons.
     enum Kind: Equatable {
-        case flight, firstFlight, scoredDaily, practiceDaily, dailyCard
+        /// `dailySpent`: the Daily card for a try that was started but never filed (R5 P1-4: no "0 m", no Share).
+        case flight, firstFlight, scoredDaily, practiceDaily, dailyCard, dailySpent
 
-        var isDaily: Bool { self == .scoredDaily || self == .practiceDaily || self == .dailyCard }
+        var isDaily: Bool { self != .flight && self != .firstFlight }
+        var isDailyCardKind: Bool { self == .dailyCard || self == .dailySpent }
     }
 
     /// Pure; tested.
-    nonisolated static func classify(isDailyCard: Bool, dailyDay: Int?, practice: Bool, title: String) -> Kind {
-        if isDailyCard { return .dailyCard }
+    nonisolated static func classify(isDailyCard: Bool, dailyDay: Int?, practice: Bool, title: String,
+                                     spentUnfiled: Bool = false) -> Kind {
+        if isDailyCard { return spentUnfiled ? .dailySpent : .dailyCard }
         if dailyDay != nil { return practice ? .practiceDaily : .scoredDaily }
         return title == "First flight" ? .firstFlight : .flight
     }
 
     /// The overline (in `mist`, never gold), with the Daily's display number. Pure; tested.
     nonisolated static func overline(_ kind: Kind, day: Int?) -> String {
-        let n = AppRules.dailyNumber(day: day ?? AppRules.launchDay)
+        let tag = AppRules.dailyTag(day: day ?? AppRules.launchDay)
         switch kind {
         case .flight: return "Flight"
         case .firstFlight: return "First flight"
-        case .scoredDaily, .dailyCard: return "Daily Flight #\(n)"
-        case .practiceDaily: return "Daily #\(n) · practice"
+        case .scoredDaily, .dailyCard, .dailySpent: return "Daily Flight \(tag)"
+        case .practiceDaily: return "Daily \(tag) · practice"
         }
     }
 
@@ -75,7 +78,7 @@ struct ResultsView: View {
 
     private var kind: Kind {
         Self.classify(isDailyCard: summary.isDailyCard, dailyDay: summary.dailyDay, practice: summary.practice,
-                      title: summary.title)
+                      title: summary.title, spentUnfiled: summary.dailySpentUnfiled)
     }
 
     private var today: Int { DailySeed.dayNumber(for: Date()) }
@@ -86,9 +89,11 @@ struct ResultsView: View {
     }
 
     var body: some View {
-        let farRect = ResultsLayout.far(info)
-        let plan = ResultsPlan.make(summary, canvas: info, cardHeight: farRect.height, dailyRowAllowed: dailyRowAllowed)
+        let farSpace = ResultsLayout.far(info)
+        let plan = ResultsPlan.make(summary, canvas: info, cardHeight: farSpace.height, dailyRowAllowed: dailyRowAllowed)
         let c = plan.compact
+        // R5 P1-4: the far card is sized to its content and bottom-anchored (no ~190 pt void above the buttons).
+        let farRect = ResultsLayout.anchored(farSpace, height: plan.farHeight())
         ZStack(alignment: .topLeading) {
             VStack(alignment: .leading, spacing: c ? 8 : 12) {
                 ScrollView(showsIndicators: false) {
@@ -134,14 +139,23 @@ struct ResultsView: View {
         let chip = Self.chip(showsNewBest: outcome.showsNewBest, dailyBest: summary.dailyBest, kind: kind)
         return VStack(alignment: .leading, spacing: c ? 2 : 4) {
             SwoopOverline(text: Self.overline(kind, day: summary.dailyDay), compact: c)
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(ShareText.distance(shownMeters))
-                    .font(SwoopType.hero(c))
+            if kind == .dailySpent {
+                // R5 P1-4: a spent, unfiled try never leads with "0 m".
+                Text("Today's try is spent.")
+                    .font(SwoopType.title(c))
                     .foregroundStyle(SwoopTheme.foam)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                if let chip {
-                    SwoopPill(text: chip, fill: SwoopTheme.rewardGold, fontSize: c ? 12 : 14)
+                    .minimumScaleFactor(0.7)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(ShareText.distance(shownMeters))
+                        .font(SwoopType.hero(c))
+                        .foregroundStyle(SwoopTheme.foam)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                    if let chip {
+                        SwoopPill(text: chip, fill: SwoopTheme.rewardGold, fontSize: c ? 12 : 14)
+                    }
                 }
             }
             if let best = Self.bestLine(kind, showsNewBest: outcome.showsNewBest, best: outcome.best,
@@ -157,7 +171,8 @@ struct ResultsView: View {
     }
 
     private func accessibleHeader(chip: String?) -> String {
-        var parts = [Self.overline(kind, day: summary.dailyDay), ShareText.distance(result.meters)]
+        var parts = [Self.overline(kind, day: summary.dailyDay),
+                     kind == .dailySpent ? "Today's try is spent." : ShareText.distance(result.meters)]
         if let chip { parts.append(chip) }
         if let best = Self.bestLine(kind, showsNewBest: outcome.showsNewBest, best: outcome.best,
                                     previousBest: outcome.previousBest) { parts.append(best) }
@@ -216,7 +231,7 @@ struct ResultsView: View {
         if let up = s.outcome.rankUp {
             let unlocks = ProgressRules.unlockNames(from: up.from, to: up.to)
             let tail = unlocks.isEmpty ? "" : " · New: " + unlocks.joined(separator: ", ")
-            return "Rank up! You're a \(GoalCatalog.rankTitle(up.to))" + tail
+            return RankUpBanner.title(from: up.from, to: up.to, rankTitle: GoalCatalog.rankTitle(up.to)) + tail
         }
         let rows = s.outcome.goals
         guard !rows.isEmpty else { return nil }
@@ -235,7 +250,7 @@ struct ResultsView: View {
         VStack(alignment: .leading, spacing: c ? 8 : 12) {
             if plan.shareThumb {
                 shareThumbnail(side: ResultsPlan.thumbSide(width: width, compact: c))
-                StreakDots(flown: Self.lastSevenDays(controller.store.data, today: today), compact: c)
+                StreakDots(flown: Self.lastSevenDays(controller.store.data, today: today), today: today, compact: c)
             }
             if plan.rankUp, let rankUp = outcome.rankUp {
                 RankUpBanner(rankUp: rankUp, compact: c)
@@ -307,173 +322,106 @@ struct ResultsView: View {
         .accessibilityLabel("Share card")
     }
 
-    // MARK: Buttons
-
-    private enum Secondary: Hashable { case home, share, freeFlight, practise }
+    // MARK: Buttons (R5 P0-1: built from `ResultsButtons`, so a test proves every one has a label and fits)
 
     @ViewBuilder
     private func buttons(_ plan: ResultsPlan) -> some View {
         let c = plan.compact
+        let rows = ResultsButtons.rows(kind: kind, compact: c, dailyRow: plan.dailyRow, oneRow: plan.oneRow,
+                                       dailyTag: AppRules.dailyTag(day: today))
         VStack(alignment: .leading, spacing: ResultsPlan.buttonGap(c)) {
-            switch kind {
-            case .flight, .firstFlight:
-                if plan.dailyRow && !c { dailyRow(compact: c) }
-                if c {
-                    HStack(spacing: 8) {
-                        flyAgainButton(compact: c).layoutPriority(1)
-                        if plan.dailyRow { dailyChip }
-                        secondaryButton(.home, compact: c, iconOnly: true)
-                        secondaryButton(.share, compact: c, iconOnly: true)
-                    }
-                } else {
-                    flyAgainButton(compact: c)
-                    HStack(spacing: 10) {
-                        secondaryButton(.home, compact: c, iconOnly: false)
-                        secondaryButton(.share, compact: c, iconOnly: false)
-                    }
-                }
-                if plan.helper {
-                    FoldHelperText(hud: controller.hud, compact: c)
-                }
-            case .scoredDaily, .dailyCard:
-                if plan.streak { streakLine(compact: c) }
-                shareButton(compact: c, primary: true)
+            if plan.streak { streakLine(compact: c) }
+            ForEach(Array(rows.enumerated()), id: \.offset) { row in
                 HStack(spacing: c ? 8 : 10) {
-                    secondaryButton(kind == .scoredDaily ? .freeFlight : .practise, compact: c, iconOnly: false)
-                    secondaryButton(.home, compact: c, iconOnly: false)
-                }
-            case .practiceDaily:
-                if c {
-                    HStack(spacing: 8) {
-                        primaryButton(compact: c, title: "Practise again", icon: "arrow.clockwise") {
-                            controller.practiseDaily()
-                        }
-                        .layoutPriority(1)
-                        secondaryButton(.home, compact: c, iconOnly: true)
-                        secondaryButton(.share, compact: c, iconOnly: true)
+                    ForEach(row.element, id: \.self) { b in
+                        button(b, compact: c)
                     }
+                }
+            }
+            if plan.helper {
+                FoldHelperText(hud: controller.hud, compact: c)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func button(_ b: ResultsButton, compact: Bool) -> some View {
+        if b.action == .share {
+            shareButton(b, compact: compact)
+        } else if b.iconOnly {
+            Button {
+                FeedbackDirector.shared.uiTap()
+                perform(b.action)
+            } label: {
+                Image(systemName: b.icon)
+            }
+            .buttonStyle(SwoopIconTileStyle(compact: compact))
+            .accessibilityLabel(b.title)
+        } else {
+            let label = Label(b.title, systemImage: b.icon)
+                .labelStyle(.titleAndIcon)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+            Group {
+                if b.action == .flyAgain {
+                    SwoopButton(kind: .primary, height: SwoopTheme.primaryHeight(compact), compact: compact,
+                                action: { perform(b.action) }) { label }
+                        .overlay(FoldFillOverlay(hud: controller.hud, compact: compact).allowsHitTesting(false))
+                        .accessibilityHint(summary.hingeRun ? "Or fold and open your Duo." : "")
                 } else {
-                    primaryButton(compact: c, title: "Practise again", icon: "arrow.clockwise") {
-                        controller.practiseDaily()
-                    }
-                    HStack(spacing: 10) {
-                        secondaryButton(.home, compact: c, iconOnly: false)
-                        secondaryButton(.share, compact: c, iconOnly: false)
-                    }
+                    SwoopButton(kind: b.primary ? .primary : .secondary,
+                                height: b.primary ? SwoopTheme.primaryHeight(compact) : SwoopTheme.secondaryHeight(compact),
+                                compact: compact, action: { perform(b.action) }) { label }
                 }
             }
+            .frame(maxWidth: .infinity)
+            .layoutPriority(b.primary ? 2 : 1)
+            .accessibilityLabel(b.title)
         }
     }
 
-    private func dailyRow(compact: Bool) -> some View {
-        Button {
-            FeedbackDirector.shared.uiTap()
-            controller.playDaily()
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "calendar")
-                Text("Daily Flight #\(AppRules.dailyNumber(day: today)) · one try")
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                Spacer(minLength: 0)
-                Image(systemName: "play.fill")
-                    .font(.system(size: 12, weight: .heavy))
-            }
-            .font(SwoopType.body(compact))
-            .foregroundStyle(SwoopTheme.foam)
-            .padding(.horizontal, 14)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .background(RoundedRectangle(cornerRadius: SwoopTheme.buttonRadius(compact), style: .continuous)
-                .fill(SwoopTheme.surfaceRaised.opacity(0.7)))
-            .frame(minHeight: AppCanvas.minTap)
-            .contentShape(Rectangle())
+    private func perform(_ action: ResultsButton.Action) {
+        switch action {
+        case .flyAgain: controller.flyAgain()
+        case .daily: controller.playDaily()
+        case .home: controller.goHome()
+        case .freeFlight: controller.freeFlight()
+        case .practise, .practiseAgain: controller.practiseDaily()
+        case .share: break
         }
-        .buttonStyle(SwoopPressStyle())
-    }
-
-    /// Compact: the Daily row becomes a 56 pt chip in the button row (UX R3 P0-1).
-    private var dailyChip: some View {
-        SwoopButton(kind: .secondary, height: SwoopTheme.secondaryHeight(true), compact: true,
-                    action: { controller.playDaily() }) {
-            Label("Daily", systemImage: "calendar")
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .frame(width: 104)
-        .accessibilityLabel("Daily Flight number \(AppRules.dailyNumber(day: today)), one try")
     }
 
     @ViewBuilder
-    private func secondaryButton(_ s: Secondary, compact: Bool, iconOnly: Bool) -> some View {
-        let h = SwoopTheme.secondaryHeight(compact)
-        switch s {
-        case .home:
-            SwoopButton(kind: .secondary, height: h, compact: compact, action: { controller.goHome() }) {
-                if iconOnly { Image(systemName: "house.fill") } else { Label("Home", systemImage: "house.fill") }
-            }
-            .frame(width: iconOnly ? 64 : nil)
-            .accessibilityLabel("Home")
-        case .share:
-            shareButton(compact: compact, primary: false, iconOnly: iconOnly)
-                .frame(width: iconOnly ? 64 : nil)
-        case .freeFlight:
-            // R4 P1-12: never an icon-only "Free flight".
-            SwoopButton(kind: .secondary, height: h, compact: compact, action: { controller.freeFlight() }) {
-                Label("Free flight", systemImage: "paperplane.fill")
+    private func shareButton(_ b: ResultsButton, compact: Bool) -> some View {
+        let label = Group {
+            if b.iconOnly {
+                Image(systemName: b.icon)
+            } else {
+                Label(b.title, systemImage: b.icon)
+                    .labelStyle(.titleAndIcon)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    .minimumScaleFactor(0.75)
             }
-            .layoutPriority(1)
-        case .practise:
-            SwoopButton(kind: .secondary, height: h, compact: compact, action: { controller.practiseDaily() }) {
-                Text(compact ? "Practise" : "Practise today's sea")
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-            .layoutPriority(1)
         }
-    }
-
-    private func primaryButton(compact: Bool, title: String, icon: String,
-                               action: @escaping () -> Void) -> some View {
-        SwoopButton(kind: .primary, height: SwoopTheme.primaryHeight(compact), compact: compact, action: action) {
-            Label(title, systemImage: icon)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-    }
-
-    /// Fly again fills with the fold (UX-A3; R4 P1-14 amber, rising, with a foam progress line).
-    private func flyAgainButton(compact: Bool) -> some View {
-        primaryButton(compact: compact, title: "Fly again", icon: "arrow.clockwise") { controller.flyAgain() }
-            .overlay(FoldFillOverlay(hud: controller.hud, compact: compact).allowsHitTesting(false))
-            .accessibilityHint(summary.hingeRun ? "Or fold and open your Duo." : "")
-    }
-
-    @ViewBuilder
-    private func shareButton(compact: Bool, primary: Bool, iconOnly: Bool = false) -> some View {
-        let h = primary ? SwoopTheme.primaryHeight(compact) : SwoopTheme.secondaryHeight(compact)
-        let style = SwoopButtonStyle(kind: primary ? .primary : .secondary, height: h, compact: compact)
-        Group {
+        let link = Group {
             if let shareImage {
                 ShareLink(item: shareImage, message: Text(summary.share),
-                          preview: SharePreview("Swoop", image: shareImage)) {
-                    shareLabel(iconOnly: iconOnly)
-                }
+                          preview: SharePreview("Swoop", image: shareImage)) { label }
             } else {
-                ShareLink(item: summary.share) { shareLabel(iconOnly: iconOnly) }
+                ShareLink(item: summary.share) { label }
             }
         }
-        .buttonStyle(style)
-        .accessibilityLabel("Share")
-    }
-
-    @ViewBuilder
-    private func shareLabel(iconOnly: Bool) -> some View {
-        if iconOnly {
-            Image(systemName: "square.and.arrow.up")
+        if b.iconOnly {
+            link.buttonStyle(SwoopIconTileStyle(compact: compact))
+                .accessibilityLabel(b.title)
         } else {
-            Label("Share", systemImage: "square.and.arrow.up").lineLimit(1)
+            link.buttonStyle(SwoopButtonStyle(kind: b.primary ? .primary : .secondary,
+                                              height: b.primary ? SwoopTheme.primaryHeight(compact)
+                                                  : SwoopTheme.secondaryHeight(compact),
+                                              compact: compact))
+                .frame(maxWidth: .infinity)
+                .layoutPriority(b.primary ? 2 : 1)
+                .accessibilityLabel(b.title)
         }
     }
 
@@ -555,6 +503,8 @@ struct ResultsPlan: Equatable {
     var goals = 0
     var smallLines = 0
     var shareThumb = false
+    /// Short cards: Fly again, Home and Share in one row (the labelled Fly again stays the biggest control).
+    var oneRow = false
 
     var hasSideCard: Bool { rankUp || goals > 0 || smallLines > 0 || shareThumb }
 
@@ -583,31 +533,48 @@ struct ResultsPlan: Equatable {
     static func make(_ s: ResultSummary, canvas: AppCanvas, cardHeight: CGFloat, dailyRowAllowed: Bool)
         -> ResultsPlan {
         let kind = ResultsView.classify(isDailyCard: s.isDailyCard, dailyDay: s.dailyDay, practice: s.practice,
-                                        title: s.title)
+                                        title: s.title, spentUnfiled: s.dailySpentUnfiled)
         let c = cardHeight < compactCardHeight
         var p = ResultsPlan(kind: kind, compact: c, twoPages: !canvas.singlePage)
         p.hasBest = ResultsView.bestLine(kind, showsNewBest: s.outcome.showsNewBest, best: s.outcome.best,
                                          previousBest: s.outcome.previousBest) != nil
-        p.hasHook = AppRules.hookLine(meters: s.result.meters, best: s.outcome.best, previousBest: s.outcome.previousBest,
-                                      lighthousesPassed: s.result.lighthouses, lastLighthouse: s.result.lastLighthouseName,
-                                      seed: s.result.seed, firstFlight: kind == .firstFlight) != nil
-            && !(c && kind.isDaily)    // compact Dailies give the room to the streak and two button rows
-        p.hasStats = !AppRules.statsLine(perfects: s.result.perfects, chain: s.result.bestChain,
-                                         lighthouses: s.result.lighthouses).isEmpty
-        p.spentLine = s.dailySpentUnfiled
+        p.hasHook = kind != .dailySpent
+            && AppRules.hookLine(meters: s.result.meters, best: s.outcome.best, previousBest: s.outcome.previousBest,
+                                 lighthousesPassed: s.result.lighthouses, lastLighthouse: s.result.lastLighthouseName,
+                                 seed: s.result.seed, firstFlight: kind == .firstFlight) != nil
+        p.hasStats = kind != .dailySpent && !AppRules.statsLine(perfects: s.result.perfects, chain: s.result.bestChain,
+                                                                lighthouses: s.result.lighthouses).isEmpty
+        p.spentLine = false    // the spent card says it in its hero (R5 P1-4)
         p.dailyRow = (kind == .flight || kind == .firstFlight) && dailyRowAllowed
         p.helper = (kind == .flight || kind == .firstFlight) && s.showsFoldHelper
-        p.streak = kind == .scoredDaily || kind == .dailyCard
+        p.streak = kind == .scoredDaily || kind == .dailyCard || kind == .dailySpent
         if p.twoPages {
-            p.rankUp = s.outcome.rankUp != nil && kind != .dailyCard
-            p.goals = p.rankUp || kind == .dailyCard ? 0 : s.outcome.goals.count
+            p.rankUp = s.outcome.rankUp != nil && !kind.isDailyCardKind
+            p.goals = p.rankUp || kind.isDailyCardKind ? 0 : s.outcome.goals.count
             p.smallLines = ResultsView.smallLines(s, limit: smallLineLimit(c)).count
-            // The Daily card's hero is its share card (it has no goals); a scored Daily needs the room for them.
+            // The flown Daily card's hero is its share card; a spent try has nothing to share.
             p.shareThumb = kind == .dailyCard
         } else {
             p.deckSummary = ResultsView.deckSummary(s) != nil
         }
+        // R5: every button row must fit the card's width (labels never squeezed out): the Daily row goes first.
+        let inner = ResultsLayout.far(canvas).width - 2 * padding(c)
+        if !p.rowsFit(width: inner) { p.dailyRow = false }
+        if !p.rowsFit(width: inner) && c { p.oneRow = true }
+        // Then fit the height by giving up, in order, the second button row (short cards only), the Daily row, the
+        // hook, the stats.
+        if p.farHeight() > cardHeight && c { p.oneRow = true }
+        if p.farHeight() > cardHeight { p.dailyRow = false }
+        if p.farHeight() > cardHeight { p.hasHook = false }
+        if p.farHeight() > cardHeight { p.hasStats = false }
         return p
+    }
+
+    /// Whether every button row fits `width` (tiles at 64, labels at their minimum).
+    func rowsFit(width: CGFloat) -> Bool {
+        ResultsButtons.rows(kind: kind, compact: compact, dailyRow: dailyRow, oneRow: oneRow,
+                            dailyTag: "26 Oct")
+            .allSatisfy { ResultsButtons.fits($0, width: width, compact: compact) }
     }
 
     /// The far card's height bound.
@@ -625,20 +592,15 @@ struct ResultsPlan: Equatable {
         return h
     }
 
+    /// The button block: the streak line, the rows from `ResultsButtons`, the fold helper.
     func buttonsHeight() -> CGFloat {
         let c = compact
         let g = Self.buttonGap(c)
-        switch kind {
-        case .flight, .firstFlight:
-            var h: CGFloat = c ? Self.primary(c) : Self.primary(c) + g + Self.secondary
-            if dailyRow && !c { h += Self.secondary + g }
-            if helper { h += g + Self.line(Self.caption(c)) }
-            return h
-        case .scoredDaily, .dailyCard:
-            return (streak ? Self.line(Self.caption(c)) + g : 0) + Self.primary(c) + g + Self.secondary
-        case .practiceDaily:
-            return c ? Self.primary(c) : Self.primary(c) + g + Self.secondary
-        }
+        let rows = ResultsButtons.rows(kind: kind, compact: c, dailyRow: dailyRow, oneRow: oneRow, dailyTag: "")
+        var parts: [CGFloat] = rows.map { row in row.contains { $0.primary } ? Self.primary(c) : Self.secondary }
+        if streak { parts.insert(Self.line(Self.caption(c)), at: 0) }
+        if helper { parts.append(Self.line(Self.caption(c))) }
+        return parts.reduce(0, +) + CGFloat(max(parts.count - 1, 0)) * g
     }
 
     /// The bird-page card's height bound at `width`.
@@ -661,26 +623,137 @@ struct ResultsPlan: Equatable {
     }
 }
 
-/// The last 7 days of the Daily as dots (flame where flown), oldest first.
-struct StreakDots: View {
-    let flown: [Bool]
+// MARK: - The buttons as data (R5 P0-1): pure, tested
+
+/// One results button: what it does, its label (also its VoiceOver label: never empty), its glyph, and whether it is
+/// the primary or an icon-only 64 × 56 tile.
+struct ResultsButton: Hashable {
+    enum Action: Hashable { case flyAgain, daily, home, share, freeFlight, practise, practiseAgain }
+
+    var action: Action
+    var title: String
+    var icon: String
+    var primary = false
+    var iconOnly = false
+
+    static let tileWidth: CGFloat = 64
+
+    /// The narrowest a labelled button can be before its label would clip: glyph + gap + text at 0.75 × (its minimum
+    /// scale) + the style's 12 pt side padding. Text width is estimated at 0.56 em per character (SF Rounded).
+    func minWidth(compact c: Bool) -> CGFloat {
+        if iconOnly { return Self.tileWidth }
+        let size: CGFloat = primary ? (c ? 18 : 20) : (c ? 15 : 17)
+        return 20 + 6 + CGFloat(title.count) * size * 0.56 * 0.75 + 24
+    }
+}
+
+enum ResultsButtons {
+    /// The rows, top to bottom (UX R4 P1-1/P1-2, juror R4 #1/#6):
+    /// - a Flight: the Daily row (Duo), Fly again full width and labelled, then [Daily · one try (compact) | Home | Share];
+    ///   a very short card: one row [Fly again | Home | Share];
+    /// - a scored Daily: Share, then [Free flight | Home]; the flown Daily card: Share, then [Practise | Home];
+    /// - a spent, unfiled Daily: Practise today's sea, then Home (no Share: there is nothing to share);
+    /// - a practice Daily: Practise again, then [Home | Share].
+    /// Home and Share are icon-only tiles on compact cards, labelled on the Duo.
+    static func rows(kind: ResultsView.Kind, compact c: Bool, dailyRow: Bool, oneRow: Bool, dailyTag: String)
+        -> [[ResultsButton]] {
+        let home = ResultsButton(action: .home, title: "Home", icon: "house.fill", iconOnly: c)
+        let share = ResultsButton(action: .share, title: "Share", icon: "square.and.arrow.up", iconOnly: c)
+        switch kind {
+        case .flight, .firstFlight:
+            let fly = ResultsButton(action: .flyAgain, title: "Fly again", icon: "arrow.clockwise", primary: true)
+            if oneRow { return [[fly, home, share]] }
+            if c {
+                var second: [ResultsButton] = []
+                if dailyRow { second.append(ResultsButton(action: .daily, title: "Daily · one try", icon: "calendar")) }
+                second.append(home)
+                second.append(share)
+                return [[fly], second]
+            }
+            var rows: [[ResultsButton]] = []
+            if dailyRow {
+                rows.append([ResultsButton(action: .daily, title: "Daily Flight \(dailyTag) · one try", icon: "calendar")])
+            }
+            rows.append([fly])
+            rows.append([home, share])
+            return rows
+        case .scoredDaily:
+            return [[ResultsButton(action: .share, title: "Share", icon: "square.and.arrow.up", primary: true)],
+                    [ResultsButton(action: .freeFlight, title: "Free flight", icon: "paperplane.fill"), home]]
+        case .dailyCard:
+            return [[ResultsButton(action: .share, title: "Share", icon: "square.and.arrow.up", primary: true)],
+                    [ResultsButton(action: .practise, title: c ? "Practise" : "Practise today's sea",
+                                   icon: "arrow.clockwise"), home]]
+        case .dailySpent:
+            return [[ResultsButton(action: .practise, title: "Practise today's sea", icon: "arrow.clockwise",
+                                   primary: true)],
+                    [ResultsButton(action: .home, title: "Home", icon: "house.fill")]]
+        case .practiceDaily:
+            return [[ResultsButton(action: .practiseAgain, title: "Practise again", icon: "arrow.clockwise",
+                                   primary: true)],
+                    [home, share]]
+        }
+    }
+
+    /// Whether a row fits `width`: the tiles at 64, the labelled buttons at their minimum, plus the gaps. Pure; tested.
+    static func fits(_ row: [ResultsButton], width: CGFloat, compact c: Bool) -> Bool {
+        let gap: CGFloat = c ? 8 : 10
+        let need = row.map { $0.minWidth(compact: c) }.reduce(0, +) + CGFloat(max(row.count - 1, 0)) * gap
+        return need <= width + 0.5
+    }
+}
+
+/// An icon-only results button (Home, Share on compact cards): the glyph centred, 20 pt, in a 64 × 56 secondary tile.
+/// R5 P0-1: the glyph can never float outside its tile, whatever its neighbour takes.
+struct SwoopIconTileStyle: ButtonStyle {
     var compact: Bool = false
 
-    nonisolated static func height(_ c: Bool) -> CGFloat { c ? 20 : 24 }
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 20, weight: .semibold))
+            .foregroundStyle(SwoopTheme.foam)
+            .frame(width: ResultsButton.tileWidth, height: AppCanvas.minTap)
+            .background(SwoopButtonBackground(kind: .secondary, pressed: configuration.isPressed, compact: compact))
+            .contentShape(Rectangle())
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .fixedSize()
+            .animation(.spring(response: 0.18, dampingFraction: 0.7), value: configuration.isPressed)
+    }
+}
+
+/// The last 7 days of the Daily as dots (flame where flown), oldest first, under a "Last 7 days" overline with each
+/// day's weekday initial (UX R4 P2-7: the dots had no key).
+struct StreakDots: View {
+    let flown: [Bool]
+    var today: Int = 0
+    var compact: Bool = false
+
+    nonisolated static func height(_ c: Bool) -> CGFloat {
+        ResultsPlan.line(ResultsPlan.overline(c)) + 4 + (c ? 12 : 14) + 2 + ResultsPlan.line(11)
+    }
 
     var body: some View {
-        HStack(spacing: compact ? 8 : 10) {
-            ForEach(Array(flown.enumerated()), id: \.offset) { item in
-                Circle()
-                    .fill(item.element ? SwoopTheme.flame : SwoopTheme.surfaceRaised)
-                    .overlay(Circle().stroke(SwoopTheme.stroke, lineWidth: 1))
-                    .frame(width: compact ? 12 : 14, height: compact ? 12 : 14)
+        VStack(alignment: .leading, spacing: 4) {
+            SwoopOverline(text: "Last 7 days", compact: compact)
+            HStack(spacing: compact ? 8 : 10) {
+                ForEach(Array(flown.enumerated()), id: \.offset) { item in
+                    VStack(spacing: 2) {
+                        Circle()
+                            .fill(item.element ? SwoopTheme.flame : SwoopTheme.surfaceRaised)
+                            .overlay(Circle().stroke(SwoopTheme.stroke, lineWidth: 1))
+                            .frame(width: compact ? 12 : 14, height: compact ? 12 : 14)
+                        Text(AppRules.weekdayInitial(day: today - (flown.count - 1) + item.offset))
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundStyle(SwoopTheme.mist)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
         }
-        .frame(height: Self.height(compact))
+        .frame(height: Self.height(compact), alignment: .top)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Dailies this week: \(flown.filter { $0 }.count) of 7")
+        .accessibilityLabel("Dailies in the last 7 days: \(flown.filter { $0 }.count) of 7")
     }
 }
 
@@ -780,7 +853,7 @@ struct ShareCardView: View {
     /// "Daily Flight #1 · 23 Perfects · past Saltlight" / "23 Perfects · past Saltlight". Pure; tested.
     nonisolated static func subtitle(_ s: ResultSummary) -> String {
         var parts: [String] = []
-        if let day = s.dailyDay { parts.append("Daily Flight #\(AppRules.dailyNumber(day: day))") }
+        if let day = s.dailyDay { parts.append("Daily Flight \(AppRules.dailyTag(day: day))") }
         if s.result.perfects > 0 { parts.append(ShareText.perfects(s.result.perfects)) }
         let past = s.result.lastLighthouseName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !past.isEmpty { parts.append("past \(past)") }
@@ -855,6 +928,12 @@ struct RankUpBanner: View {
             + 3 + 3 * ResultsPlan.line(ResultsPlan.caption(c))
     }
 
+    /// "Rank up! You're a Tern" or, after a cascade (R5 P1-9), "+3 ranks! You're a Swell Rider". Pure; tested.
+    nonisolated static func title(from: Int, to: Int, rankTitle: String) -> String {
+        let n = to - from
+        return n >= 2 ? "+\(n) ranks! You're a \(rankTitle)" : "Rank up! You're a \(rankTitle)"
+    }
+
     /// "New: Tern, Rose Dusk" (empty when nothing unlocked). Pure; tested.
     nonisolated static func unlockLine(birds: [String], skies: [String], trails: [String] = []) -> String {
         let all = birds + skies + trails
@@ -881,7 +960,7 @@ struct RankUpBanner: View {
                 .frame(width: compact ? 36 : 46, height: compact ? 36 : 46)
                 .background(Circle().fill(SwoopTheme.rewardGold))
             VStack(alignment: .leading, spacing: 3) {
-                Text("Rank up! You're a \(GoalCatalog.rankTitle(rankUp.to))")
+                Text(Self.title(from: rankUp.from, to: rankUp.to, rankTitle: GoalCatalog.rankTitle(rankUp.to)))
                     .font(SwoopType.headline(compact))
                     .foregroundStyle(SwoopTheme.foam)
                     .lineLimit(2)

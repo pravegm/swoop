@@ -106,14 +106,16 @@ struct SceneTests {
             let folded = shut.leftWing.boundingBoxOfPath.union(shut.rightWing.boundingBoxOfPath)
             #expect(folded.width <= w * 0.6)
             #expect(folded.width < spread.width * 0.7)
-            // A dart, not a speck: the App only refits the title when it is narrower than a quarter of the width;
-            // and within ±0.17 w of the fold (ART §8), never onto the menu card.
-            #expect(folded.width >= w * 0.25 && folded.width <= w * 0.345)
-            // The tucked tips sweep down and back past the tail (y down), and each wing stays on its own side.
+            // R5 (ROUND-5 P1-6): a narrow gannet dart, at most 14 % of the width.
+            #expect(folded.width <= w * 0.145 && folded.width >= w * 0.10)
+            // The body's invisible specks keep its box at the full span at every tuck, so the App's fit (which refits
+            // anything under 25 % wide) leaves the dart at its real size.
             let shutBody = shut.body.boundingBoxOfPath
+            #expect(shutBody.width >= w * 0.9 && shutBody.width <= w * 0.93)
+            // The tucked tips sweep back past the tail (y down), and each wing stays on its own side of the body.
             #expect(shut.leftWing.boundingBoxOfPath.maxY > shutBody.maxY)
-            #expect(shut.leftWing.boundingBoxOfPath.minX < w * 0.5 - shutBody.width * 0.5)
-            #expect(shut.rightWing.boundingBoxOfPath.maxX > w * 0.5 + shutBody.width * 0.5)
+            #expect(shut.leftWing.boundingBoxOfPath.minX < w * 0.5 - w * 0.045)
+            #expect(shut.rightWing.boundingBoxOfPath.maxX > w * 0.5 + w * 0.045)
 
             let half = BirdArt.titlePath(for: b, tuck: 0.5, width: w, height: h)
             let mid = half.leftWing.boundingBoxOfPath.union(half.rightWing.boundingBoxOfPath)
@@ -146,11 +148,12 @@ struct SceneTests {
                 #expect(detail.leftMirrors.isEmpty && detail.rightMirrors.isEmpty)
                 let wing = shut.leftWing.boundingBoxOfPath
                 let body = shut.body.boundingBoxOfPath
-                // The wing fills the space beside the body: its box is at least ~30 % as wide as it is tall.
-                #expect(wing.width >= wing.height * 0.3)
-                // It stays within ±0.17 w of the fold, and the tips reach behind the tail.
-                #expect(wing.minX >= w * 0.5 - w * 0.17)
+                // A gannet dart (R5): tight along the body, longer than it is wide, ≤ 0.07 w from the fold, the tips
+                // behind the tail; the white band is gone too (it hung beside the tail like legs).
+                #expect(wing.minX >= w * 0.5 - w * 0.0705)
+                #expect(wing.height > wing.width * 2)
                 #expect(wing.maxY > body.maxY)
+                #expect(detail.leftBand.isEmpty && detail.rightBand.isEmpty)
                 #expect(!detail.beakLower.isEmpty && !detail.headContour.isEmpty)
             }
         }
@@ -223,6 +226,53 @@ struct SceneTests {
             #expect(last - first > 60)
         }
         for i in 1..<edges.count { #expect(edges[i] >= edges[i - 1] - 0.5) }
+    }
+
+    /// ROUND-5 P1-5: the storm never reaches the HUD band (the pause button and the meter), on the Duo or a phone,
+    /// even at contact.
+    @Test @MainActor func stormStaysClearOfTheHUD() {
+        for layout in [SceneTests.duo, SceneTests.phone] {
+            let scene = FlightScene(layout: layout)
+            let driver = SceneTestsDriver()
+            scene.driver = driver
+            scene.reset()
+            driver.snap.phase = .flying
+            driver.snap.stormX = -60
+            var now: TimeInterval = 70
+            for _ in 0..<90 {
+                scene.update(now)
+                now += 1.0 / 120.0
+                #expect(scene.stormTopY <= layout.visibleRect.maxY - SceneLook.stormHUDClearance + 0.5)
+            }
+        }
+    }
+
+    /// REVIEW-4 juror #7: the caught / Results sea settles into one calm swell.
+    @Test func caughtSeaIsOneCalmSwell() {
+        for x in stride(from: 0.0, to: 4000.0, by: 37.0) {
+            let h = 180 * sin(x * 0.02)
+            #expect(SceneSeaView.calmed(h, x: x, calm: 1) == h)
+            let c = SceneSeaView.calmed(h, x: x, calm: 0)
+            #expect(abs(c) <= 60)
+        }
+        #expect(SceneLook.calmSwellLength >= 500)
+    }
+
+    /// REVIEW-4 juror #8: the Birds preview fits every pose (no clipped wing) at ≤ 2.2× the in-game size.
+    @Test func birdPreviewNeverClips() {
+        for b in SceneTests.allBirds() {
+            for size in [CGSize(width: 220, height: 160), CGSize(width: 600, height: 320), CGSize(width: 120, height: 90)] {
+                let t = BirdArt.previewTransform(for: b, in: size)
+                let env = BirdArt.previewEnvelope(for: b).applying(t)
+                #expect(env.minX >= -0.5 && env.maxX <= size.width + 0.5)
+                #expect(env.minY >= -0.5 && env.maxY <= size.height + 0.5)
+                #expect(abs(t.a) <= BirdArt.previewMaxUnit + 0.001)
+            }
+        }
+        #expect(BirdArt.isDark(Bird(id: .petrel, name: "", blurb: "", body: RGBA(hex: 0x2B2F36), wing: RGBA(hex: 0x2B2F36),
+                                    wingTip: RGBA(hex: 0x111111), beak: RGBA(hex: 0x333333), trail: RGBA(hex: 0x9DB4FF),
+                                    span: 1.1, pointiness: 0.8, unlockRank: 0)))
+        #expect(!BirdArt.isDark(SceneDefaults.bird))
     }
 
     @Test func perfectRingsEscalateWithTheChain() {

@@ -145,7 +145,9 @@ struct ProgressStoreTests {
         var data = ProgressData()
         data.bestMeters = 7_480
         data.rank = 3
-        data.goalProgress = ["g1": 0.5]
+        // A real goal id: progress for ids that are gone is dropped on load (R5).
+        let realGoal = GoalCatalog.goals(forRank: 3).first?.id ?? "r3"
+        data.goalProgress = [realGoal: 0.5]
         data.daily[300] = DailyRecord(meters: 4_200, perfects: 12, lighthouses: 1, lastLighthouseName: "Saltlight",
                                       finished: true)
         data.dailyAttempted = [300]
@@ -781,7 +783,7 @@ struct RoundThreeRuleTests {
         #expect(ResultsView.classify(isDailyCard: false, dailyDay: 3, practice: true, title: "") == .practiceDaily)
         #expect(ResultsView.classify(isDailyCard: false, dailyDay: nil, practice: false, title: "First flight")
                 == .firstFlight)
-        #expect(ResultsView.overline(.scoredDaily, day: 298) == "Daily Flight #1")
+        // Before launch the Daily shows its date (R5: no "3-day streak" on "#1"); from launch, its number.
         #expect(ResultsView.overline(.dailyCard, day: DailySeed.launchDay + 9) == "Daily Flight #10")
         #expect(ResultsView.overline(.firstFlight, day: nil) == "First flight")
         #expect(ResultsView.bestLine(.firstFlight, showsNewBest: false, best: 2_100, previousBest: 0) == nil)
@@ -804,7 +806,7 @@ struct RoundThreeRuleTests {
                                                     lastLighthouse: "Saltlight"),
                                     outcome: RecordOutcome(), title: "Daily Flight #298", dailyDay: 298,
                                     practice: false, share: "")
-        #expect(ShareCardView.subtitle(summary) == "Daily Flight #1 · 23 Perfects · past Saltlight")
+        #expect(ShareCardView.subtitle(summary) == "Daily Flight 26 Oct · 23 Perfects · past Saltlight")
         #expect(ResultsView.smallLines(summary).isEmpty)
         summary.outcome.newLogbook = ["Saltlight"]
         summary.outcome.dailyGraceKept = true
@@ -833,9 +835,10 @@ struct RoundThreeRuleTests {
         #expect(ClosedCard.stormFill(.nan) == 0)
         #expect(ClosedCard.stormFill(400) < ClosedCard.stormFill(800))
         #expect(ClosedCard.stormLine(0).close)
-        #expect(ClosedCard.stormLine(0).text == "Storm close")
-        #expect(!ClosedCard.stormLine(1_000_000).close)
-        #expect(ClosedCard.stormLine(1_000_000).text == "Storm far · lead 100 %")
+        #expect(ClosedCard.stormLine(250).text == "Storm 250 m behind")
+        #expect(ClosedCard.stormLine(250).close)
+        #expect(!ClosedCard.stormLine(900).close)
+        #expect(ClosedCard.stormLine(1_200).text == "Storm 1.20 km behind")
         #expect(ClosedCard.bestLine(meters: 4_000, best: 0) == "No best yet: this flight sets it")
         #expect(ClosedCard.bestLine(meters: 5_500, best: 6_100) == "600 m to your best")
         #expect(ClosedCard.bestLine(meters: 4_000, best: 6_100) == "Beat 6.10 km to set a best")
@@ -1178,11 +1181,15 @@ struct RoundFourTests {
         #expect(!GameController.isDailyBest(makeRun(meters: 9_000), data: data))
         let c = canvas(874, 402, fold: false, insets: EdgeInsets(top: 0, leading: 62, bottom: 21, trailing: 62))
         let g = TouchWingFeedback.glyphCenter(birdPage: c.birdPage, height: c.size.height)
-        #expect(g.x > c.birdPage.minX + 100)               // off the left thumb
-        let glyphY: CGFloat = 402 - 40
+        #expect(abs(g.x - (c.birdPage.minX + c.birdPage.width * 0.25)) < 0.01)    // off the thumb, off the centre
+        let glyphY: CGFloat = 402 - 28                                            // under the skim line
         #expect(abs(g.y - glyphY) < 0.5)
-        #expect(TouchWingFeedback.glyphAlpha(tuck: 0) == 0.35)
+        #expect(TouchWingFeedback.glyphAlpha(tuck: 0) == 0.55)
         #expect(abs(TouchWingFeedback.glyphAlpha(tuck: 1) - 0.9) < 1e-9)
+        #expect(TouchWingFeedback.glyphAlpha(tuck: 1, birdNear: true) == 0.15)
+        #expect(TouchWingFeedback.birdNear(bird: CGPoint(x: g.x + 20, y: g.y - 30), glyph: g))
+        #expect(!TouchWingFeedback.birdNear(bird: CGPoint(x: g.x, y: g.y - 200), glyph: g))
+        #expect(!TouchWingFeedback.birdNear(bird: nil, glyph: g))
     }
 
     #if DEBUG
@@ -1191,6 +1198,210 @@ struct RoundFourTests {
         #expect(c.freezeOn == .flathold)
         #expect(c.paused && c.nudge && c.posePhone)
         #expect(!DemoConfig.parse("pose=duo").posePhone)
+    }
+    #endif
+}
+
+// MARK: - Round 5
+
+struct RoundFiveTests {
+    private let kinds: [ResultsView.Kind] = [.flight, .firstFlight, .scoredDaily, .practiceDaily, .dailyCard, .dailySpent]
+
+    /// R5 P0-1: every results / Daily button has a label (its VoiceOver label too), Home and Share are the only
+    /// icon-only tiles, a Flight's "Fly again" is always labelled and primary, and a spent Daily offers no Share.
+    @Test func everyButtonHasALabel() {
+        for kind in kinds {
+            for compact in [false, true] {
+                for dailyRow in [false, true] {
+                    for oneRow in [false, true] {
+                        let rows = ResultsButtons.rows(kind: kind, compact: compact, dailyRow: dailyRow, oneRow: oneRow,
+                                                       dailyTag: "26 Oct")
+                        let all = rows.flatMap { $0 }
+                        #expect(!all.isEmpty)
+                        #expect(rows.allSatisfy { !$0.isEmpty })
+                        for b in all {
+                            #expect(!b.title.trimmingCharacters(in: .whitespaces).isEmpty)
+                            #expect(!b.icon.isEmpty)
+                            if b.iconOnly {
+                                #expect(b.action == .home || b.action == .share)
+                                #expect(b.minWidth(compact: compact) == ResultsButton.tileWidth)
+                            }
+                        }
+                        #expect(all.filter { $0.primary }.count == 1)
+                        if kind == .flight || kind == .firstFlight {
+                            let fly = all.first { $0.action == .flyAgain }
+                            #expect(fly?.primary == true)
+                            #expect(fly?.iconOnly == false)
+                        }
+                        if kind == .dailySpent { #expect(!all.contains { $0.action == .share }) }
+                        if kind == .scoredDaily || kind == .dailyCard { #expect(all.contains { $0.action == .home }) }
+                    }
+                }
+            }
+        }
+    }
+
+    /// R5 P0-1 / P1-4: on every canvas and variant each button row fits its card, and the far card is sized to its
+    /// content and bottom-anchored.
+    @Test func buttonRowsFitEveryCanvas() {
+        let canvases = testCanvases + [deckCanvas(669, 447.5), deckCanvas(466, 342)]
+        for c in canvases {
+            let far = ResultsLayout.far(c)
+            for s in resultsVariants() {
+                for dailyRow in [false, true] {
+                    let plan = ResultsPlan.make(s, canvas: c, cardHeight: far.height, dailyRowAllowed: dailyRow)
+                    #expect(plan.rowsFit(width: far.width - 2 * ResultsPlan.padding(plan.compact)),
+                            "a button row overflows on \(c.size) for \(s.title)")
+                    let rect = ResultsLayout.anchored(far, height: plan.farHeight())
+                    #expect(abs(rect.maxY - far.maxY) < 0.01)
+                    #expect(rect.height <= far.height)
+                }
+            }
+        }
+        let space = CGRect(x: 0, y: 10, width: 400, height: 600)
+        #expect(ResultsLayout.anchored(space, height: 450) == CGRect(x: 0, y: 160, width: 400, height: 450))
+        #expect(ResultsLayout.anchored(space, height: 900).height == 600)
+    }
+
+    @Test func aSpentDailyNeverLeadsWithZero() {
+        #expect(ResultsView.classify(isDailyCard: true, dailyDay: 400, practice: false, title: "",
+                                     spentUnfiled: true) == .dailySpent)
+        let spent = resultsVariants()[5]
+        let duo = canvas(951, 669, fold: true)
+        let plan = ResultsPlan.make(spent, canvas: duo, cardHeight: ResultsLayout.far(duo).height, dailyRowAllowed: true)
+        #expect(plan.kind == .dailySpent)
+        #expect(!plan.shareThumb)
+        #expect(!plan.hasHook)
+        #expect(!plan.hasStats)
+        #expect(plan.streak)
+    }
+
+    @Test func pauseCardsShowTheHUDsValue() {
+        #expect(AppRules.hudMeters(89.7) == 89)
+        #expect(AppRules.hudMeters(999.9) == 999)
+        #expect(AppRules.hudMeters(1_234.5) == 1_230)
+        #expect(AppRules.hudMeters(.nan) == 0)
+        #expect(AppRules.hudMeters(-3) == 0)
+        for d in [0.0, 89.4, 99.9, 101.2, 999.0, 1_004.0, 11_885.0] {
+            let published = Double(AppRules.hudMeters(d))
+            let hud = ShareText.hudDistance(published)
+            #expect(ShareText.distance(published) == "\(hud.value) \(hud.unit)")
+        }
+    }
+
+    @Test func splashAndChainBreaksAlwaysShow() {
+        // The default bird spot is in the VIEW's points (ScreenLayout.size is the design canvas): on the bird page.
+        let phone = canvas(874, 402, fold: false)
+        let d = SceneAdapter.defaultBirdPoint(phone)
+        #expect(phone.birdPage.insetBy(dx: -40, dy: 0).contains(CGPoint(x: d.x, y: 200)))
+        #expect(abs(d.y - 201) < 2)
+        #expect(HUDSplashMark(lostChain: 4, point: .zero, serial: 1, splash: false).text == "×4 lost")
+        #expect(HUDSplashMark(lostChain: 4, point: .zero, serial: 1, splash: true).text == "Splash · ×4 lost")
+        #expect(HUDSplashMark(lostChain: nil, point: .zero, serial: 1, splash: false).text == "Chain lost")
+    }
+
+    @Test func countdownNeverStartsTucked() {
+        var g = AppRules.countdownGate(raw: .nudge, budgetUsed: 1, budget: 4, lowRest: nil, startTuck: 0,
+                                       remaining: 1, step: 0.016)
+        #expect(g.hold == .nudge)
+        #expect(!g.offerTouch)
+        g = AppRules.countdownGate(raw: .nudge, budgetUsed: 4, budget: 4, lowRest: .snappedToFloor, startTuck: 0.3,
+                                   remaining: 1, step: 0.016)
+        #expect(g.hold == .free)
+        #expect(!g.offerTouch)
+        g = AppRules.countdownGate(raw: .nudge, budgetUsed: 4, budget: 4, lowRest: .tooLow, startTuck: 0.9,
+                                   remaining: 1, step: 0.016)
+        #expect(g.hold == .nudge)
+        #expect(g.offerTouch)
+        g = AppRules.countdownGate(raw: .flat, budgetUsed: 4.1, budget: 4, lowRest: nil, startTuck: 0, remaining: 1,
+                                   step: 0.016)
+        #expect(g.hold == .free)
+        g = AppRules.countdownGate(raw: .free, budgetUsed: 0, budget: 4, lowRest: nil, startTuck: 0.6,
+                                   remaining: 0.01, step: 0.016)
+        #expect(g.hold == .nudge)
+        #expect(!g.offerTouch)
+        g = AppRules.countdownGate(raw: .free, budgetUsed: 0, budget: 4, lowRest: nil, startTuck: 0.6,
+                                   remaining: 0.9, step: 0.016)
+        #expect(g.hold == .free)
+        g = AppRules.countdownGate(raw: .free, budgetUsed: 4, budget: 4, lowRest: nil, startTuck: 0.7,
+                                   remaining: 0.01, step: 0.016)
+        #expect(g.hold == .nudge)
+        #expect(g.offerTouch)
+    }
+
+    @Test func dailyTagAndWeekdays() {
+        #expect(AppRules.dailyTag(day: 298) == "26 Oct")
+        #expect(AppRules.dailyTag(day: DailySeed.launchDay) == "#1")
+        #expect(AppRules.dailyTag(day: DailySeed.launchDay + 41) == "#42")
+        #expect(AppRules.weekdayInitial(day: 0) == "T")      // 2026-01-01 was a Thursday
+        #expect(AppRules.weekdayInitial(day: 3) == "S")
+        #expect(AppRules.weekdayInitial(day: 4) == "M")
+        #expect(HomeView.captionText(duo: true, folded: false, flat: false, lowRest: true) == "Open it a little wider.")
+        #expect(HomeView.captionText(duo: false, folded: false, flat: false, lowRest: true)
+                == "Press and hold the bird. That's a tuck.")
+    }
+
+    @Test func goalsMetByBestsCompleteAtOnce() {
+        var data = ProgressData()
+        data.bestMeters = 12_160
+        data.bestChain = 9
+        data.bestPerfectsInRun = 40
+        let reach = Goal(id: "g", kind: .reachMeters, target: 3_000, text: "Fly 3 km in one flight")
+        #expect(ProgressRules.bestProgress(reach, data: data) == 1)
+        #expect(ProgressRules.bestProgress(Goal(id: "s", kind: .speed, target: 1, text: "x"), data: data) == 0)
+        // A rank whose goals the bests already meet ticks them all on the next run and ranks up.
+        data.rank = 1
+        let out = ProgressRules.record(makeRun(meters: 300, perfects: 0, bestChain: 0), into: &data, today: 1,
+                                       goals: fakeGoals, maxRank: 15, evaluate: fakeEvaluate, unlocks: noUnlocks,
+                                       trailUnlocks: noTrails)
+        #expect(out.goals.allSatisfy { $0.isMet })
+        #expect(out.goals.allSatisfy { $0.justMet })
+        // The cascade: fake rank r needs 1000(r+1) m, 5(r+1) Perfects and a chain of 3+r, so bests of 12.16 km, 40
+        // and 9 carry the player from rank 1 to rank 7 (chain 10 is not met): one banner, "+6 ranks".
+        #expect(out.rankUp?.from == 1)
+        #expect(out.rankUp?.to == 7)
+        #expect(data.rank == 7)
+        #expect(RankUpBanner.title(from: 1, to: 7, rankTitle: "Tern Turner") == "+6 ranks! You're a Tern Turner")
+        #expect(RankUpBanner.title(from: 1, to: 2, rankTitle: "Spray Chaser") == "Rank up! You're a Spray Chaser")
+    }
+
+    @Test func unknownGoalIDsAreDropped() {
+        let known: Set<String> = ["r1-total", "r1-reach"]
+        let kept = ProgressRules.pruned(["r1-chain": 0.5, "r1-total": 0.4, "star3-chain": 0.2, "r1-reach": .nan],
+                                        knownIDs: known)
+        #expect(kept == ["r1-total": 0.4, "star3-chain": 0.2])
+        var data = ProgressData()
+        data.bestCleanMeters = 2_500
+        data.bestCloudTouchesInRun = 2
+        data.daily[1] = DailyRecord(meters: 1, perfects: 0, lighthouses: 0, lastLighthouseName: "", finished: true)
+        #expect(data.bests.cleanMeters == 2_500)
+        #expect(data.bests.cloudTouchesInRun == 2)
+        #expect(data.bests.dailyPlayed)
+        #expect(ProgressRules.bestProgress(Goal(id: "c", kind: .cleanMeters, target: 2_000, text: "x"), data: data) == 1)
+        // Every goal id in the real ladder survives pruning.
+        let ids = ProgressRules.knownGoalIDs()
+        #expect(!ids.isEmpty)
+        #expect(GoalCatalog.goals(forRank: 0).allSatisfy { ids.contains($0.id) })
+    }
+
+    @MainActor
+    @Test func openAnglePersistsAndIgnoresNaN() throws {
+        let suite = "swoop.tests.open.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let s = SettingsStore(defaults: defaults)
+        #expect(s.hingeOpenAngle == nil)
+        s.hingeOpenAngle = 141.5
+        #expect(SettingsStore(defaults: defaults).hingeOpenAngle == 141.5)
+        s.hingeOpenAngle = .nan
+        let raw = try #require(SettingsStore.encode(s.snapshot))
+        #expect(SettingsStore.decode(raw)?.hingeOpenAngle == nil)
+        #expect(SettingsStore.decode(Data("{}".utf8))?.hingeOpenAngle == nil)
+    }
+
+    #if DEBUG
+    @Test func roundFiveDemoKeys() {
+        #expect(DemoConfig.parse("freezeOn=chainlost;freezeDelay=0.15").freezeOn == .chainlost)
     }
     #endif
 }

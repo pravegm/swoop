@@ -234,3 +234,60 @@ gutter, so ART-S15's `SceneDriver.hasFold` isn't needed. Please wire these `Flig
 - **Founder:** `UIRequiresFullScreen` ships in Release (project.yml, Duo R3 P2-15: drop it in Release as Brim does);
   `screen=icon` now also writes Documents/AppIcon-180/60/40.png (`SWOOP-T icon sizes …`): please pull them into the
   CI artifacts; duo-01 / duo-06 timing and `hinge_set 90` are duo.sh's.
+## Feel → App (Round 5: P1-7 Home calibration, P1-8 low rests)
+- **Home calibration:** on Home, and on Results before fold-to-fly arms, call **`hinge.homeCalibrate(at: now)`**
+  every frame with the hinge (next to `hinge.tuck(at: now)`). It snaps "open" once the hinge has been still for 0.6 s
+  at 125–172°. It never learns from a held fold: a still angle more than 8° under the previous rest (within 10 s) is
+  ignored.
+  - Below 132° on Home, show "Open it a little wider" while `hinge.restIsBelowFloor(at: now)` is true.
+- **Persist the open angle:** set `hinge.onCalibrated = { open in settings.hingeOpenAngle = open }`. It fires after
+  every snap that moves 0.5° or more. At launch, before the first frame, call
+  `hinge.restoreOpenAngle(settings.hingeOpenAngle)`. NaN or a missing value is ignored, so default to `.nan` or 160.
+- **Rests under 125° (P1-8):** when the countdown's nudge budget runs out, call `hinge.lowRestFallback(at: now)`:
+  - `.snappedToFloor` (rest 119–125°): "open" is now 132°, and the run may start with tuck ≤ 0.36.
+  - `.tooLow` (rest < 119°): keep holding "Open a little wider" and offer **"Fly with touch"**. Never start the run.
+  - `.fine` or `.moving`: carry on as now.
+  - **Guard:** never let `Go` happen while `hinge.startTuck(at: now) > 0.5`.
+
+## Scene → App (Round 5)
+- **Birds page (REVIEW-4 juror #8):** in `BirdSideView`, draw with `BirdArt.previewTransform(for:in:)` instead of
+  `BirdDrawing.fit`. It fits every flap and tuck pose (no clipped Gull wing) at 2.2× the in-game size or less, centred
+  at 58 % of the height.
+  - When `BirdArt.isDark(bird)`, stroke the body and near wing at 1.5 pt in `BirdArt.previewKeyRim` (#DDE6FF).
+  - Then add a 28 pt halo of the tile sky's horizon colour at `BirdArt.previewHaloAlpha` (0.18), and lift that
+    tile's sky by 15 %.
+- **Title bird:** tucked, it is now a 14 % gannet dart, and `titleDetail`'s band and mirrors are empty past tuck
+  0.4. The body path carries two invisible specks at the span's ends, so its box stays at 92 %. With them,
+  `BirdDrawing.fit` keeps returning identity at every tuck; no change is needed unless the fit is computed from the
+  wings alone.
+- **Storm:** it never draws within 120 pt of the visible top, so the HUD needs no plate for it.
+
+## Core → App (Round 5, P1-9: goals the bests already meet)
+- `PlayerBests` (Codable): best single-flight meters, Perfects, chain, lighthouses, Tailwinds, cloud touches, clean
+  metres and speed, plus `lifetimeMeters` and `dailyPlayed`. `bests.merged(with: result)` folds a finished run in.
+  ProgressStore can keep one (please add clean metres and cloud touches; a field left at 0 just isn't pre-completed).
+- `GoalEvaluator.alreadyMet(goals:bests:) -> [Goal]` (also `isMet(_:bests:)`): tick these at once, with the results
+  tick animation.
+- `GoalEvaluator.cascadedRank(from:bests:)` gives the rank reached by completing every flock the bests meet. Cascade
+  after a rank-up; the climb stops at a flock that needs more flying or a fresh Daily.
+- **Ladder changes:** every flock now has a lifetime-distance goal (5 km … 3,600 km). Ranks 7, 10 and 13 have
+  "Fly 1 more Daily Flight in total" (`dailyRunGoalIDs`), which bests never meet. Some goal ids changed, e.g. r1's
+  chain → `r1-total`; stored progress for ids that are gone can be dropped.
+
+## App status (Round 5, end)
+- **Feel:** `hinge.homeCalibrate(at:)` runs every frame on Home and on Results until fold-to-fly arms;
+  `onCalibrated` saves the angle to `SettingsStore.hingeOpenAngle` (never in demo runs: those settings are in
+  memory) and `restoreOpenAngle` runs in GameController's init; Home shows "Open it a little wider." while
+  `restIsBelowFloor`; when the nudge budget is spent the App asks `lowRestFallback`: `.tooLow` keeps holding and
+  offers "Fly with touch"; the last countdown step holds while `startTuck(at:) > 0.5` (`AppRules.countdownGate`).
+- **Core:** `ProgressData` now keeps best clean metres, cloud touches and speed and exposes `bests: PlayerBests`;
+  results tick every goal `GoalEvaluator.isMet` says the bests meet, then cascade through each flock they meet (one
+  banner, "+N ranks! You're a …"); stored progress for goal ids that are gone is dropped on load.
+- **Scene:** the Birds preview uses `BirdArt.previewTransform`, `isDark` → `previewKeyRim` (1.5 pt) and a 28 pt halo of
+  the sky's horizon colour at `previewHaloAlpha`, with that tile's sky lifted 15 %. `TitleBirdView` needs no change:
+  its fit uses the body box, whose specks keep it at 92 %, so it stays identity at every tuck. Note: the App now
+  converts `sunCanvasPoint` with `AppCanvas.screenPoint` (R4 wrongly read it as view points).
+- **Still open, Scene (ROUND-5 P1-10 "attract bird crosses the wordmark"):** the App can't move or hide the attract
+  bird. Please add `scene.homeTextRects: [CGRect]` (view points) or `attractCeiling: CGFloat` (canvas y): keep the
+  Home attract bird and its spray out of those rects + 24 pt (or fade it there over 0.2 s). The App will pass
+  `HomeLayout.textBlock`/`wordmark` the round it lands.

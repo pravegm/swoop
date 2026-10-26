@@ -106,12 +106,9 @@ struct BirdSideView: View {
     var body: some View {
         Canvas(rendersAsynchronously: false) { context, size in
             let parts = BirdArt.path(for: bird, tuck: tuck, flap: flap)
-            // QA-1 P2-5: fit once to a fixed reference pose (spread, no flap), so the bird never "breathes" as its
-            // wings move.
-            let ref = BirdArt.path(for: bird, tuck: 0, flap: 0)
-            let transform = BirdDrawing.fit([ref.body.boundingBoxOfPath, ref.nearWing.boundingBoxOfPath,
-                                             ref.farWing.boundingBoxOfPath, ref.beak.boundingBoxOfPath],
-                                            in: size, flipY: BirdDrawing.sideViewFlipsY, fill: fill)
+            // Scene R5: one transform that fits every flap and tuck pose (the Gull's wing never clips), at most 2.2 ×
+            // the in-game size, centred at 58 % of the height. Fixed per bird, so it never "breathes" (QA-1 P2-5).
+            let transform = BirdArt.previewTransform(for: bird, in: size)
             let far = Path(parts.farWing).applying(transform)
             let body = Path(parts.body).applying(transform)
             let near = Path(parts.nearWing).applying(transform)
@@ -133,6 +130,12 @@ struct BirdSideView: View {
                                                          startPoint: CGPoint(x: box.midX, y: box.maxY),
                                                          endPoint: CGPoint(x: box.midX, y: box.minY)))
                 context.fill(beak, with: .color(BirdDrawing.color(bird.beak)))
+                if BirdArt.isDark(bird) {
+                    // Scene R5: dark birds (the Storm Petrel) get a pale key rim so they read on navy.
+                    let rim = BirdDrawing.color(BirdArt.previewKeyRim)
+                    context.stroke(body, with: .color(rim), lineWidth: 1.5)
+                    context.stroke(near, with: .color(rim), lineWidth: 1.5)
+                }
             }
         }
         .accessibilityHidden(true)

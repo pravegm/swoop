@@ -129,6 +129,8 @@ final class SceneSeaView {
         if chopOnScreen && abs(stormX - builtStormX) > SceneLook.seaRebuildStormMove { stale = true }
         if chopOnScreen && abs(closeness - builtCloseness) > 0.2 { stale = true }
         if abs(calm - builtCalm) > 0.15 { stale = true }
+        // Land exactly on the calm swell once the caught ending has settled.
+        if calm <= 0.001 && builtCalm > 0.001 { stale = true }
         guard stale else { return nil }
         let v = max(visibleHi - visibleLo, 1)
         let s = max(3.0, v / SceneLook.seaSegmentsPerScreen)
@@ -152,7 +154,7 @@ final class SceneSeaView {
         pts.removeAll(keepingCapacity: true)
         for p in samples {
             let sx = Double(p.x)
-            var y = Double(p.y)
+            var y = SceneSeaView.calmed(Double(p.y), x: sx, calm: calm)
             let k = min(max(1 - (sx - stormX) / SceneLook.chopReach, 0), 1) * calm
             if k > 0 {
                 y += k * amp * (0.6 * sin(sx * 0.045) + 0.4 * sin(sx * 0.024 + 1.1))
@@ -200,6 +202,16 @@ final class SceneSeaView {
         litNarrow.path = narrow
         setLineWidths(z)
         placeCrests()
+    }
+
+    /// The caught / Results sea (REVIEW-4 juror #7): as `calm` → 0 the surface blends from Core's swells into one
+    /// calm swell (amplitude ≤ 60 pt, wavelength ≥ 500 pt), so the ending reads as quiet water, not a ridge. The
+    /// scene uses the same function for the bird bobbing on it.
+    nonisolated static func calmed(_ h: Double, x: Double, calm: Double) -> Double {
+        let b = 1 - min(max(calm, 0), 1)
+        if b <= 0 { return h }
+        let swell = SceneLook.calmSwellAmp * sin(x * 2 * Double.pi / SceneLook.calmSwellLength)
+        return h + (swell - h) * b
     }
 
     /// A smooth curve through `points` (quads through the midpoints, the samples as controls): no polyline corners,
@@ -286,7 +298,7 @@ final class SceneSeaView {
             s.isHidden = false
             s.position = CGPoint(x: lx, y: y - (12 + 50 * h2) / z)
             s.zRotation = atan(slope)
-            s.size = CGSize(width: (40 + 80 * h1) / z, height: 1.5 / z)
+            s.size = CGSize(width: (60 + 120 * h1) / z, height: 1.5 / z)
             s.alpha = SceneLook.laceAlpha * (0.6 + 0.4 * h2)
         }
         while g < lace.count {

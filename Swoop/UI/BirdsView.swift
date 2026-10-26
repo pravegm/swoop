@@ -48,8 +48,11 @@ struct BirdsView: View {
         let locked = !store.isUnlocked(bird)
         let trail = store.activeTrail
         return VStack(alignment: .leading, spacing: 10) {
+            let dark = BirdArt.isDark(bird) && !locked
             ZStack {
+                // Scene R5: a dark bird's tile sky is lifted 15 %.
                 SkySwatch(sky: shownSky)
+                    .brightness(dark ? 0.15 : 0)
                 TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { context in
                     let t = context.date.timeIntervalSinceReferenceDate
                     let flap = reduceMotion ? 0 : (t * 0.9).truncatingRemainder(dividingBy: 1)
@@ -66,7 +69,9 @@ struct BirdsView: View {
                         // ART A8 at tuck 0.3, capped so the spread wing never clips (juror R3 #19), with a pale key
                         // halo so dark birds (the Storm Petrel) read on any sky.
                         BirdSideView(bird: bird, tuck: tuck, flap: flap, silhouette: locked, fill: 0.68)
-                            .shadow(color: Color(swoopHex: 0xDDE6FF).opacity(locked ? 0 : 0.55), radius: 10)
+                            // A 28 pt halo of the sky's horizon colour (dark birds; Scene R5 `previewHaloAlpha`).
+                            .shadow(color: Color(swoopRGBA: shownSky.horizon)
+                                        .opacity(dark ? Double(BirdArt.previewHaloAlpha) : 0), radius: 14)
                     }
                     .offset(y: reduceMotion ? 0 : CGFloat(5 * sin(t * 1.7)))
                 }

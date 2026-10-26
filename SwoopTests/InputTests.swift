@@ -22,7 +22,8 @@ private final class FakeHinge {
     /// collects every frame's tuck into `tucks`. `frames: false` asks no tuck (the resume hold); `snap` calls
     /// `snapCalibration` every frame (the countdown and the resume hold).
     @discardableResult
-    func run(_ duration: Double, frames: Bool = true, snap: Bool = false, angle: (Double) -> Double) -> Double {
+    func run(_ duration: Double, frames: Bool = true, snap: Bool = false, home: Bool = false,
+             angle: (Double) -> Double) -> Double {
         let start = time
         let steps = Int((duration / Self.frame).rounded())
         var tuck: Double = 0
@@ -42,6 +43,7 @@ private final class FakeHinge {
             }
             // The App snaps before it asks for the tuck (GameController.advance); the resume hold asks no tuck.
             if snap { source.snapCalibration(at: time) }
+            if home { source.homeCalibrate(at: time) }
             if frames {
                 tuck = source.tuck(at: time)
                 tucks.append(tuck)
@@ -560,5 +562,96 @@ struct InputTests {
         let value = both.tuck(at: 41.5)
         #expect(value > 0.3)
         #expect(value < 0.7)
+    }
+
+    // MARK: Round 5: Home calibration, persistence, low rests (REVIEW-4-duo P1-A, P2-2)
+
+    /// A player resting at 140° on Home used to see a 0.58 tuck on the title bird (open stuck at 160°).
+    @Test func homeSnapsTheRestAfterAStillSixTenths() {
+        let source = HingeTuckSource(logs: false)
+        let hinge = FakeHinge(source: source)
+        hinge.run(0.4, home: true) { _ in 140 }
+        #expect(source.openAngle == HingeTuckTuning.initialOpen)
+        hinge.run(0.4, home: true) { _ in 140 }
+        #expect(abs(source.openAngle - 140) < 0.05)
+        let title = hinge.run(0.5, home: true) { _ in 140 }
+        #expect(title < 0.02)
+        // Opening wider is a new rest too (upward is never a tuck).
+        hinge.run(0.3, home: true) { t in 140 + 10 * min(t / 0.2, 1) }
+        hinge.run(1, home: true) { _ in 150 }
+        #expect(abs(source.openAngle - 150) < 0.1)
+        // Relaxing a few degrees lower is still a rest.
+        hinge.run(0.3, home: true) { t in 150 - 5 * min(t / 0.2, 1) }
+        hinge.run(1, home: true) { _ in 145 }
+        #expect(abs(source.openAngle - 145) < 0.2)
+    }
+
+    /// "Never learn from a tucked angle": a fold held still on Home (the title bird is the tutorial) stays a tuck.
+    @Test func homeNeverLearnsFromAHeldFold() {
+        let source = HingeTuckSource(logs: false)
+        let hinge = FakeHinge(source: source)
+        hinge.run(1, home: true) { _ in 152 }
+        #expect(abs(source.openAngle - 152) < 0.05)
+        hinge.run(0.3, home: true) { t in 152 - 24 * min(t / 0.25, 1) }
+        let held = hinge.run(3, home: true) { _ in 128 }
+        #expect(abs(source.openAngle - 152) < 0.5)
+        #expect(held > 0.6)
+        // Back to the rest: still fine, and a fold held below the learning floor never counts either.
+        hinge.run(0.4, home: true) { t in 128 + 24 * min(t / 0.3, 1) }
+        let back = hinge.run(1, home: true) { _ in 152 }
+        #expect(back < 0.02)
+        #expect(abs(source.openAngle - 152) < 0.5)
+        // Nothing to do without a hinge.
+        let none = HingeTuckSource(logs: false)
+        #expect(none.homeCalibrate(at: 5) == false)
+    }
+
+    @Test func openAnglePersistsThroughAnAPI() {
+        let source = HingeTuckSource(logs: false)
+        var saved: [Double] = []
+        source.onCalibrated = { open in saved.append(open) }
+        source.restoreOpenAngle(141)
+        #expect(source.openAngle == 141)
+        source.restoreOpenAngle(100)
+        #expect(source.openAngle == HingeTuckTuning.openMin)
+        source.restoreOpenAngle(190)
+        #expect(source.openAngle == HingeTuckTuning.openMax)
+        source.restoreOpenAngle(Double.nan)
+        #expect(source.openAngle == HingeTuckTuning.openMax)
+        // Restoring doesn't call back; a real snap does (once per move of ≥ 0.5°).
+        #expect(saved.isEmpty)
+        let hinge = FakeHinge(source: source)
+        hinge.run(1, snap: true) { _ in 147 }
+        #expect(saved.count == 1)
+        #expect(abs((saved.last ?? 0) - 147) < 0.05)
+        hinge.run(1, home: true) { _ in 147.2 }
+        #expect(saved.count == 1)
+    }
+
+    /// P1-8: a rest under 125° must never start the run fully tucked.
+    @Test func lowRestFallbackNeverStartsFullyTucked() {
+        let low = HingeTuckSource(logs: false)
+        let lowHinge = FakeHinge(source: low)
+        lowHinge.run(1) { _ in 122 }
+        #expect(low.startTuck(at: lowHinge.time) > 0.9)
+        #expect(low.lowRestFallback(at: lowHinge.time) == .snappedToFloor)
+        #expect(low.openAngle == HingeTuckTuning.openMin)
+        #expect(low.startTuck(at: lowHinge.time) < 0.4)
+        // Under 119°: no open angle is safe, so nothing changes and the App keeps holding (and offers touch).
+        let lower = HingeTuckSource(logs: false)
+        let lowerHinge = FakeHinge(source: lower)
+        lowerHinge.run(1) { _ in 112 }
+        #expect(lower.lowRestFallback(at: lowerHinge.time) == .tooLow)
+        #expect(lower.openAngle == HingeTuckTuning.initialOpen)
+        // A normal rest is the ready snap's job; a moving hinge waits.
+        let fine = HingeTuckSource(logs: false)
+        let fineHinge = FakeHinge(source: fine)
+        fineHinge.run(1) { _ in 140 }
+        #expect(fine.lowRestFallback(at: fineHinge.time) == .fine)
+        fineHinge.run(0.1) { t in 140 - 100 * t }
+        #expect(fine.lowRestFallback(at: fineHinge.time) == .moving)
+        #expect(HingeTuckSource(logs: false).lowRestFallback(at: 1) == .moving)
+        // The worst allowed start (119°) is a third of a tuck, never full.
+        #expect(HingeTuckSource.tuck(forAngle: HingeTuckTuning.lowRestFloor, open: HingeTuckTuning.openMin) < 0.4)
     }
 }

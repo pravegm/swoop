@@ -224,6 +224,9 @@ enum SceneLook {
     static let chopAmp: Double = 9
     static let chopAmpClose: Double = 5
     static let chopReach: Double = 520
+    /// The calm swell the caught / Results sea settles into (REVIEW-4: amplitude ≤ 60, wavelength ≥ 500).
+    static let calmSwellAmp: Double = 40
+    static let calmSwellLength: Double = 640
     /// Crest glints (74 × 7 streaks): only on crests within ±0.30 w of the sun, at α 0.55 × (1 − |dx| / 0.30 w),
     /// up to 0.85 at ≥ 90 % of max speed.
     static let crestGlintCount: Int = 16
@@ -236,7 +239,7 @@ enum SceneLook {
     /// Lace (REVIEW-3 juror #8): 6–10 foam streaks on the faces, 1.5 pt, α 0.25, 40–120 pt long, riding the surface.
     static let laceCount: Int = 10
     static let laceCell: Double = 260
-    static let laceAlpha: CGFloat = 0.25
+    static let laceAlpha: CGFloat = 0.35
     /// The sun's glitter column continues down the near sea under the sun.
     static let nearGlitterDepth: CGFloat = 220
     static let nearGlitterAlpha: CGFloat = 0.42
@@ -305,6 +308,9 @@ enum SceneLook {
     /// The wall's opacity far → near.
     static let stormAlphaFar: CGFloat = 0.6
     static let stormAlphaNear: CGFloat = 1.0
+    /// R5 (REVIEW-4): the wall's top never comes within this many pt of the visible top (the pause button and the
+    /// meter live there).
+    static let stormHUDClearance: CGFloat = 120
     /// The lit rim along the anvil's upper edge (px).
     static let stormRimWidth: CGFloat = 3
     /// The sky shade: α 0.10 + 0.40 c, reaching edge + 0.45 w, capped at 0.5 at the bird.

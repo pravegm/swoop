@@ -328,6 +328,24 @@ enum SceneTextures {
         }
     }
 
+    /// A lobe's sunlit rim (REVIEW-4 juror #2): a soft crescent of light on the top-right edge (the sun is ahead),
+    /// drawn additively over a `stormLobe` of the same size.
+    static var stormRimLight: SKTexture {
+        make("stormrim", width: 128, height: 128, scale: 2) { ctx, s in
+            let c = CGPoint(x: s.width / 2, y: s.height / 2)
+            ctx.saveGState()
+            ctx.addEllipse(in: CGRect(x: s.width * 0.1, y: s.height * 0.1, width: s.width * 0.8, height: s.height * 0.8))
+            ctx.clip()
+            radial(ctx, [white(1), white(0.4), white(0)], [0, 0.45, 1],
+                   center: CGPoint(x: s.width * 0.74, y: s.height * 0.24), radius: s.width * 0.42)
+            // Hollow it into a crescent: cut away a disc shifted down and to the left.
+            ctx.setBlendMode(.destinationOut)
+            radial(ctx, [white(1), white(1), white(0)], [0, 0.7, 1],
+                   center: CGPoint(x: c.x - s.width * 0.05, y: c.y + s.height * 0.06), radius: s.width * 0.36)
+            ctx.restoreGState()
+        }
+    }
+
     /// A hard water drop (ART §5): a crisp disc with a 1 px darker underside (the sprite colour tints it).
     static var drop: SKTexture {
         make("drop", width: 16, height: 16, scale: 2) { ctx, s in

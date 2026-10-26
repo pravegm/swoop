@@ -91,6 +91,8 @@ final class FlightScene: SKScene {
     /// The storm's front edge this frame (u-space), and the sun's brightness (tests).
     var stormEdgeU: CGFloat { storm.edgeU }
     var sunBrightness: CGFloat { backdrop.sunBrightness }
+    /// The storm wall's top this frame (canvas y; tests: it stays clear of the HUD).
+    var stormTopY: CGFloat { storm.wallTop }
     /// The morph's progress 0…1 (1 = done or not running).
     private(set) var morphProgress: CGFloat = 1
     /// The sun's centre in canvas points (SpriteKit, y up), so the App can keep text off it (UX P1-3).
@@ -443,8 +445,10 @@ final class FlightScene: SKScene {
         let bx = Double(s.position.x)
         var by = Double(s.position.y)
         if countdown { by += SceneLook.hoverBob * sin(t * SceneLook.hoverRate) }
-        if caught { by = seaHeight(bx) - SceneLook.caughtSink + SceneLook.caughtBob * sin(t * 1.7) }
-        let water = seaHeight(bx)
+        // Once caught the sea settles into one calm swell; the bird rides that same surface.
+        let calmNow = Double(1 - caughtness)
+        let water = SceneSeaView.calmed(seaHeight(bx), x: bx, calm: calmNow)
+        if caught { by = water - SceneLook.caughtSink + SceneLook.caughtBob * sin(t * 1.7) }
 
         // Camera: framing on the simulation's clock; the punch-in and the pull-outs on the FX clock.
         let birdPoint = CGPoint(x: bx, y: by)

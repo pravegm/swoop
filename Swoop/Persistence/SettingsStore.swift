@@ -38,6 +38,8 @@ struct SettingsData: Codable, Equatable {
     var tapOfferAnswered = false
     /// R4 P1-15: the founder's hinge readout overlay (TestFlight / Debug builds only).
     var hingeReadout = false
+    /// R5 P1-7: the player's resting book angle (Feel's calibrated "open"), restored at launch. nil = never learned.
+    var hingeOpenAngle: Double?
 
     init() {}
 
@@ -54,6 +56,8 @@ struct SettingsData: Codable, Equatable {
         mirrored = (try? c.decodeIfPresent(Bool.self, forKey: .mirrored)) ?? false
         tapOfferAnswered = (try? c.decodeIfPresent(Bool.self, forKey: .tapOfferAnswered)) ?? false
         hingeReadout = (try? c.decodeIfPresent(Bool.self, forKey: .hingeReadout)) ?? false
+        let open = (try? c.decodeIfPresent(Double.self, forKey: .hingeOpenAngle)) ?? nil
+        hingeOpenAngle = open.flatMap { $0.isFinite ? $0 : nil }
     }
 }
 
@@ -72,6 +76,8 @@ final class SettingsStore: ObservableObject {
     @Published var mirrored: Bool { didSet { changed() } }
     @Published var tapOfferAnswered: Bool { didSet { changed() } }
     @Published var hingeReadout: Bool { didSet { changed() } }
+    /// Saved without `apply()` (it is input calibration, not feedback).
+    @Published var hingeOpenAngle: Double? { didSet { save() } }
 
     /// Set by the controller once the device is known to be a Duo (the Strong default).
     var isDuo = false {
@@ -94,6 +100,7 @@ final class SettingsStore: ObservableObject {
         mirrored = stored.mirrored
         tapOfferAnswered = stored.tapOfferAnswered
         hingeReadout = stored.hingeReadout
+        hingeOpenAngle = stored.hingeOpenAngle
     }
 
     /// The haptic level in effect.
@@ -115,6 +122,7 @@ final class SettingsStore: ObservableObject {
         d.mirrored = mirrored
         d.tapOfferAnswered = tapOfferAnswered
         d.hingeReadout = hingeReadout
+        d.hingeOpenAngle = hingeOpenAngle.flatMap { $0.isFinite ? $0 : nil }
         return d
     }
 
@@ -131,6 +139,10 @@ final class SettingsStore: ObservableObject {
 
     private func changed() {
         apply()
+        save()
+    }
+
+    private func save() {
         guard let defaults, let raw = Self.encode(snapshot) else { return }
         defaults.set(raw, forKey: Self.key)
     }

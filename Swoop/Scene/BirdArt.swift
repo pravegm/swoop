@@ -40,8 +40,12 @@ enum BirdArt {
     /// Fully tucked, the dart's bow is aimed 0.99 × this fraction of the width out from the centre line
     /// (a dart about 27 % wide, above the App's 25 % refit threshold)…
     static let titleTuckedTipX: CGFloat = 0.16
-    /// (kept for reference: the R3 tucked tip depth as a fraction of the body; R4 puts the tip 0.18 h behind the tail.)
+    /// (kept for reference: the R3 tucked tip depth as a fraction of the body.)
     static let titleTuckedTipY: CGFloat = 1.10
+    /// R5: the tucked gannet dart's half-width at the wrist (fraction of the width): the dart is 14 % wide.
+    static let titleDartHalfWidth: CGFloat = 0.07
+    /// The white band and the mirrors hide past this tuck (REVIEW-4: they hung beside the tail like legs).
+    static let titleDetailHideTuck: Double = 0.4
     /// Dihedral: +6° from the shoulder to the wrist, −3° on the hand (a gull's "M", not a plank).
     static let titleArmDihedral: CGFloat = 6 * CGFloat.pi / 180
     static let titleHandDihedral: CGFloat = 3 * CGFloat.pi / 180
@@ -125,11 +129,13 @@ enum BirdArt {
         let f = titleFrame(for: bird, tuck: tuck, width: width, height: height)
         let inner = 1 - titlePrimaries
         let band = CGMutablePath()
-        appendTitleWing(band, f, chordFrom: 1 - titleTrailingBand, chordTo: 1, spanFrom: 0.04, spanTo: inner)
+        if clamp01(tuck) <= titleDetailHideTuck {
+            appendTitleWing(band, f, chordFrom: 1 - titleTrailingBand, chordTo: 1, spanFrom: 0.04, spanTo: inner)
+        }
         let prim = CGMutablePath()
         appendTitleWing(prim, f, chordFrom: 0, chordTo: 1, spanFrom: inner, spanTo: 1)
         let mirrors = CGMutablePath()
-        if clamp01(tuck) <= 0.5 {
+        if clamp01(tuck) <= titleDetailHideTuck {
             let r = f.w * 0.006
             for t in [CGFloat(0.895), CGFloat(0.95)] {
                 let c = titleWingPoint(f, t: t, chord: 0.5)
@@ -190,6 +196,47 @@ enum BirdArt {
     static func markLineWidth(forHeight height: CGFloat) -> CGFloat {
         max(1, 2 * height / 24)
     }
+
+    // MARK: The Birds page preview (REVIEW-4 juror #8)
+
+    /// The side-view bird's full envelope in the unit box (y up): every flap phase at tuck 0, and the tucked pose, so
+    /// a preview fitted to it never clips a wing (the Gull's upper wing did).
+    static func previewEnvelope(for bird: Bird) -> CGRect {
+        var r = CGRect.null
+        for flap in [0.0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875] {
+            let p = path(for: bird, tuck: 0, flap: flap)
+            for q in [p.body, p.nearWing, p.farWing, p.beak] { r = r.union(q.boundingBox) }
+        }
+        let t = path(for: bird, tuck: 1, flap: 0)
+        r = r.union(t.nearWing.boundingBox)
+        return r
+    }
+
+    /// A transform for drawing `path(for:)` in a SwiftUI box (y down): it fits the whole envelope (88 % of the width, 80 % of the height),
+    /// at most 2.2× the in-game size (107 pt per unit), centred horizontally and at 58 % of the height.
+    static func previewTransform(for bird: Bird, in size: CGSize) -> CGAffineTransform {
+        let env = previewEnvelope(for: bird)
+        guard !env.isNull, env.width > 0, env.height > 0, size.width > 0, size.height > 0 else { return .identity }
+        let fit = min(size.width * 0.88 / env.width, size.height * 0.80 / env.height)
+        let k = min(fit, previewMaxUnit)
+        // Centre the envelope at (50 %, 58 %), flipping y.
+        return CGAffineTransform(translationX: size.width * 0.5, y: size.height * 0.58)
+            .scaledBy(x: k, y: -k)
+            .translatedBy(x: -env.midX, y: -env.midY)
+    }
+
+    /// The preview's cap: 2.2 × the in-game 107 pt per unit.
+    static let previewMaxUnit: CGFloat = 2.2 * 107
+
+    /// Dark birds (Storm Petrel, Puffin, Swift) get a key rim and a halo so they read on navy and on dark skies.
+    static func isDark(_ bird: Bird) -> Bool {
+        0.2126 * bird.body.r + 0.7152 * bird.body.g + 0.0722 * bird.body.b < 0.42
+    }
+
+    /// The preview's rim and halo for dark birds (REVIEW-4 juror #8): stroke the body and near wing at 1.5 pt in this
+    /// colour, and lay a 28 pt halo of the sky's horizon colour at this alpha behind the bird.
+    static let previewKeyRim = RGBA(hex: 0xDDE6FF)
+    static let previewHaloAlpha: Double = 0.18
 
     // MARK: Extras for the scene (and anyone who wants them)
 
@@ -438,8 +485,8 @@ enum BirdArt {
         let top = cy - bodyH0 * 0.52
         // Tucked, the body stretches 6 % (a dart).
         let bodyH = bodyH0 * (1 + 0.06 * e)
-        let body = titleBody(cx: cx, top: top, bodyW: bodyW, bodyH: bodyH)
         let shoulder = CGPoint(x: cx - bodyW * 0.30, y: top + bodyH * 0.34)
+        let body = titleBody(cx: cx, top: top, bodyW: bodyW, bodyH: bodyH, specksAt: shoulder.y, width: w)
         // The spread wing (a gull's "M").
         let spreadTip = CGPoint(x: w * titleEdgeMargin, y: shoulder.y)
         let l0 = hypot(shoulder.x - spreadTip.x, spreadTip.y - shoulder.y)
@@ -447,16 +494,15 @@ enum BirdArt {
         let chordK = min(max(sh.chord, 0.8), 1.2) * (1.08 - 0.16 * pt)
         let chordRoot = min(h * titleChordRoot, bodyH0 * 0.55) * chordK
         let chordTip = min(h * titleChordTip, bodyH0 * 0.17) * chordK
-        // The tucked wing (REVIEW-3 juror #5): swept back along the body into one clean teardrop dart. The leading
-        // edge leaves the shoulder at 25° below horizontal, bows out to about 0.135 w from the centre line, and closes
-        // to a tip 0.18 h behind the tail; the wing fills everything between it and the body (no sticks, no limbs).
+        // The tucked wing (R5, REVIEW-4 juror #5: a gannet entering the water, not a manta): swept tight along the
+        // body. A short arm runs out to the wrist 0.07 w from the centre line, then one straight edge runs back to the
+        // tips 0.12 h behind the tail; the inner edge hugs the body. The whole dart is 14 % of the width.
         let tail = top + bodyH * 0.97
-        let tip = CGPoint(x: cx - w * 0.025, y: min(tail + h * 0.18, h - 4))
-        let widest = cx - w * titleTuckedTipX * 0.99
-        let dx1 = widest - shoulder.x
-        let lead1 = CGPoint(x: shoulder.x + dx1 * 1.15, y: shoulder.y - dx1 * 1.15 * tan(25 * CGFloat.pi / 180))
-        let lead2 = CGPoint(x: widest + (cx - widest) * 0.05, y: tip.y - (tip.y - shoulder.y) * 0.30)
-        let root = CGPoint(x: cx - bodyW * 0.28, y: top + bodyH * 0.62)
+        let tip = CGPoint(x: cx - w * 0.012, y: min(tail + h * 0.12, h - 4))
+        let wrist = CGPoint(x: cx - w * titleDartHalfWidth, y: shoulder.y + bodyH * 0.08)
+        let lead1 = wrist
+        let lead2 = wrist
+        let root = CGPoint(x: cx - bodyW * 0.26, y: top + bodyH * 0.60)
         return TitleFrame(w: w, cx: cx, top: top, bodyW: bodyW, bodyH: bodyH, body: body, shoulder: shoulder,
                           length: l0, tipAngle: a0, bend: 0.04,
                           wrist: min(max(sh.arm * 0.95, 0.30), 0.45), chordRoot: chordRoot, chordTip: chordTip,
@@ -470,11 +516,20 @@ enum BirdArt {
         let spread = spreadWingPoint(f, t: t, chord: chord)
         let e = f.tuckBlend
         if e <= 0.0001 { return spread }
-        // The tucked teardrop: the leading edge a cubic from the shoulder to the tip, the inner edge the body's side.
-        let s1 = 1 - t
-        let b0 = s1 * s1 * s1, b1 = 3 * s1 * s1 * t, b2 = 3 * s1 * t * t, b3 = t * t * t
-        let lx = b0 * f.tuckLead0.x + b1 * f.tuckLead1.x + b2 * f.tuckLead2.x + b3 * f.tuckTip.x
-        let ly = b0 * f.tuckLead0.y + b1 * f.tuckLead1.y + b2 * f.tuckLead2.y + b3 * f.tuckTip.y
+        // The tucked dart: the leading edge is straight from the shoulder to the wrist (the first 22 % of the span),
+        // then straight from the wrist to the tip; the inner edge hugs the body.
+        let armEnd: CGFloat = 0.22
+        var lx: CGFloat
+        var ly: CGFloat
+        if t <= armEnd {
+            let k = t / armEnd
+            lx = f.tuckLead0.x + (f.tuckLead1.x - f.tuckLead0.x) * k
+            ly = f.tuckLead0.y + (f.tuckLead1.y - f.tuckLead0.y) * k
+        } else {
+            let k = (t - armEnd) / (1 - armEnd)
+            lx = f.tuckLead2.x + (f.tuckTip.x - f.tuckLead2.x) * k
+            ly = f.tuckLead2.y + (f.tuckTip.y - f.tuckLead2.y) * k
+        }
         let ix = f.tuckRoot.x + (f.tuckTip.x - f.tuckRoot.x) * t
         let iy = f.tuckRoot.y + (f.tuckTip.y - f.tuckRoot.y) * t
         let tx = lx + (ix - lx) * chord
@@ -540,8 +595,17 @@ enum BirdArt {
 
     /// The body from above: beak tip at the top, a round head 1.25× the neck, broad shoulders, the flanks and a short
     /// fanned tail.
-    private static func titleBody(cx: CGFloat, top: CGFloat, bodyW: CGFloat, bodyH: CGFloat) -> CGPath {
+    private static func titleBody(cx: CGFloat, top: CGFloat, bodyW: CGFloat, bodyH: CGFloat, specksAt sy: CGFloat,
+                                  width w: CGFloat) -> CGPath {
         let p = CGMutablePath()
+        // Two invisible (zero-area) specks at the spread wingtips' x: the body's box keeps the full 92 % span at every
+        // tuck, so the App's `BirdDrawing.fit` (which refits anything under 25 % wide) leaves the narrow dart alone.
+        for x in [w * titleEdgeMargin, w * (1 - titleEdgeMargin)] {
+            p.move(to: CGPoint(x: x, y: sy))
+            p.addLine(to: CGPoint(x: x + 0.01, y: sy))
+            p.addLine(to: CGPoint(x: x, y: sy + 0.01))
+            p.closeSubpath()
+        }
         func r(_ fx: CGFloat, _ fy: CGFloat) -> CGPoint { CGPoint(x: cx + bodyW * fx, y: top + bodyH * fy) }
         func l(_ fx: CGFloat, _ fy: CGFloat) -> CGPoint { CGPoint(x: cx - bodyW * fx, y: top + bodyH * fy) }
         p.move(to: CGPoint(x: cx, y: top))

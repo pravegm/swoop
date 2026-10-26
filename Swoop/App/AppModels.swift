@@ -47,13 +47,17 @@ struct HUDChainLost: Equatable {
 /// "Splash" (and "×4 lost" when a chain of 3+ broke) at the bird (R4 P1-9): the mistake is said where the eye is.
 struct HUDSplashMark: Equatable {
     var lostChain: Int?
-    var point: CGPoint
+    /// The bird in the play view's points; nil = the scene hadn't reported it (the view uses its default spot).
+    var point: CGPoint?
     var serial: Int
+    /// False: a plain landing broke the chain (no splash), so the mark only says "×4 lost" (R5 P1-2).
+    var splash: Bool = true
 
-    /// "Splash" or "Splash · ×4 lost". Pure; tested.
+    /// "Splash", "Splash · ×4 lost" or "×4 lost". Pure; tested.
     var text: String {
-        if let lostChain, lostChain >= 3 { return "Splash · ×\(lostChain) lost" }
-        return "Splash"
+        let lost = lostChain.flatMap { $0 >= 3 ? "×\($0) lost" : nil }
+        if splash { return lost.map { "Splash · \($0)" } ?? "Splash" }
+        return lost ?? "Chain lost"
     }
 }
 
@@ -103,7 +107,9 @@ final class HUDState: ObservableObject {
     @Published var meterLabel = false
     /// R4 P0-6: the countdown holds with "Open a little wider" (the open angle sits on the floor).
     @Published var openNudge = false
-    /// The sun's centre in the play view (y down, 8 pt steps), so text can keep off it (R4 P0-3).
+    /// R5 P1-8: the nudge can't be met (a rest under 119°): "Fly with touch" is offered.
+    @Published var nudgeOffer = false
+    /// The sun's centre in DESIGN canvas points (y up, 8 pt steps), so text can keep off it (R4 P0-3).
     @Published var sunPoint: CGPoint?
 
     func setMeters(_ v: Int) { if meters != v { meters = v } }
@@ -133,6 +139,7 @@ final class HUDState: ObservableObject {
     func setSplashMark(_ v: HUDSplashMark?) { if splashMark != v { splashMark = v } }
     func setMeterLabel(_ v: Bool) { if meterLabel != v { meterLabel = v } }
     func setOpenNudge(_ v: Bool) { if openNudge != v { openNudge = v } }
+    func setNudgeOffer(_ v: Bool) { if nudgeOffer != v { nudgeOffer = v } }
     func setSunPoint(_ v: CGPoint?) { if sunPoint != v { sunPoint = v } }
 
     func reset() {
@@ -162,6 +169,7 @@ final class HUDState: ObservableObject {
         setSplashMark(nil)
         setMeterLabel(false)
         setOpenNudge(false)
+        setNudgeOffer(false)
     }
 }
 
@@ -529,11 +537,80 @@ enum AppRules {
     /// R4 P1-13: the Daily is numbered from launch day (#1), so day one never reads "#298". The seed is unchanged.
     static var launchDay: Int { DailySeed.launchDay }
 
+    /// The Daily's on-screen tag (R5 P1-4): "#12" from launch day; before launch (TestFlight, CI) the date, "26 Oct",
+    /// so a pre-launch streak never reads "3-day streak" on "#1". Pure; tested.
+    static func dailyTag(day: Int) -> String {
+        if day >= DailySeed.launchDay { return "#\(dailyNumber(day: day))" }
+        var c = DateComponents()
+        c.year = 2026
+        c.month = 1
+        c.day = 1
+        c.hour = 12
+        guard let epoch = DailySeed.utc.date(from: c),
+              let date = DailySeed.utc.date(byAdding: .day, value: day, to: epoch) else { return "#1" }
+        let f = DateFormatter()
+        f.calendar = DailySeed.utc
+        f.timeZone = DailySeed.utc.timeZone
+        f.locale = Locale(identifier: "en_GB")
+        f.dateFormat = "d MMM"
+        return f.string(from: date)
+    }
+
+    /// The weekday initial ("M", "T"…) of a Daily day number (UTC), for the 7-day dots. Pure; tested.
+    static func weekdayInitial(day: Int) -> String {
+        var c = DateComponents()
+        c.year = 2026
+        c.month = 1
+        c.day = 1
+        c.hour = 12
+        guard let epoch = DailySeed.utc.date(from: c),
+              let date = DailySeed.utc.date(byAdding: .day, value: day, to: epoch) else { return "" }
+        let w = DailySeed.utc.component(.weekday, from: date)
+        let letters = ["S", "M", "T", "W", "T", "F", "S"]
+        return letters.indices.contains(w - 1) ? letters[w - 1] : ""
+    }
+
     /// The Daily's display number: day − launch day + 1, at least 1. Tested.
     static func dailyNumber(day: Int, launchDay: Int = AppRules.launchDay) -> Int {
         let n = day.subtractingReportingOverflow(launchDay)
         if n.overflow { return 1 }
         return max(n.partialValue + 1, 1)
+    }
+
+    /// The countdown's hold: free, the flat hold ("Bend it a little"), or the low-rest nudge ("Open a little wider").
+    enum CountdownHold: Equatable { case free, flat, nudge }
+
+    /// The start tuck above which "Go" never comes (Feel R5 P1-8: never start fully tucked).
+    static let maxStartTuck: Double = 0.5
+
+    /// The HUD's published distance: whole metres under 1 km, 10 m steps above (the km hundredths). The pause and
+    /// closing cards show THIS value (R5 P1-3). Pure; tested.
+    static func hudMeters(_ distance: Double) -> Int {
+        let m = distance.isFinite ? Int(max(distance, 0).rounded(.down)) : 0
+        return m < 1000 ? m : (m / 10) * 10
+    }
+
+    /// R5 P1-8: what the countdown does this frame. Within the 4 s budget a flat or nudge hold holds. Once spent, a
+    /// nudge asks Feel's `lowRestFallback`: `.tooLow` keeps holding and offers "Fly with touch"; anything else lets the
+    /// countdown run. On the last step, a start tuck over 0.5 holds it (and offers touch once the budget is spent).
+    /// Pure; tested.
+    static func countdownGate(raw: CountdownHold, budgetUsed: Double, budget: Double, lowRest: HingeLowRest?,
+                              startTuck: Double, remaining: Double, step: Double)
+        -> (hold: CountdownHold, offerTouch: Bool) {
+        var hold = raw
+        var offer = false
+        if raw != .free && budgetUsed >= budget {
+            if raw == .nudge && lowRest == .tooLow {
+                offer = true
+            } else {
+                hold = .free
+            }
+        }
+        if hold == .free && startTuck.isFinite && startTuck > maxStartTuck && remaining <= step + 1e-6 {
+            hold = .nudge
+            offer = budgetUsed >= budget
+        }
+        return (hold, offer)
     }
 
     /// R4 P0-6: after the Duo was shut (the cover took over), the Ready hold is 2.5 s and starts 0.3 s after the inner

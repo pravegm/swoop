@@ -1,6 +1,18 @@
 import Foundation
 import QuartzCore
 
+/// Round 5 (P1-8): what to do with a still rest under the 125° learning floor when the countdown's nudge runs out.
+enum HingeLowRest: Equatable, Sendable {
+    /// The hinge is moving (or there is no hinge): keep waiting.
+    case moving
+    /// The rest is at or above 125°: the normal ready snap has it.
+    case fine
+    /// 119–125°: "open" was snapped to the 132° floor; the run can start (tuck ≤ ~0.36).
+    case snappedToFloor
+    /// Under 119°: no open angle makes this a safe start. Keep holding ("Open a little wider") and offer touch.
+    case tooLow
+}
+
 /// Every number of the hinge → tuck mapping (GAME-DESIGN §3), in one place and outside the main actor, so pure code
 /// and tests can read it.
 enum HingeTuckTuning {
@@ -75,6 +87,16 @@ enum HingeTuckTuning {
     /// Round 4 (P1-2): the end-stop detent fires when the tuck first reaches this, and re-arms below `endStopRearm`.
     static let endStopTuck = 0.995
     static let endStopRearm = 0.8
+    /// Round 5 (REVIEW-4-duo P1-A): Home snaps the open angle once the hinge has been still this long.
+    static let homeStillHold = 0.6
+    /// Home never learns from a held fold: a still angle more than `homeFoldDrop` degrees under the previous still
+    /// rest seen within `homeFoldMemory` s is a fold being held, not a new rest.
+    static let homeFoldDrop = 8.0
+    static let homeFoldMemory = 10.0
+    /// Round 5 (P1-8): a still rest of 119–125° (under the learning floor) snaps "open" to the 132° floor when the
+    /// countdown's nudge runs out, so the run starts with at most ~0.36 tuck. Under 119° nothing is safe: the App keeps
+    /// holding and offers touch.
+    static let lowRestFloor = 119.0
 
     /// Tuck for a hinge angle: smoothstep((open − θ) / 36°). 0 at and above `open` (and always at ≥ 175°, flat),
     /// 1 at and below open − 36°. NaN → 0.
@@ -131,6 +153,14 @@ final class HingeTuckSource: TuckSource {
     private var lastTuckLog: TimeInterval = -Double.infinity
     private var endStopArmed = true
     private var endStopAt: TimeInterval?
+    private var homeStillSince: TimeInterval?
+    private var homeFoldHeld = false
+    private var lastHomeRest: (angle: Double, time: TimeInterval)?
+    private var reportedOpen: Double = HingeTuckTuning.initialOpen
+
+    /// Round 5 (P1-7): called after every snap that moves "open" by 0.5° or more (Home, countdown, resume hold, the
+    /// low-rest fallback), with the new open angle, so the App can save it (SettingsStore) for the next launch.
+    var onCalibrated: ((Double) -> Void)?
     private var loggedOpen: Double = HingeTuckTuning.initialOpen
     private let logs: Bool
 
@@ -297,10 +327,80 @@ final class HingeTuckSource: TuckSource {
         guard isStill(at: time) else { return }
         let target = snapAngle(at: time)
         guard target.isFinite, target >= T.calibrationLow else { return }
-        openAngle = FeelMath.clamp(min(target, T.flatAngle), T.openMin, T.openMax)
+        applySnap(FeelMath.clamp(min(target, T.flatAngle), T.openMin, T.openMax), reason: "ready pose")
+    }
+
+    // MARK: Round 5: Home calibration, persistence, low rests (REVIEW-4-duo P1-A, P2-2)
+
+    /// Home (and Results before fold-to-fly arms): call every frame. Once the hinge has been still for 0.6 s at
+    /// 125–172°, "open" snaps to that rest, so a player resting at 140° never sees a phantom tuck on the title bird.
+    /// It never learns from a held fold: a still angle more than 8° under the previous still rest (within 10 s) is a
+    /// fold being held, and is ignored until the hand moves again. Returns true when it snapped.
+    @discardableResult
+    func homeCalibrate(at time: TimeInterval = CACurrentMediaTime()) -> Bool {
+        guard hasHinge, time.isFinite, isStill(at: time) else {
+            homeStillSince = nil
+            homeFoldHeld = false
+            return false
+        }
+        let target = snapAngle(at: time)
+        guard target.isFinite else { return false }
+        if homeStillSince == nil {
+            // A new still period: is it a fold held under a recent rest?
+            homeStillSince = time
+            homeFoldHeld = false
+            if let previous = lastHomeRest, time - previous.time <= T.homeFoldMemory,
+               previous.angle - target > T.homeFoldDrop {
+                homeFoldHeld = true
+            }
+        }
+        guard !homeFoldHeld else { return false }
+        lastHomeRest = (angle: target, time: time)
+        guard let since = homeStillSince, time - since >= T.homeStillHold else { return false }
+        guard target >= T.calibrationLow, target <= T.openMax else { return false }
+        let open = FeelMath.clamp(min(target, T.flatAngle), T.openMin, T.openMax)
+        guard abs(open - openAngle) > 0.05 else { return false }
+        applySnap(open, reason: "home")
+        return true
+    }
+
+    /// Start a launch from a saved open angle (SettingsStore), not 160°. Clamped to 132…172; NaN is ignored.
+    func restoreOpenAngle(_ angle: Double) {
+        guard angle.isFinite else { return }
+        openAngle = FeelMath.clamp(angle, T.openMin, T.openMax)
+        loggedOpen = openAngle
+        reportedOpen = openAngle
+    }
+
+    /// Round 5 (P1-8): call when the countdown's "Open a little wider" budget runs out. See `HingeLowRest`.
+    func lowRestFallback(at time: TimeInterval = CACurrentMediaTime()) -> HingeLowRest {
+        guard hasHinge, time.isFinite, isStill(at: time) else { return .moving }
+        let rest = snapAngle(at: time)
+        guard rest.isFinite else { return .moving }
+        if rest >= T.calibrationLow { return .fine }
+        if rest >= T.lowRestFloor {
+            applySnap(T.openMin, reason: "low rest")
+            return .snappedToFloor
+        }
+        return .tooLow
+    }
+
+    /// The tuck the bird would start with if the run began now (the still rest against the current open angle). The
+    /// App must not start a run while this is above ~0.5 (P1-8: never start fully tucked).
+    func startTuck(at time: TimeInterval = CACurrentMediaTime()) -> Double {
+        guard hasHinge, time.isFinite else { return 0 }
+        return T.tuck(forAngle: snapAngle(at: time), open: openAngle)
+    }
+
+    private func applySnap(_ open: Double, reason: String) {
+        openAngle = open
         if logs && abs(openAngle - loggedOpen) > T.calibrationLogStep {
             loggedOpen = openAngle
-            FeelDemoLog.emit(String(format: "SWOOP-T calib open=%.1f (ready pose)", openAngle))
+            FeelDemoLog.emit(String(format: "SWOOP-T calib open=%.1f", openAngle) + " (" + reason + ")")
+        }
+        if abs(openAngle - reportedOpen) >= 0.5 {
+            reportedOpen = openAngle
+            onCalibrated?(openAngle)
         }
     }
 

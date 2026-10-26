@@ -127,6 +127,10 @@ struct ProgressData: Codable, Equatable {
     var restLineDay = Int.min
     /// Star flocks finished past the top rank (UX §4: "Storm Rider ★2").
     var starFlocks = 0
+    /// R5 P1-9 (Core `PlayerBests`): the best clean distance, cloud touches and speed in one flight.
+    var bestCleanMeters: Double = 0
+    var bestCloudTouchesInRun = 0
+    var bestSpeed: Double = 0
     init() {}
 
     /// Tolerant: unknown or missing fields fall back to their defaults, never wiping the rest.
@@ -165,6 +169,9 @@ struct ProgressData: Codable, Equatable {
         hingeSeconds = (try? c.decodeIfPresent(Double.self, forKey: .hingeSeconds)) ?? 0
         restLineDay = (try? c.decodeIfPresent(Int.self, forKey: .restLineDay)) ?? Int.min
         starFlocks = max((try? c.decodeIfPresent(Int.self, forKey: .starFlocks)) ?? 0, 0)
+        bestCleanMeters = (try? c.decodeIfPresent(Double.self, forKey: .bestCleanMeters)) ?? 0
+        bestCloudTouchesInRun = (try? c.decodeIfPresent(Int.self, forKey: .bestCloudTouchesInRun)) ?? 0
+        bestSpeed = (try? c.decodeIfPresent(Double.self, forKey: .bestSpeed)) ?? 0
         ProgressRules.migrate(&self, fromVersion: storedVersion)
     }
 
@@ -174,6 +181,14 @@ struct ProgressData: Codable, Equatable {
     func hasLearned(_ hint: String) -> Bool { learnedHints.contains(hint) }
     func dailyRecord(day: Int) -> DailyRecord? { daily[day] }
     func goalProgress(for goal: Goal) -> Double { min(max(goalProgress[goal.id] ?? 0, 0), 1) }
+    /// The player's bests as Core's `PlayerBests` (R5 P1-9).
+    var bests: PlayerBests {
+        PlayerBests(meters: bestMeters, perfectsInRun: bestPerfectsInRun, chain: bestChain,
+                    lighthousesInRun: bestLighthousesInRun, tailwindsInRun: bestTailwindsInRun,
+                    cloudTouchesInRun: bestCloudTouchesInRun, cleanMeters: bestCleanMeters, maxSpeed: bestSpeed,
+                    lifetimeMeters: lifetimeMeters, dailyPlayed: !daily.isEmpty || !dailyAttempted.isEmpty)
+    }
+
     /// The goals in play: the rank's three, or the current star flock past the top.
     var currentGoals: [Goal] { ProgressRules.currentGoals(rank: rank, starFlocks: starFlocks) }
 }
@@ -215,6 +230,8 @@ enum ProgressRules {
         if stored < 2 {
             data.goalProgress = [:]
         }
+        // R5 (Core changed some goal ids, e.g. r1's chain → r1-total): progress for ids that no longer exist goes.
+        data.goalProgress = pruned(data.goalProgress, knownIDs: knownGoalIDs(maxRank: maxRank))
         if data.hintsLearned && data.learnedHints.isEmpty {
             data.learnedHints = [AppHint.fold.rawValue, AppHint.open.rawValue]
         }
@@ -233,6 +250,18 @@ enum ProgressRules {
         let title = GoalCatalog.rankTitle(rank)
         if rank >= maxRank { return starFlocks > 0 ? "\(title) ★\(starFlocks)" : "\(title) ★" }
         return "\(min(max(done, 0), total)) of \(total) · \(title)"
+    }
+
+    /// Every goal id the ladder uses (star flocks are matched by their "star" prefix).
+    static func knownGoalIDs(maxRank: Int = GoalCatalog.maxRank) -> Set<String> {
+        var ids = Set<String>()
+        for r in 0..<max(maxRank, 0) { for g in GoalCatalog.goals(forRank: r) { ids.insert(g.id) } }
+        return ids
+    }
+
+    /// Goal progress without the ids that are gone (and without NaN). Pure; tested.
+    static func pruned(_ progress: [String: Double], knownIDs: Set<String>) -> [String: Double] {
+        progress.filter { key, value in (knownIDs.contains(key) || key.hasPrefix("star")) && value.isFinite }
     }
 
     /// QA-2 P2-8: a scored Daily only on a day at or after the latest Daily played (a clock turned back can't replay a
@@ -349,6 +378,9 @@ enum ProgressRules {
         data.bestPerfectsInRun = max(data.bestPerfectsInRun, result.perfects)
         data.bestLighthousesInRun = max(data.bestLighthousesInRun, result.lighthouses)
         data.bestTailwindsInRun = max(data.bestTailwindsInRun, result.tailwinds)
+        data.bestCloudTouchesInRun = max(data.bestCloudTouchesInRun, result.cloudTouches)
+        if result.longestCleanMeters.isFinite { data.bestCleanMeters = max(data.bestCleanMeters, result.longestCleanMeters) }
+        if result.maxSpeed.isFinite { data.bestSpeed = max(data.bestSpeed, result.maxSpeed) }
         data.totalPerfects += max(result.perfects, 0)
         data.totalTailwinds += max(result.tailwinds, 0)
         data.totalLighthouses += max(result.lighthouses, 0)
@@ -392,6 +424,10 @@ enum ProgressRules {
             let before = min(max(data.goalProgress[goal.id] ?? 0, 0), 1)
             var now = evaluate(goal, result, data.lifetimeMeters, dailyPlayed)
             if !now.isFinite { now = 0 }
+            // R5 P1-9: a goal the player's bests already meet completes now (with its tick, Core's `isMet`), so a
+            // strong player climbs instead of being handed "Fly 3 km" after 12 km; others start from the bests.
+            now = max(now, bestProgress(goal, data: data))
+            if GoalEvaluator.isMet(goal, bests: data.bests) { now = 1 }
             let after = max(before, min(max(now, 0), 1))
             data.goalProgress[goal.id] = after
             rows.append(GoalRowOutcome(goal: goal, before: before, after: after))
@@ -403,7 +439,16 @@ enum ProgressRules {
             data.starFlocks += 1
             outcome.starEarned = true
         } else if !rows.isEmpty && rows.allSatisfy({ $0.isMet }) {
-            data.rank = min(rankBefore + 1, maxRank)
+            // R5 P1-9: then cascade through every flock the bests already meet (one banner, "+N ranks").
+            var reached = min(rankBefore + 1, maxRank)
+            let bests = data.bests
+            while reached < maxRank {
+                let next = goals(reached)
+                if next.isEmpty || !next.allSatisfy({ GoalEvaluator.isMet($0, bests: bests) }) { break }
+                for g in next { data.goalProgress.removeValue(forKey: g.id) }
+                reached += 1
+            }
+            data.rank = reached
             // The finished rank's goal ids are done with; the next rank starts fresh.
             for row in rows { data.goalProgress.removeValue(forKey: row.goal.id) }
             let opened = unlocks(rankBefore, data.rank)
@@ -436,6 +481,26 @@ enum ProgressRules {
         let stored = data.goalProgress(for: goal)
         guard goal.kind == .totalMeters, goal.target > 0, data.lifetimeMeters.isFinite else { return stored }
         return max(stored, min(max(data.lifetimeMeters / goal.target, 0), 1))
+    }
+
+    /// A goal's progress from the player's stored bests (this run's are already in `data`): reach, Perfects, chain,
+    /// lighthouses and Tailwinds in one flight, and the lifetime total. Kinds with no stored best read 0. Pure; tested.
+    static func bestProgress(_ goal: Goal, data: ProgressData) -> Double {
+        guard goal.target > 0 else { return 0 }
+        let value: Double
+        switch goal.kind {
+        case .reachMeters: value = data.bestMeters
+        case .perfectsInRun: value = Double(data.bestPerfectsInRun)
+        case .chain: value = Double(data.bestChain)
+        case .lighthouses: value = Double(data.bestLighthousesInRun)
+        case .tailwinds: value = Double(data.bestTailwindsInRun)
+        case .totalMeters: value = data.lifetimeMeters
+        case .cleanMeters: value = data.bestCleanMeters
+        case .cloudTouches: value = Double(data.bestCloudTouchesInRun)
+        default: return 0
+        }
+        guard value.isFinite else { return 0 }
+        return min(max(value / goal.target, 0), 1)
     }
 
     /// The rank that unlocks the last bird (the "all birds" achievement).

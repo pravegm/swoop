@@ -25,7 +25,7 @@ struct TurnCard: View {
                     // middle.
                     let page = max((geo.size.width - Self.foldBand) / 2, 0)
                     HStack(spacing: 0) {
-                        BookPoseDrawing()
+                        poseDrawing
                             .frame(width: min(page * 0.8, 260), height: min(geo.size.height * 0.7, 240))
                             .frame(width: page, height: geo.size.height)
                         Color.clear.frame(width: Self.foldBand)
@@ -42,7 +42,7 @@ struct TurnCard: View {
                 } else {
                     let half = max((geo.size.height - Self.foldBand) / 2, 0)
                     VStack(spacing: 0) {
-                        BookPoseDrawing()
+                        poseDrawing
                             .frame(width: min(geo.size.width * 0.6, 260), height: min(half * 0.8, 240))
                             .frame(maxWidth: .infinity)
                             .frame(height: half)
@@ -59,6 +59,12 @@ struct TurnCard: View {
             }
             .ignoresSafeArea()
         }
+    }
+
+    /// A Duo opening like a book, or (R5, juror / Duo R4) on a regular iPhone a single phone turning sideways.
+    @ViewBuilder
+    private var poseDrawing: some View {
+        if isDuo { BookPoseDrawing() } else { PhoneTurnDrawing() }
     }
 
     private var copy: some View {
@@ -82,6 +88,45 @@ struct TurnCard: View {
                 .padding(.top, 6)
             }
         }
+    }
+}
+
+/// A regular iPhone turning from upright to sideways, a tiny bird gliding across its screen once it lands. On a loop;
+/// still under Reduce Motion and in demo captures.
+struct PhoneTurnDrawing: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var still: Bool { AppTrace.enabled }
+    static let loop: Double = 3.6
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion || still)) { context in
+            let t = (reduceMotion || still) ? 2.4
+                : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: Self.loop)
+            let turn = 1 - pow(1 - min(max((t - 0.4) / 0.9, 0), 1), 3)
+            let glide = min(max((t - 1.5) / 1.6, 0), 1)
+            ZStack {
+                Circle()
+                    .fill(SwoopTheme.poseCircle)
+                    .frame(width: 230, height: 230)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(SwoopTheme.foam.opacity(0.9))
+                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                        .fill(LinearGradient(colors: [SwoopTheme.slate, SwoopTheme.goldLight, SwoopTheme.gold],
+                                             startPoint: .leading, endPoint: .trailing))
+                        .padding(5)
+                    BirdGlyph()
+                        .fill(SwoopTheme.foam)
+                        .frame(width: 30, height: 14)
+                        .offset(x: CGFloat(-50 + 100 * glide), y: CGFloat(-8 + 6 * sin(t * 4)))
+                        .opacity(turn > 0.95 ? 1 : 0)
+                }
+                .frame(width: 196, height: 96)
+                .rotationEffect(.degrees(-90 * (1 - turn)))
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -245,7 +290,7 @@ struct ClosedCard: View {
                     row(icon: "flag.fill", title: "Best flight", value: ShareText.distance(store.data.bestMeters))
                     divider
                 }
-                row(icon: "calendar", title: "Daily #\(AppRules.dailyNumber(day: today))", value: dailyValue)
+                row(icon: "calendar", title: "Daily \(AppRules.dailyTag(day: today))", value: dailyValue)
                 if store.data.dailyStreak(today: today) >= 2 {
                     divider
                     row(icon: "flame.fill", title: "Daily streak", value: "\(store.data.dailyStreak(today: today))-day streak")
@@ -310,7 +355,7 @@ struct ClosedCard: View {
                     .font(SwoopType.caption(false))
                     .foregroundStyle(SwoopTheme.mist)
                 if run.isScoredDaily, let day = run.day {
-                    Text("Daily #\(AppRules.dailyNumber(day: day)) · your one try is paused")
+                    Text("Daily \(AppRules.dailyTag(day: day)) · your one try is paused")
                         .font(SwoopType.caption(false))
                         .foregroundStyle(SwoopTheme.mist)
                 }
@@ -352,12 +397,12 @@ struct ClosedCard: View {
         return AppRules.meterLead(gap: max(meters, 0) * Tuning.pointsPerMeter)
     }
 
-    /// "Storm close" (coral) inside the meter's danger zone, else "Storm far · lead 78 %" (the player's R3 note: a
-    /// gap in km read as an alarm 75 m into a run). Pure; tested.
+    /// "Storm 900 m behind" (UX R4 P2-6: a percentage read as jargon, and 32 % as danger), coral under 300 m.
+    /// Pure; tested.
+    static let stormCoralUnder: Double = 300
     nonisolated static func stormLine(_ meters: Double) -> (text: String, close: Bool) {
-        let fill = stormFill(meters)
-        if fill < AppRules.meterDangerZone { return ("Storm close", true) }
-        return ("Storm far · lead \(Int((fill * 100).rounded())) %", false)
+        let m = meters.isFinite ? max(meters, 0) : 0
+        return ("Storm \(ShareText.distance(m)) behind", m < 300)
     }
 
     // MARK: Results

@@ -56,7 +56,7 @@ final class GameController: ObservableObject, SceneDriver {
     static let toastSeconds: Double = 1.8
     static let teachSeconds: Double = 2.5
     /// R4: the splash word's life at the bird, and the first run's meter label (seconds after the drop).
-    static let splashMarkSeconds: Double = 0.9
+    static let splashMarkSeconds: Double = 1.3
     static let meterLabelSeconds: Double = 3.0
     /// The lead meter's storm-close threshold (GAME-DESIGN §6: 15 %).
     static let stormCloseLead: Double = 0.15
@@ -83,6 +83,8 @@ final class GameController: ObservableObject, SceneDriver {
     @Published private(set) var homeFlat = false
     /// Home: Fly glows once after the first full stroke (fold, then open).
     @Published private(set) var flyGlowSerial = 0
+    /// Home on a Duo resting under the 132° floor: "Open it a little wider" (R5 P1-7).
+    @Published private(set) var homeLowRest = false
     /// "Play with touch" / "Switch to touch" / "Keep touch" (this app session only).
     @Published private(set) var touchOverride = false
     @Published private(set) var mode: RunMode = .attract
@@ -144,6 +146,8 @@ final class GameController: ObservableObject, SceneDriver {
     private var chainLostUntil = 0.0
     private var teachUntil = 0.0
     private var splashUntil = 0.0
+    /// The next HUD publish is exact and unthrottled (pause, caught; R5 P1-3).
+    private var forceHUD = false
     private var perfectCalloutShown = false
     /// The Duo was shut mid-run: the next resume is the long one.
     private var resumeAfterCover = false
@@ -202,6 +206,16 @@ final class GameController: ObservableObject, SceneDriver {
         self.runBird = store.activeBird
         self.runSky = store.activeSky
         settings.isDuo = trusted
+        // R5 P1-7 (Feel): start from the saved resting angle, and save every new one (never in demo runs).
+        if !isDemo, let saved = settings.hingeOpenAngle { hinge.restoreOpenAngle(saved) }
+        hinge.onCalibrated = { [weak self] open in
+            MainActor.assumeIsolated { self?.noteCalibrated(open) }
+        }
+    }
+
+    private func noteCalibrated(_ open: Double) {
+        guard !isDemo, open.isFinite else { return }
+        settings.hingeOpenAngle = (open * 10).rounded() / 10
     }
 
     // MARK: - Derived
@@ -262,7 +276,7 @@ final class GameController: ObservableObject, SceneDriver {
 
     /// The scored Daily's countdown banner title (UX §3 "Daily"): "Daily Flight #298"; nil otherwise.
     var dailyBannerTitle: String? {
-        if case let .daily(day, scored) = mode, scored { return "Daily Flight #\(AppRules.dailyNumber(day: day))" }
+        if case let .daily(day, scored) = mode, scored { return "Daily Flight \(AppRules.dailyTag(day: day))" }
         return nil
     }
 
@@ -277,16 +291,16 @@ final class GameController: ObservableObject, SceneDriver {
     /// The HUD's run tag: "DAILY #298" (· PRACTICE once today's try is spent); nil for a Flight.
     var hudTag: String? {
         if case let .daily(day, scored) = mode {
-            let n = AppRules.dailyNumber(day: day)
-            return scored ? "DAILY #\(n)" : "DAILY #\(n) · PRACTICE"
+            let n = AppRules.dailyTag(day: day).uppercased()
+            return scored ? "DAILY \(n)" : "DAILY \(n) · PRACTICE"
         }
         return nil
     }
 
     /// The current distance (the pause card, the closing card).
     var currentMeters: Double {
-        guard let s = session?.snapshot, s.distanceMeters.isFinite else { return 0 }
-        return max(s.distanceMeters, 0)
+        // R5 P1-3: the HUD's published value (forced exact at every pause), so the card never disagrees with it.
+        Double(hud.meters)
     }
 
     /// The title bird's tuck on Home: live from the hinge (play's mapping and calibration), else the idle beat or
@@ -331,6 +345,14 @@ final class GameController: ObservableObject, SceneDriver {
         // `SWOOP-T frame 120` is printed by FlightScene itself (it counts drawn frames).
         guard let session else { return (FlightSnapshot(), []) }
         if homeLoop && hinge.hasHinge { homeHingeTuck = hinge.tuck(at: now) }
+        // R5 P1-7 (Feel): Home and Results (before fold-to-fly arms) learn the resting book angle once still.
+        if hinge.hasHinge && (homeLoop || (route == .results && foldToFly.phase == .idle)) {
+            hinge.homeCalibrate(at: now)
+        }
+        if homeLoop && hinge.hasHinge {
+            let low = hinge.restIsBelowFloor(at: now)
+            if homeLowRest != low { homeLowRest = low }
+        }
         // UX-D3: no fine sparkle while a fold blur may still be on screen.
         SceneAdapter.setFineDetail(scene, !(hinge.hasHinge && hinge.inFlatBlurGuard(at: now, window: Self.blurGuard)))
         if input == .hinge { checkClosing(now: now) }
@@ -368,12 +390,22 @@ final class GameController: ObservableObject, SceneDriver {
         var step = AppRules.clampStep(dt)
         // UX-A4: the countdown holds while the Duo lies flat (fold-blur risk), and (R4 P0-6) while a still hinge rests
         // on the calibration floor ("Open a little wider"): 4 s at most between them.
-        if case .countdown = session.snapshot.phase, !homeLoop {
-            let hold = countdownHold(now: now)
-            if hold != .free && flatHoldUsed < Self.flatHoldMax {
-                flatHoldUsed += step
-                hud.setFlatHold(hold == .flat)
-                hud.setOpenNudge(hold == .nudge)
+        // R5 P1-8 (Feel): when the nudge budget runs out, a rest under 119° keeps holding and offers touch; "Go" never
+        // comes while the start tuck is over 0.5.
+        if case let .countdown(remaining) = session.snapshot.phase, !homeLoop {
+            let raw = countdownHold(now: now)
+            var lowRest: HingeLowRest?
+            if raw == .nudge && flatHoldUsed >= Self.flatHoldMax && input == .hinge {
+                lowRest = hinge.lowRestFallback(at: now)
+            }
+            let startTuck = input == .hinge ? hinge.startTuck(at: now) : 0
+            let gate = AppRules.countdownGate(raw: raw, budgetUsed: flatHoldUsed, budget: Self.flatHoldMax,
+                                              lowRest: lowRest, startTuck: startTuck, remaining: remaining, step: step)
+            hud.setNudgeOffer(gate.offerTouch)
+            if gate.hold != .free {
+                if flatHoldUsed < Self.flatHoldMax { flatHoldUsed += step }
+                hud.setFlatHold(gate.hold == .flat)
+                hud.setOpenNudge(gate.hold == .nudge)
                 #if DEBUG
                 demoFlatHoldFrame(session.snapshot)
                 #endif
@@ -384,6 +416,7 @@ final class GameController: ObservableObject, SceneDriver {
         }
         hud.setFlatHold(false)
         hud.setOpenNudge(false)
+        hud.setNudgeOffer(false)
         if let slow = slowUntil {
             if now < slow { step *= Self.splashSlowRate } else { slowUntil = nil }
         }
@@ -409,7 +442,7 @@ final class GameController: ObservableObject, SceneDriver {
         return (snapshot, events)
     }
 
-    private enum CountdownHold { case free, flat, nudge }
+    private typealias CountdownHold = AppRules.CountdownHold
 
     private func countdownHold(now: TimeInterval) -> CountdownHold {
         #if DEBUG
@@ -852,7 +885,7 @@ final class GameController: ObservableObject, SceneDriver {
         outcome.dailyCounted = true
         outcome.dailyStreak = store.data.dailyStreak(today: day)
         var card = ResultSummary(result: result, outcome: outcome,
-                                 title: "Daily Flight #\(AppRules.dailyNumber(day: day))", dailyDay: day,
+                                 title: "Daily Flight \(AppRules.dailyTag(day: day))", dailyDay: day,
                                  practice: false, share: ShareText.line(for: result, streak: outcome.dailyStreak))
         card.isDailyCard = true
         card.dailySpentUnfiled = record == nil
@@ -1157,10 +1190,13 @@ final class GameController: ObservableObject, SceneDriver {
                     // R4 P1-9: the mistake is said at the bird: "Splash", and "×4 lost" when a chain of 3+ broke.
                     calloutSerial += 1
                     let anchor = SceneAdapter.birdPoint(scene, layout: layout, reported: reportedBirdPoint)
-                    hud.setSplashMark(HUDSplashMark(lostChain: prevChain >= 3 ? prevChain : nil,
-                                                    point: anchor?.point ?? .zero, serial: calloutSerial))
-                    splashUntil = s.time + Self.splashMarkSeconds
-                    if prevChain >= 3 { announce("Chain lost", priority: 1) }
+                    showSplashMark(splash: true, lostChain: prevChain >= 3 ? prevChain : nil, anchor: anchor?.point,
+                                   sessionTime: s.time)
+                } else if prevChain >= 3 && chain < prevChain {
+                    // R5 P1-2: a chain broken by a plain landing is said too ("×4 lost"), never silent.
+                    calloutSerial += 1
+                    let anchor = SceneAdapter.birdPoint(scene, layout: layout, reported: reportedBirdPoint)
+                    showSplashMark(splash: false, lostChain: prevChain, anchor: anchor?.point, sessionTime: s.time)
                 }
             case let .lighthouse(index, name):
                 toastSerial += 1
@@ -1191,6 +1227,7 @@ final class GameController: ObservableObject, SceneDriver {
                 }
             case .caught:
                 releaseTouches()
+                forceHUD = true
                 caughtAt = s.time
                 hud.setCaught(true)
                 announce("Caught at \(ShareText.distance(s.distanceMeters))", priority: 3)
@@ -1200,6 +1237,17 @@ final class GameController: ObservableObject, SceneDriver {
                 break
             }
         }
+    }
+
+    /// The splash word at the bird (R4 P1-9 / R5 P1-2). A missing anchor falls back to the bird's fixed spot (never
+    /// `.zero`, which put the word off the bird page).
+    private func showSplashMark(splash: Bool, lostChain: Int?, anchor: CGPoint?, sessionTime: Double) {
+        // A missing anchor stays nil: the view places it at the bird's default spot in its own canvas.
+        let mark = HUDSplashMark(lostChain: lostChain, point: anchor, serial: calloutSerial, splash: splash)
+        hud.setSplashMark(mark)
+        splashUntil = sessionTime + Self.splashMarkSeconds
+        AppTrace.t("SWOOP-T splashMark shown \(mark.text)")
+        if lostChain != nil { announce("Chain lost", priority: 1) }
     }
 
     static func ordinal(_ n: Int) -> String {
@@ -1248,16 +1296,18 @@ final class GameController: ObservableObject, SceneDriver {
         }
     }
 
-    private func publishHUD(_ s: FlightSnapshot, now: TimeInterval, force: Bool) {
+    private func publishHUD(_ s: FlightSnapshot, now: TimeInterval, force forced: Bool) {
+        let force = forced || forceHUD
+        forceHUD = false
         guard force || lastHUDPublish < 0 || now - lastHUDPublish >= Self.hudInterval else { return }
         lastHUDPublish = now
-        let meters = s.distanceMeters.isFinite ? Int(max(s.distanceMeters, 0)) : 0
+        let meters = AppRules.hudMeters(s.distanceMeters)
         // QA-2 P2-6: past 1 km the hundredths change at ≤ 4 Hz (10 m steps), so the digits don't roll constantly.
         if meters < 1000 {
             hud.setMeters(meters)
         } else if force || lastKmPublish < 0 || now - lastKmPublish >= Self.kmInterval {
             lastKmPublish = now
-            hud.setMeters((meters / 10) * 10)
+            hud.setMeters(meters)
         }
         hud.setLead((AppRules.meterLead(gap: s.gap) * 100).rounded() / 100)
         hud.setChain(s.chain)
@@ -1302,11 +1352,12 @@ final class GameController: ObservableObject, SceneDriver {
         if hud.callout != nil && s.time > calloutUntil { hud.setCallout(nil) }
         if hud.chainLost != nil && s.time > chainLostUntil { hud.setChainLost(nil) }
         if hud.splashMark != nil && s.time > splashUntil { hud.setSplashMark(nil) }
-        hud.setSunPoint(SceneAdapter.sunScreenPoint(scene, layout: layout))
+        hud.setSunPoint(SceneAdapter.sunDesignPoint(scene))
         // R4 P1-7: the first run explains the meter for its first seconds.
         var label = false
         if store.data.runs == 0 && !homeLoop {
-            if let start = flightStart { label = s.time - start < Self.meterLabelSeconds } else { label = true }
+            // UX R4 P2-2: after Go only (in the countdown it sat under the bird's wing).
+            if let start = flightStart { label = s.time - start < Self.meterLabelSeconds }
         }
         hud.setMeterLabel(label)
         if hud.teachLine != nil && s.time > teachUntil { hud.setTeachLine(nil) }
@@ -1370,8 +1421,8 @@ final class GameController: ObservableObject, SceneDriver {
         if case let .daily(d, scored) = result.mode {
             day = d
             practice = !scored
-            let n = AppRules.dailyNumber(day: d)
-            title = scored ? "Daily Flight #\(n)" : "Daily Flight #\(n) · Practice"
+            let n = AppRules.dailyTag(day: d)
+            title = scored ? "Daily Flight \(n)" : "Daily Flight \(n) · Practice"
         }
         return ResultSummary(result: result, outcome: outcome, title: title, dailyDay: day, practice: practice,
                              share: ShareText.line(for: result, streak: outcome.dailyStreak))
@@ -1409,7 +1460,7 @@ final class GameController: ObservableObject, SceneDriver {
         var day: Int?
         if case let .daily(d, _) = mode { day = d }
         let gap = s.gap.isFinite ? max(s.gap, 0) / Tuning.pointsPerMeter : 0
-        return PausedRun(meters: max(s.distanceMeters, 0), stormMeters: gap, perfects: s.perfects, chain: s.chain,
+        return PausedRun(meters: Double(hud.meters), stormMeters: gap, perfects: s.perfects, chain: s.chain,
                          bestMeters: store.data.bestMeters, isScoredDaily: isScoredDaily, day: day)
     }
 
@@ -1448,6 +1499,8 @@ final class GameController: ObservableObject, SceneDriver {
         if !was && now {
             releaseTouches()
             feedback.silence()
+            // R5 P1-3: the cards read the HUD's value, so the HUD shows the exact distance first.
+            if !homeLoop, let s = session?.snapshot { publishHUD(s, now: CACurrentMediaTime(), force: true) }
             if isLiveRun { pausedRun = makePausedRun() }
         } else if was && !now {
             resumed()
@@ -1460,7 +1513,8 @@ final class GameController: ObservableObject, SceneDriver {
     private func resumed() {
         guard isLiveRun else { return }
         pausedRun = nil
-        let hold = AppRules.readyHold(afterCover: resumeAfterCover, normal: Self.readyHold)
+        // Duo R4 P2-4: the cover's own deck ("Keep flying here") has no handover blur: the short hold there.
+        let hold = AppRules.readyHold(afterCover: resumeAfterCover && pose == .play, normal: Self.readyHold)
         resumeAfterCover = false
         readyTotal = hold
         let until = CACurrentMediaTime() + hold
@@ -1659,6 +1713,11 @@ final class GameController: ObservableObject, SceneDriver {
         }
         if target == .finished {
             if events.contains(.finished) { freeze(target.rawValue, s) }
+            return
+        }
+        if target == .chainlost {
+            // R5: the frame after a chain of 3+ breaks, with the mark held on screen.
+            if hud.splashMark?.lostChain != nil { freezePendingAt = s.time + demo.freezeDelay }
             return
         }
         guard flightStart != nil, flightTime >= demo.freezeAfter || target == .caught else { return }

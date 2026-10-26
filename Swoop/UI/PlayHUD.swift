@@ -59,10 +59,22 @@ struct PlayLayer: View {
             CenterStage(hud: hud, touch: controller.hintTouchWording, compact: c, reduceMotion: reduceMotion,
                         dailyTitle: controller.dailyBannerTitle, readyTotal: controller.readyTotal)
                 .frame(width: l.center.width, height: l.center.height)
-                .position(AppRules.stageCenter(usual: CGPoint(x: l.center.midX, y: l.center.midY), sun: hud.sunPoint,
-                                               height: info.size.height))
+                .position(AppRules.stageCenter(usual: CGPoint(x: l.center.midX, y: l.center.midY),
+                                               sun: hud.sunPoint.map { info.screenPoint($0) }, height: info.size.height))
                 .animation(.easeInOut(duration: 0.4), value: hud.sunPoint)
                 .allowsHitTesting(false)
+            if hud.nudgeOffer && !paused {
+                // R5 P1-8 (Feel): a rest too low for any open angle never starts tucked; touch is offered instead.
+                SwoopButton(kind: .secondary, height: SwoopTheme.secondaryHeight(c), compact: c,
+                            action: { controller.switchToTouch() }) {
+                    Label("Fly with touch", systemImage: "hand.point.up.left.fill")
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .frame(width: min(l.center.width, 280))
+                .position(x: l.center.midX, y: min(l.center.maxY + 36, info.bottom - 36))
+                .transition(.opacity)
+            }
             ToastStage(hud: hud, compact: c, reduceMotion: reduceMotion)
                 .frame(width: l.toast.width, height: l.toast.height, alignment: .top)
                 .position(x: l.toast.midX, y: l.toast.midY)
@@ -293,7 +305,7 @@ struct HUDView: View {
                     .transition(.opacity)
             }
             Group {
-                LeadMeter(lead: hud.lead, stormClose: hud.stormClose, mirrored: mirrored)
+                LeadMeter(lead: hud.lead, stormClose: hud.stormClose, mirrored: mirrored, showsLabels: hud.meterLabel)
                     .frame(width: layout.meter.width, height: layout.meter.height)
                     .position(x: layout.meter.midX, y: layout.meter.midY)
                     .allowsHitTesting(false)
@@ -334,13 +346,8 @@ struct HUDView: View {
     @ViewBuilder
     private var tagLine: some View {
         if hud.meterLabel {
-            // R4 P1-7: the first run says what the bar is.
-            Text("Storm ←→ you")
-                .font(SwoopType.caption(info.isCompact).weight(.semibold))
-                .foregroundStyle(SwoopTheme.foam)
-                .lineLimit(1)
-                .swoopLegible()
-                .transition(.opacity)
+            // The meter labels itself now ("Storm" / "You"); the tag line stays clear under them.
+            Color.clear.frame(height: 1)
         } else if let teach = hud.teachLine {
             Text(teach)
                 .font(SwoopType.caption(info.isCompact))
@@ -396,6 +403,8 @@ struct LeadMeter: View {
     let lead: Double
     let stormClose: Bool
     let mirrored: Bool
+    /// R5 (UX R4 P2-2): the first run's "Storm" (under the cloud) and "You" (under the knob), after Go, for 3 s.
+    var showsLabels: Bool = false
 
     @State private var pulse = false
 
@@ -413,14 +422,6 @@ struct LeadMeter: View {
                         .fill(SwoopTheme.abyss.opacity(0.55))
                     HStack(spacing: 0) {
                         if mirrored { Spacer(minLength: 0) }
-                        Rectangle()
-                            .fill(SwoopTheme.coral.opacity(0.25))
-                            .frame(width: w * CGFloat(AppRules.meterDangerZone))
-                        if !mirrored { Spacer(minLength: 0) }
-                    }
-                    .clipShape(Capsule())
-                    HStack(spacing: 0) {
-                        if mirrored { Spacer(minLength: 0) }
                         Capsule()
                             .fill(LinearGradient(colors: mirrored ? [SwoopTheme.gold, SwoopTheme.slate]
                                                                   : [SwoopTheme.slate, SwoopTheme.gold],
@@ -428,11 +429,39 @@ struct LeadMeter: View {
                             .frame(width: max(w * v, h))
                         if !mirrored { Spacer(minLength: 0) }
                     }
-                    BirdGlyph()
-                        .fill(SwoopTheme.foam)
-                        .frame(width: h + 14, height: (h + 14) * 0.48)
-                        .swoopLegible()
-                        .position(x: min(max(markerX, h / 2), w - h / 2), y: h / 2)
+                    // UX R4 P2-1: the coral danger zone sits ABOVE the fill (you see the cliff edge coming), with a
+                    // 2 pt tick at its edge.
+                    let zone = w * CGFloat(AppRules.meterDangerZone)
+                    HStack(spacing: 0) {
+                        if mirrored { Spacer(minLength: 0) }
+                        ZStack(alignment: mirrored ? .leading : .trailing) {
+                            Rectangle().fill(SwoopTheme.coral.opacity(0.4))
+                            Rectangle().fill(SwoopTheme.coral).frame(width: 2)
+                        }
+                        .frame(width: zone)
+                        if !mirrored { Spacer(minLength: 0) }
+                    }
+                    .clipShape(Capsule())
+                    .allowsHitTesting(false)
+                    // Juror R4 #16: the knob is the mark at 20 pt on a 24 pt navy dot (it read as a tick at 14).
+                    let knobX = min(max(markerX, h / 2), w - h / 2)
+                    ZStack {
+                        Circle().fill(Color(swoopHex: Contrast.scrim))
+                            .overlay(Circle().stroke(SwoopTheme.foam.opacity(0.9), lineWidth: 1.5))
+                            .frame(width: 24, height: 24)
+                        BirdGlyph()
+                            .fill(SwoopTheme.foam)
+                            .frame(width: 20, height: 12)
+                    }
+                    .position(x: knobX, y: h / 2)
+                    if showsLabels {
+                        Text("You")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundStyle(SwoopTheme.foam)
+                            .fixedSize()
+                            .swoopLegible()
+                            .position(x: knobX, y: h / 2 + 24)
+                    }
                 }
                 .frame(width: w, height: h)
                 .overlay(
@@ -463,6 +492,16 @@ struct LeadMeter: View {
             .foregroundStyle(stormClose ? SwoopTheme.coral : SwoopTheme.mist)
             .offset(x: stormClose && pulse ? 1.5 : 0)
             .swoopLegible()
+            .overlay(alignment: .top) {
+                if showsLabels {
+                    Text("Storm")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(SwoopTheme.foam)
+                        .fixedSize()
+                        .swoopLegible()
+                        .offset(y: 26)
+                }
+            }
     }
 }
 
@@ -536,8 +575,8 @@ struct PerfectCalloutView: View {
             if let callout = hud.callout {
                 // Scene R3 `onBirdPoint` (the play view's own points, y down). It follows the bird for its 0.7 s life
                 // (juror R3 #12), easing over 0.08 s.
-                let p = CalloutPlacement.center(bird: hud.birdPoint ?? callout.point, birdRadius: callout.radius,
-                                                size: Self.size, canvas: info)
+                let bird = hud.birdPoint ?? (callout.point == .zero ? SceneAdapter.defaultBirdPoint(info) : callout.point)
+                let p = CalloutPlacement.center(bird: bird, birdRadius: callout.radius, size: Self.size, canvas: info)
                 Group {
                     if hud.holdFrame {
                         PerfectCalloutText.label(callout.text, compact: info.isCompact)
@@ -788,11 +827,16 @@ struct SplashMarkView: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             if let mark = hud.splashMark {
-                let p = SplashPlacement.center(bird: mark.point, canvas: info)
-                SplashMarkText(text: mark.text, compact: info.isCompact, reduceMotion: reduceMotion,
-                               hold: hud.holdFrame)
-                    .id(mark.serial)
-                    .position(p)
+                let p = SplashPlacement.center(bird: mark.point ?? SceneAdapter.defaultBirdPoint(info), canvas: info)
+                // R5 P1-2: a demo freeze shows the word fully (the fade ran on wall time and was gone by the capture).
+                if hud.holdFrame {
+                    SplashMarkText.label(mark.text, compact: info.isCompact)
+                        .position(p)
+                } else {
+                    SplashMarkText(text: mark.text, compact: info.isCompact, reduceMotion: reduceMotion)
+                        .id(mark.serial)
+                        .position(p)
+                }
             }
         }
         .frame(width: info.size.width, height: info.size.height, alignment: .topLeading)
@@ -807,21 +851,26 @@ struct SplashMarkText: View {
 
     @State private var gone = false
 
-    var body: some View {
+    /// `#E6ECF2` on a navy pill (player R4: at least 1.2 s on screen).
+    static func label(_ text: String, compact: Bool) -> some View {
         Text(text)
             .font(SwoopType.headline(compact))
-            .foregroundStyle(Color(swoopHex: 0xC9D3DE))
+            .foregroundStyle(Color(swoopHex: 0xE6ECF2))
             .lineLimit(1)
             .padding(.horizontal, 12)
             .padding(.vertical, 5)
-            .background(Capsule().fill(Color(swoopHex: Contrast.scrim).opacity(0.7)))
+            .background(Capsule().fill(Color(swoopHex: Contrast.scrim).opacity(Contrast.surfaceAlpha)))
+            .accessibilityHidden(true)
+    }
+
+    var body: some View {
+        Self.label(text, compact: compact)
             .offset(y: gone && !reduceMotion ? 14 : 0)
             .opacity(gone ? 0 : 1)
             .onAppear {
                 guard !hold else { return }
-                withAnimation(.easeIn(duration: 0.35).delay(0.5)) { gone = true }
+                withAnimation(.easeIn(duration: 0.4).delay(0.9)) { gone = true }
             }
-            .accessibilityHidden(true)
     }
 }
 /// Toasts and the lighthouse card: the far page, top edge at 60 % height, over the sea (UX §3); on `surface` at 80 %.
@@ -957,20 +1006,34 @@ struct TouchWingFeedback: View {
     static let vignetteDepth: CGFloat = 90
     static let vignetteAlpha: Double = 0.08
 
-    /// Where the glyph sits: the bird page's bottom centre, 40 pt up. Pure; tested.
-    nonisolated static func glyphCenter(birdPage: CGRect, height: CGFloat) -> CGPoint {
-        CGPoint(x: birdPage.midX, y: height - 40)
+    /// Where the glyph sits (R5): a quarter into the bird page from its outer edge, 28 pt above the bottom, below the
+    /// skim line and off the left thumb. Pure; tested.
+    nonisolated static func glyphCenter(birdPage: CGRect, height: CGFloat, mirrored: Bool = false) -> CGPoint {
+        let x = mirrored ? birdPage.maxX - birdPage.width * 0.25 : birdPage.minX + birdPage.width * 0.25
+        return CGPoint(x: x, y: height - 28)
     }
 
-    /// The glyph's alpha with the tuck: 0.35 → 0.9. Pure; tested.
-    nonisolated static func glyphAlpha(tuck: Double) -> Double {
-        0.35 + 0.55 * min(max(tuck.isFinite ? tuck : 0, 0), 1)
+    /// The glyph's alpha with the tuck: 0.55 → 0.9 (it vanished on the sea at 0.35); 0.15 while the bird's rect + 24
+    /// pt overlaps it, so it never sits on the bird. Pure; tested.
+    nonisolated static func glyphAlpha(tuck: Double, birdNear: Bool = false) -> Double {
+        if birdNear { return 0.15 }
+        return 0.55 + 0.35 * min(max(tuck.isFinite ? tuck : 0, 0), 1)
+    }
+
+    /// Whether the bird (radius ~44 pt) plus 24 pt meets the glyph's box. Pure; tested.
+    nonisolated static func birdNear(bird: CGPoint?, glyph: CGPoint) -> Bool {
+        guard let bird else { return false }
+        let r: CGFloat = 44 + 24
+        let side: CGFloat = 56    // glyphSize
+        let box = CGRect(x: glyph.x - side / 2, y: glyph.y - side * 0.3, width: side, height: side * 0.6)
+        return box.insetBy(dx: -r, dy: -r).contains(bird)
     }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { _ in
             let u = controller.touchTuck(now: CACurrentMediaTime())
-            let center = Self.glyphCenter(birdPage: info.birdPage, height: info.size.height)
+            let center = Self.glyphCenter(birdPage: info.birdPage, height: info.size.height, mirrored: info.mirrored)
+            let near = Self.birdNear(bird: controller.hud.birdPoint, glyph: center)
             ZStack(alignment: .topLeading) {
                 HStack(spacing: 0) {
                     LinearGradient(colors: [SwoopTheme.shadowBase.opacity(Self.vignetteAlpha * u), .clear],
@@ -987,7 +1050,7 @@ struct TouchWingFeedback: View {
                         .stroke(Color(swoopHex: 0x10233A).opacity(0.4), lineWidth: 2)
                     DartGlyph(tuck: u)
                         .fill(u > 0.5 ? SwoopTheme.gold : SwoopTheme.foam)
-                        .opacity(Self.glyphAlpha(tuck: u))
+                        .opacity(Self.glyphAlpha(tuck: u, birdNear: near))
                 }
                 .frame(width: Self.glyphSize, height: Self.glyphSize * 0.6)
                 .position(center)

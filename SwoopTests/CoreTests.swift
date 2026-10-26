@@ -1048,10 +1048,14 @@ struct CoreTests {
     @Test func ladderStretchAndStarFlocks() {
         let totals: [Double] = GoalCatalog.ladder.joined().filter { (g: Goal) -> Bool in g.kind == .totalMeters }
             .map { (g: Goal) -> Double in g.target }
-        #expect(totals.contains(400_000))
-        #expect(totals.contains(1_000_000))
-        #expect(GoalCatalog.goals(forRank: 9).contains(where: { (g: Goal) -> Bool in g.target == 400_000 }))
-        #expect(GoalCatalog.goals(forRank: 12).contains(where: { (g: Goal) -> Bool in g.target == 1_000_000 }))
+        // Round 5: a lifetime-distance spine, one total per flock, always rising, up to 3,600 km at the top.
+        #expect(totals.count == GoalCatalog.maxRank)
+        var k: Int = 1
+        while k < totals.count {
+            #expect(totals[k] > totals[k - 1])
+            k += 1
+        }
+        #expect(totals.last == 3_600_000)
         #expect(GoalCatalog.starGoals(n: -1).isEmpty)
         let top: [Goal] = GoalCatalog.goals(forRank: GoalCatalog.maxRank - 1)
         var ids: Set<String> = []
@@ -1151,5 +1155,92 @@ struct CoreTests {
         // The seed is unchanged: it still uses the raw day.
         var rng = SeededRandom(seed: 0xDA11_F1E5_5EED_0000 ^ UInt64(bitPattern: Int64(336)))
         #expect(DailySeed.seed(day: 336) == rng.next())
+    }
+
+    // MARK: Round 5 (P1-9: goals the bests already meet complete at once)
+
+    @Test func alreadyMetGoalsCompleteFromBests() {
+        // A 12 km flight with 20 Perfects, a chain of 8 and 2 lighthouses; 12 km flown in all.
+        let bests = PlayerBests(meters: 12_000, perfectsInRun: 20, chain: 8, lighthousesInRun: 2, tailwindsInRun: 2,
+                                cleanMeters: 6_000, lifetimeMeters: 12_000)
+        let r1: [Goal] = GoalCatalog.goals(forRank: 1)
+        let met: [String] = GoalEvaluator.alreadyMet(goals: r1, bests: bests).map { (g: Goal) -> String in g.id }
+        #expect(met == ["r1-reach", "r1-perfects"])          // "Fly 3 km" isn't handed out after 12 km…
+        #expect(!met.contains("r1-total"))                   // …but 15 km in total still needs flying.
+        #expect(GoalEvaluator.alreadyMet(goals: r1, bests: PlayerBests()).isEmpty)
+        // Daily goals: rank 2 accepts any Daily played; the "1 more Daily" goals never come from bests.
+        var daily = PlayerBests()
+        daily.dailyPlayed = true
+        let r2daily = GoalCatalog.goals(forRank: 2).filter { (g: Goal) -> Bool in g.kind == .dailyPlayed }
+        #expect(GoalEvaluator.alreadyMet(goals: r2daily, bests: daily).count == 1)
+        for id in GoalCatalog.dailyRunGoalIDs {
+            let g = GoalCatalog.ladder.joined().first(where: { (x: Goal) -> Bool in x.id == id })
+            #expect(g != nil, "\(id)")
+            if let g = g { #expect(!GoalEvaluator.isMet(g, bests: daily)) }
+        }
+    }
+
+    @Test func alreadyMetAgreesWithProgress() {
+        // For every goal, meeting it from bests is the same as a flight with those stats reaching progress 1
+        // (except the "1 more Daily" goals, which need a Daily flown now).
+        let bests = PlayerBests(meters: 21_000, perfectsInRun: 26, chain: 13, lighthousesInRun: 3, tailwindsInRun: 7,
+                                cloudTouchesInRun: 1, cleanMeters: 8_500, maxSpeed: 2_500, lifetimeMeters: 450_000,
+                                dailyPlayed: true)
+        let run = RunResult(mode: .flight, seed: 1, meters: bests.meters, score: 0, seconds: 100,
+                            perfects: bests.perfectsInRun, goods: 0, splashes: 0, bestChain: bests.chain,
+                            tailwinds: bests.tailwindsInRun, lighthouses: bests.lighthousesInRun, lastLighthouseName: "",
+                            cloudTouches: bests.cloudTouchesInRun, maxSpeed: bests.maxSpeed, maxAltitude: 0,
+                            longestCleanMeters: bests.cleanMeters, birdID: .gull)
+        var metCount: Int = 0
+        for g in GoalCatalog.ladder.joined() {
+            let byRun: Bool = GoalEvaluator.progress(g, run: run, lifetimeMeters: bests.lifetimeMeters,
+                                                     dailyPlayed: true) >= 1
+            #expect(GoalEvaluator.isMet(g, bests: bests) == byRun, "\(g.id)")
+            if byRun { metCount += 1 }
+        }
+        #expect(metCount > 10)
+    }
+
+    @Test func playerBestsMergeRuns() {
+        let a = RunResult(mode: .flight, seed: 1, meters: 9_000, score: 0, seconds: 90, perfects: 12, goods: 0,
+                          splashes: 2, bestChain: 5, tailwinds: 1, lighthouses: 1, lastLighthouseName: "",
+                          cloudTouches: 0, maxSpeed: 2_000, maxAltitude: 0, longestCleanMeters: 4_000, birdID: .gull)
+        let b = RunResult(mode: .daily(day: 330, scored: true), seed: 2, meters: 7_000, score: 0, seconds: 70,
+                          perfects: 15, goods: 0, splashes: 1, bestChain: 3, tailwinds: 2, lighthouses: 1,
+                          lastLighthouseName: "", cloudTouches: 1, maxSpeed: 1_900, maxAltitude: 0,
+                          longestCleanMeters: 5_000, birdID: .gull)
+        let m = PlayerBests().merged(with: a).merged(with: b)
+        #expect(m.meters == 9_000)
+        #expect(m.perfectsInRun == 15)
+        #expect(m.chain == 5)
+        #expect(m.tailwindsInRun == 2)
+        #expect(m.cloudTouchesInRun == 1)
+        #expect(m.cleanMeters == 5_000)
+        #expect(m.maxSpeed == 2_000)
+        #expect(m.lifetimeMeters == 16_000)
+        #expect(m.dailyPlayed)
+        #expect(!PlayerBests().merged(with: a).dailyPlayed)
+    }
+
+    @Test func strongBestsCascadeButFreshDailiesAndTotalsHoldTheLadder() {
+        // A player with huge single-flight bests but little flown in total climbs only as far as the distance spine
+        // lets them; with the distance too, they stop at rank 7, which needs a Daily flown at that rank.
+        var star = PlayerBests(meters: 200_000, perfectsInRun: 500, chain: 200, lighthousesInRun: 30,
+                               tailwindsInRun: 100, cloudTouchesInRun: 50, cleanMeters: 100_000, maxSpeed: 3_000,
+                               lifetimeMeters: 20_000, dailyPlayed: true)
+        #expect(GoalEvaluator.cascadedRank(from: 0, bests: star) == 2)   // 40 km in total for rank 3
+        star.lifetimeMeters = 10_000_000
+        #expect(GoalEvaluator.cascadedRank(from: 0, bests: star) == 7)
+        #expect(GoalEvaluator.cascadedRank(from: 8, bests: star) == 10)
+        #expect(GoalEvaluator.cascadedRank(from: 11, bests: star) == 13)
+        #expect(GoalEvaluator.cascadedRank(from: GoalCatalog.maxRank, bests: star) == GoalCatalog.maxRank)
+        #expect(GoalEvaluator.cascadedRank(from: 0, bests: PlayerBests()) == 0)
+        // The spine is the only lifetime goal per flock, and every flock has exactly one.
+        var rank: Int = 0
+        while rank < GoalCatalog.maxRank {
+            let n = GoalCatalog.goals(forRank: rank).filter { (g: Goal) -> Bool in g.kind == .totalMeters }.count
+            #expect(n == 1, "rank \(rank)")
+            rank += 1
+        }
     }
 }

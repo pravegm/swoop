@@ -74,7 +74,8 @@ struct DemoConfig: Equatable {
     enum CoverState: String, Equatable { case home, midrun, results }
     enum ModeKey: String, Equatable { case flight, daily, attract }
     enum Freeze: String, Equatable {
-        case launch, perfect, splash, tailwind, lighthouse, stormclose, caught, finished, flying, countdown, flathold
+        case launch, perfect, splash, tailwind, lighthouse, stormclose, caught, finished, flying, countdown, flathold,
+             chainlost
     }
     enum ProgressPreset: String, Equatable { case fresh, mid, late }
 

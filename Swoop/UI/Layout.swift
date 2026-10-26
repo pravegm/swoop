@@ -441,6 +441,12 @@ enum ResultsLayout {
         return card(c)
     }
 
+    /// R5 P1-4: a card `height` tall (at most the space), bottom-anchored in `space`, so it carries no void.
+    static func anchored(_ space: CGRect, height: CGFloat) -> CGRect {
+        let h = min(max(height, 0), space.height)
+        return CGRect(x: space.minX, y: space.maxY - h, width: space.width, height: h)
+    }
+
     /// R4 P0-1: the bird-page card (rank-up, goals, small lines, the Daily's share card), from its outer edge.
     static func side(_ c: AppCanvas) -> CGRect {
         let page = c.birdPage
