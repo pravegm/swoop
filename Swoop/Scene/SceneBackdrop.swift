@@ -122,11 +122,14 @@ final class SceneBackdrop {
         }
     }
 
-    func apply(palette p: ScenePalette, sky id: SkyID) {
+    /// `key`: the texture cache key (nil = the sky's own); Flight School passes its own, and `dither` false for the
+    /// short-lived steps of its crossfade.
+    func apply(palette p: ScenePalette, sky id: SkyID, key: String? = nil, dither: Bool = true) {
         skySprite.texture = SceneTextures.sky(
-            key: id.rawValue,
+            key: key ?? id.rawValue,
             colors: [ScenePaint.ui(p.zenith), ScenePaint.ui(p.mid), ScenePaint.ui(p.low), ScenePaint.ui(p.horizon),
-                     ScenePaint.ui(p.sunline)])
+                     ScenePaint.ui(p.sunline)],
+            dither: dither)
         skySprite.color = .white
         skySprite.colorBlendFactor = 0
         farBack.fillColor = ScenePaint.ui(p.farBack)
@@ -147,7 +150,8 @@ final class SceneBackdrop {
         let lum = ScenePaint.luminance(p.zenith)
         starAlpha = lum < 0.06 ? CGFloat(min(1, (0.06 - lum) / 0.04)) : 0
         stars.isHidden = starAlpha < 0.02
-        auroraOn = id == .northernLights
+        // No aurora over Flight School's morning (it returns with the sky's own palette).
+        auroraOn = id == .northernLights && key == nil
         aurora.isHidden = !auroraOn
     }
 
@@ -156,8 +160,11 @@ final class SceneBackdrop {
 
     /// `meanY`: canvas y of the near sea's mean water line. `scroll`: canvas px the world moved this frame.
     /// `visibleTop`: the top of the visible rect (iPhones crop the canvas). `sunDim` 0…1 dims the sun by that much.
+    /// `farAlpha` < 1 calms the far swells (Flight School: 0.7); `sunLift` is the sun's height above the horizon as a
+    /// fraction of the height (0.16; Flight School 0.24).
     func update(width w: CGFloat, height h: CGFloat, visibleTop: CGFloat, meanY: CGFloat, zoom z: CGFloat,
-                scroll: CGFloat, time t: Double, dt: CGFloat, sunDim: CGFloat, drift: Bool) {
+                scroll: CGFloat, time t: Double, dt: CGFloat, sunDim: CGFloat, drift: Bool, farAlpha: CGFloat = 1,
+                sunLift: CGFloat = SceneLook.sunLiftFraction) {
         if abs(builtWidth - w) > 0.5 { buildSwells(width: w) }
         let period = SceneLook.farPeriod
         scrollBack = (scrollBack + scroll * SceneLook.farBackParallax).truncatingRemainder(dividingBy: period)
@@ -172,6 +179,11 @@ final class SceneBackdrop {
         farBack.yScale = ampScale
         farFront.position = CGPoint(x: -24 - positiveMod(scrollFront, period), y: frontBase)
         farFront.yScale = ampScale
+        let fa = min(max(farAlpha, 0), 1)
+        if abs(farBack.alpha - fa) > 0.001 {
+            farBack.alpha = fa
+            farFront.alpha = fa
+        }
         frontHaze.position = CGPoint(x: w * 0.5, y: frontBase + SceneLook.farFrontAmp)
         frontHaze.size = CGSize(width: w + 8, height: SceneLook.farFrontHaze)
         frontHaze.alpha = 0.7
@@ -184,7 +196,7 @@ final class SceneBackdrop {
         skySprite.position = CGPoint(x: w * 0.5, y: skyBottom)
         skySprite.size = CGSize(width: w + 8, height: max(h - skyBottom + 20, 60))
 
-        let sunY = min(backBase + SceneLook.sunLiftFraction * h, visibleTop - SceneLook.sunTopClearance)
+        let sunY = min(backBase + sunLift * h, visibleTop - SceneLook.sunTopClearance)
         sunBrightness = max(0, 1 - sunDim)
         sunPosition = CGPoint(x: w * SceneLook.sunU, y: max(sunY, backBase + 30))
         sunDisk.position = sunPosition

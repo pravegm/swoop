@@ -46,6 +46,8 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             PageHeading(text: "Controls", compact: c)
             VStack(alignment: .leading, spacing: 4) {
+                birdSideRow
+                divider
                 // UX R3 P2-10: a phone without a hinge always plays with touch, so the toggle only shows on a Duo;
                 // "Tuck by" shows wherever touch flies the bird.
                 if controller.hasHinge {
@@ -62,8 +64,7 @@ struct SettingsView: View {
                     }
                     divider
                 }
-                toggleRow("Bird on the other side", icon: "arrow.left.and.right", isOn: $settings.mirrored,
-                          footnote: Self.mirroredFootnote)
+                schoolRow
                 divider
                 infoRow("Reduce Motion", icon: "figure.walk.motion", value: reduceMotion ? "On" : "Off",
                         footnote: "Follows iOS: no camera shake or screen bloom when on.")
@@ -99,6 +100,68 @@ struct SettingsView: View {
         }
     }
 
+    /// R6 D1 (UX §2.3): Bird side, first in Controls (it replaces "Bird on the other side").
+    private var birdSideOptions: [BirdSide] { controller.hasHinge ? [.sharp, .left, .right] : [.left, .right] }
+
+    private var birdSideRow: some View {
+        let options = birdSideOptions
+        let current = controller.hasHinge ? settings.birdSide : (settings.birdSide == .right ? .right : .left)
+        return VStack(alignment: .leading, spacing: 4) {
+            segmentRow("Bird side", icon: "arrow.left.and.right", options: options.map(\.label),
+                       selected: options.firstIndex(of: current) ?? 0,
+                       footnote: Self.birdSideFootnote(current, checked: settings.wingCheckDone,
+                                                       screenSide: controller.birdScreenSide)) { i in
+                if options.indices.contains(i) {
+                    settings.birdSide = options[i]
+                    controller.refreshLayout()
+                }
+            }
+            if controller.hasHinge && current == .sharp {
+                SwoopButton(kind: .quiet, height: 44, compact: c, action: { controller.openWingCheck() }) {
+                    Text(settings.wingCheckDone ? "Check again" : "Check now").lineLimit(1)
+                }
+                .frame(width: 160)
+            }
+        }
+    }
+
+    /// The Bird side footnote (UX §2.3). Pure; tested.
+    nonisolated static func birdSideFootnote(_ side: BirdSide, checked: Bool, screenSide: ScreenSide) -> String {
+        switch side {
+        case .sharp:
+            return checked
+                ? "Your bird stays on the half that doesn't blur when you fold. Now: \(screenSide.rawValue) half."
+                : "Using the usual sharp side (the \(screenSide.rawValue) half, held this way up)."
+        case .left: return "The bird always flies on the left half."
+        case .right: return "The bird always flies on the right half, flying right to left."
+        }
+    }
+
+    /// "Flight School · Replay the 45-second lesson" (UX §1.4).
+    private var schoolRow: some View {
+        Button {
+            FeedbackDirector.shared.uiTap()
+            controller.show(.school)
+        } label: {
+            HStack(spacing: 12) {
+                rowIcon("graduationcap.fill")
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Flight School")
+                        .font(SwoopType.body(c).weight(.bold))
+                        .foregroundStyle(SwoopTheme.foam)
+                    Text("Replay the 45-second lesson")
+                        .font(SwoopType.caption(c))
+                        .foregroundStyle(SwoopTheme.haze)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").foregroundStyle(SwoopTheme.mist)
+            }
+            .frame(minHeight: AppCanvas.minTap)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
     /// "Tuck by" shows where touch flies the bird: every phone without a hinge, and a Duo set to play with touch.
     /// Pure; tested.
     nonisolated static func showsTuckBy(hasHinge: Bool, playWithTouch: Bool) -> Bool {
@@ -113,7 +176,7 @@ struct SettingsView: View {
                     BirdGlyph()
                         .fill(SwoopTheme.foam)
                         .frame(width: 30, height: 14)
-                    Text("Made for iPhone Duo: the two halves are your wings.")
+                    Text(RouteRules.objective)
                         .font(SwoopType.body(c).weight(.heavy))
                         .foregroundStyle(SwoopTheme.foam)
                         .fixedSize(horizontal: false, vertical: true)

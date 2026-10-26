@@ -83,6 +83,23 @@ enum FeelSoundBook {
     static let fadeGlide: Float = 0.35
     static let caughtGlide: Float = 1.4
 
+    /// Round 6 (D2): the practice sea of Flight School is calm: the wind at this share of its level, half the whistle,
+    /// a softer gust, and no rain or rumble whatever the telemetry says.
+    static let practiceWindShare: Float = 0.6
+    static let practiceWhistleShare: Float = 0.5
+
+    /// The flight bed made calm for the practice sea.
+    static func practiceBed(telemetry: FlightTelemetry, master: Float) -> FeelBed {
+        var bed = flightBed(telemetry: telemetry, master: master)
+        bed.windGain *= practiceWindShare
+        bed.whistleGain *= practiceWhistleShare
+        bed.gust *= 0.6
+        bed.rainGain = 0
+        bed.dropRate = 0
+        bed.rumbleGain = 0
+        return bed
+    }
+
     /// No continuous layers, master kept: menus, pause cards and one-shots stay audible.
     static func idleBed(master: Float, glide: Float = fadeGlide) -> FeelBed {
         var bed = FeelBed()
@@ -379,6 +396,72 @@ enum FeelSoundBook {
             .ring(FeelRingSpec(.bell, fundamental: f, partials: 6, decay: 1.4, brightness: 0.5, gain: 0.1,
                                delay: 1.1, seed: dice.seed32())),
         ]
+    }
+
+    /// Round 6 (D3, "Gull Point reached!"): the lighthouse is the goal, so reaching one is the big success. The bell
+    /// tolls as before. Under it, a warm D-major swell rises, and a glass glint lands as the App's 60 ms hit-stop lets go.
+    static func lighthouseReached(index: Int, dice: inout FeelDice) -> [FeelSynthCommand] {
+        var commands = lighthouse(index: index, dice: &dice)
+        let chord: [Float] = [293.66, 369.99, 440.0]
+        for (step, frequency) in chord.enumerated() {
+            commands.append(.tone(FeelToneSpec(start: frequency, duration: 1.6, attack: 0.18, decay: 0.7, gain: 0.04,
+                                               harmonics: 2, vibratoRate: 4.4 + 0.4 * Float(step),
+                                               vibratoDepth: 0.003, delay: 0.03 * Float(step))))
+        }
+        commands.append(.ring(FeelRingSpec(.glass, fundamental: 2349.3, partials: 2, decay: 0.3, brightness: 0.3,
+                                           gain: 0.04, delay: hitStop, seed: dice.seed32())))
+        return commands
+    }
+
+    /// Round 6 (UX-FLIGHT-SCHOOL F4): 300 m before the next lighthouse, a small "nearly there" glint.
+    static func goalNear() -> [FeelSynthCommand] {
+        [
+            .ring(FeelRingSpec(.glass, fundamental: 1760.0, partials: 2, decay: 0.18, brightness: 0.3, gain: 0.05)),
+            .ring(FeelRingSpec(.glass, fundamental: 2349.3, partials: 2, decay: 0.22, brightness: 0.3, gain: 0.045,
+                               delay: 0.08)),
+        ]
+    }
+
+    // MARK: Round 6: Flight School (UX-FLIGHT-SCHOOL §1, F4; ART §5: rewards snap, the UI settles)
+
+    /// The school's step chime: a soft chime that climbs the pentatonic one step per lesson (step 0 → D5 … step 7), so
+    /// the lesson itself sounds like progress. Short and quiet; a Perfect in step 5 still plays its own.
+    static func schoolStep(_ step: Int, dice: inout FeelDice) -> [FeelSynthCommand] {
+        let index = min(max(step, 0), 7)
+        let semitones = 12 * (index / pentatonic.count) + pentatonic[index % pentatonic.count]
+        let f = Float(chimeBaseHz * pow(2, Double(semitones) / 12))
+        return [
+            .ring(FeelRingSpec(.chime, fundamental: f, partials: 4, decay: 0.5, brightness: 0.32, gain: 0.1,
+                               seed: dice.seed32())),
+            .ring(FeelRingSpec(.chime, fundamental: f * 1.5, partials: 3, decay: 0.45, brightness: 0.3, gain: 0.06,
+                               delay: 0.09, seed: dice.seed32())),
+        ]
+    }
+
+    /// The school rewinds to a checkpoint (0.4 s fade): a soft breath that falls away and comes back, "go again".
+    static func schoolRewind() -> [FeelSynthCommand] {
+        [
+            .noise(FeelNoiseSpec(.bandPass, cutoff: 2400, to: 700, sweep: 0.2, q: 0.8, attack: 0.04, decay: 0.1,
+                                 gain: 0.05)),
+            .noise(FeelNoiseSpec(.bandPass, cutoff: 700, to: 1800, sweep: 0.2, q: 0.8, attack: 0.05, decay: 0.1,
+                                 gain: 0.04, delay: 0.22)),
+        ]
+    }
+
+    /// Step 7: the storm rolls in for the first time. The thunder, distant and half as loud.
+    static func schoolStorm(dice: inout FeelDice) -> [FeelSynthCommand] {
+        thunder(dice: &dice).map { (command: FeelSynthCommand) -> FeelSynthCommand in
+            switch command {
+            case .noise(var spec):
+                spec.gain *= 0.5
+                return .noise(spec)
+            case .tone(var spec):
+                spec.gain *= 0.5
+                return .tone(spec)
+            default:
+                return command
+            }
+        }
     }
 
     /// Every whole km: a small three-note glass sparkle (C7 E7 G7).

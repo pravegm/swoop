@@ -78,10 +78,19 @@ public final class SeaProfile {
     private let knots: [(x: Double, y: Double)]
     private let introEnd: Double
 
-    public init(seed: UInt64) {
+    /// True for the Flight School practice sea (Round 6): the scripted knots, then calm even swells forever.
+    public let isPractice: Bool
+
+    public convenience init(seed: UInt64) {
+        self.init(seed: seed, practice: false)
+    }
+
+    /// `practice`: the scripted Flight School sea (`Tuning.practiceKnots`, then one long even swell; no seeded sets).
+    public init(seed: UInt64, practice: Bool) {
         self.seed = seed
+        self.isPractice = practice
         self.rng = SeededRandom(seed: seed ^ 0x5EA_5EA5_EA5E_A5EA)
-        var k: [(x: Double, y: Double)] = Tuning.tutorialKnots
+        var k: [(x: Double, y: Double)] = practice ? Tuning.practiceKnots : Tuning.tutorialKnots
         if k.count < 2 {
             k = [(x: -2400, y: 0), (x: 0, y: 0)]
         }
@@ -89,11 +98,13 @@ public final class SeaProfile {
         let last: (x: Double, y: Double) = k[k.count - 1]
         self.introEnd = last.x
         // The sine continues from the last knot (an extremum): amplitude |y|, a crest or a trough there.
-        let f0: Double = 1.0 / Tuning.tutorialWavelength
+        let f0: Double = 1.0 / (practice ? Tuning.practiceSeaWavelength : Tuning.tutorialWavelength)
         let theta0: Double = last.y >= 0 ? Double.pi / 2 : -Double.pi / 2
         let phase0: Double = SeaProfile.wrap(theta0 - SeaProfile.tau * f0 * last.x)
+        // The practice sea's swell never ends, so no seeded set is ever generated.
+        let end0: Double = practice ? Double.greatestFiniteMagnitude : max(Tuning.tutorialEnd, last.x + 300)
         let tutorial = CoreSeaSet(
-            centre: -1e12, bodyStart: 0, end: max(Tuning.tutorialEnd, last.x + 300),
+            centre: -1e12, bodyStart: 0, end: end0,
             s0: CoreSwell(amp: abs(last.y), freq: f0, phase: phase0),
             s1: CoreSwell(amp: 0, freq: 1.0 / 560.0, phase: 0),
             s2: CoreSwell(amp: 0, freq: 1.0 / 420.0, phase: 0),

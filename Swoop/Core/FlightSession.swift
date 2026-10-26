@@ -8,6 +8,30 @@ import Foundation
 // happened. The bird is either skimming (glued to the surface, moving along its tangent) or airborne (ballistic with
 // tuck gravity, spread-wing lift while descending, and drag). See `Tuning` for every number.
 
+/// Flight School checkpoints the App can rewind to (Round 6, UX-FLIGHT-SCHOOL K1).
+public enum PracticeCheckpoint: Equatable, Sendable {
+    /// Waiting on crest A, before the dive (step 3).
+    case crestA
+    /// The first trough, skimming at dive speed (step 4).
+    case trough
+    /// In the air just past crest B, over the guided downslope (step 5); n = the attempt.
+    case guided(Int)
+    /// The guided trough, before the 3 rhythm waves (step 6).
+    case rhythm
+}
+
+/// Flight School step signals, read from `FlightSession.practiceSignals` after each step.
+public enum PracticeSignal: Equatable, Sendable {
+    /// A skimmed downslope ended at its trough; the fraction of it flown with the tuck held (eased tuck ≥ 0.5).
+    case diveDone(heldFraction: Double)
+    /// The bird left the water; the eased tuck at that moment (step 4 wants ≤ 0.3).
+    case launched(tuck: Double)
+    /// A touchdown and its quality (step 5 wants .perfect).
+    case landed(TouchdownQuality)
+    /// The bird passed the end of rhythm wave `index` (0, 1, 2), whatever the quality.
+    case waveDone(index: Int)
+}
+
 public final class FlightSession {
     public let sea: SeaProfile
     public let seed: UInt64
@@ -67,6 +91,23 @@ public final class FlightSession {
     private var lastSplashX: Double
     private var longestCleanPt: Double = 0
 
+    // Flight School practice (Round 6)
+    /// True for a Flight School practice session (`FlightSession.practice(bird:)`).
+    public let isPractice: Bool
+    /// Time scale applied to every step's dt (1 normally; practice starts at Tuning.practiceTimeScale, 0.8). The App
+    /// may change it at any time (e.g. 0.5× in the air on step 4).
+    public var timeScale: Double = 1
+    /// Practice only: nil = no storm (it reports a gap of Tuning.practiceNoStormGap); a value holds the storm at that
+    /// gap (pt) behind the bird, so step 7 can roll it in. It never catches.
+    public var practiceStormGap: Double? = nil
+    /// Practice only: the step signals of the last `step` call, in order (cleared at each step).
+    public private(set) var practiceSignals: [PracticeSignal] = []
+    private var holdTuck: Double? = nil
+    private var practiceWaveIndex: Int = 0
+    private var diveLength: Double = 0
+    private var diveHeld: Double = 0
+    private var guidedAttempts: Int = 0
+
     // End of run
     private var endX: Double? = nil
     private var endSeconds: Double = 0
@@ -74,8 +115,21 @@ public final class FlightSession {
 
     /// `countdown`: 3.0 for the first run of a launch (it calibrates the hinge), `Tuning.restartCountdownDuration`
     /// (1.5) for "Fly again" (UX-C1). Any value 0…10 works; 0 starts on the first step with no ticks.
-    public init(mode: RunMode, seed: UInt64, bestMeters: Double, bird: BirdID,
-                countdown: Double = Tuning.countdownDuration) {
+    public convenience init(mode: RunMode, seed: UInt64, bestMeters: Double, bird: BirdID,
+                            countdown: Double = Tuning.countdownDuration) {
+        self.init(mode: mode, seed: seed, bestMeters: bestMeters, bird: bird, countdown: countdown, practice: false)
+    }
+
+    /// A Flight School practice session (Round 6, UX-FLIGHT-SCHOOL §1.2): the scripted calm sea
+    /// (`Tuning.practiceKnots`), no storm, no catch, 0.8× time, and the bird waiting on crest A until the tuck reaches
+    /// `Tuning.practiceHoldTuck`. It reports mode `.attract`, so it never finishes and nothing records it (no bests,
+    /// goals, route or Game Center); lighthouse, milestone and best events are off. Read `practiceSignals` after each step.
+    public static func practice(bird: BirdID) -> FlightSession {
+        return FlightSession(mode: .attract, seed: 1, bestMeters: 0, bird: bird, countdown: 0, practice: true)
+    }
+
+    init(mode: RunMode, seed: UInt64, bestMeters: Double, bird: BirdID, countdown: Double, practice: Bool) {
+        self.isPractice = practice
         let cd: Double = countdown.isFinite ? min(max(countdown, 0), 10) : Tuning.countdownDuration
         self.countdownDuration = cd
         self.tickSchedule = FlightSession.countdownTicks(duration: cd)
@@ -89,7 +143,7 @@ public final class FlightSession {
         self.mode = mode
         self.bestMeters = max(0, bestMeters.isFinite ? bestMeters : 0)
         self.bird = bird
-        let profile = SeaProfile(seed: s)
+        let profile = SeaProfile(seed: s, practice: practice)
         self.sea = profile
         self.x = Tuning.startX
         self.y = profile.height(at: Tuning.startX) + Tuning.startHeight
@@ -99,8 +153,14 @@ public final class FlightSession {
         }
         self.stormX = storm
         self.nextLighthouseX = Lighthouses.x(index: 0)
-        self.nextLighthouseName = Lighthouses.name(index: 0, seed: s)
+        self.nextLighthouseName = Lighthouses.name(index: 0)
         self.lastSplashX = Tuning.startX
+        if practice {
+            timeScale = Tuning.practiceTimeScale
+            holdTuck = Tuning.practiceHoldTuck
+            place(x: Tuning.practiceCrestAX + 1, altitude: 0, vx: 0, vy: 0)
+            stormX = x - Tuning.practiceNoStormGap
+        }
     }
 
     // MARK: Public state
@@ -191,8 +251,10 @@ public final class FlightSession {
     /// tuck 0…1 from the input. Returns this step's events in order.
     public func step(dt: Double, tuck: Double) -> [FlightEvent] {
         var events: [FlightEvent] = []
+        practiceSignals.removeAll(keepingCapacity: true)
         if isFinished { return events }
-        let frame: Double = dt.isFinite ? min(max(dt, 0), Tuning.maxFrameDt) : 0
+        let scale: Double = timeScale.isFinite ? min(max(timeScale, 0), 4) : 1
+        let frame: Double = dt.isFinite ? min(max(dt * scale, 0), Tuning.maxFrameDt) : 0
         let input: Double = tuck.isFinite ? min(max(tuck, 0), 1) : 0
         if frame <= 0 { return events }
         let n: Int = max(1, Int((frame / Tuning.maxSubstep - 1e-9).rounded(.up)))
@@ -232,8 +294,10 @@ public final class FlightSession {
             if countdownLeft <= 0 {
                 countdownLeft = 0
                 phase = .flying
-                vx = Tuning.startSpeed
-                vy = 0
+                if !isPractice {
+                    vx = Tuning.startSpeed
+                    vy = 0
+                }
                 events.append(.started)
             } else {
                 phase = .countdown(remaining: countdownLeft)
@@ -261,8 +325,25 @@ public final class FlightSession {
         }
 
         flightTime += dt
+        if isPractice, let hold = holdTuck {
+            // Step 3: wait on crest A until the tuck is in, then descend.
+            if tuckEased >= hold {
+                holdTuck = nil
+                place(x: Tuning.practiceCrestAX + 1, altitude: 0, vx: Tuning.practiceStartSpeed, vy: 0)
+            } else {
+                place(x: Tuning.practiceCrestAX + 1, altitude: 0, vx: 0, vy: 0)
+                stormX = x - (practiceStormGap ?? Tuning.practiceNoStormGap)
+                return
+            }
+        }
+        let xBefore: Double = x
+        let wasSkimming: Bool = skimming
+        let eventsBefore: Int = events.count
         physics(dt, tuckEased, calm: false, &events)
         updateBodyAngle(dt)
+        if isPractice {
+            practiceTrack(xBefore: xBefore, wasSkimming: wasSkimming, newEvents: Array(events[eventsBefore...]))
+        }
 
         if tailwindFadeLeft > 0 {
             tailwindFadeLeft = max(0, tailwindFadeLeft - dt)
@@ -277,7 +358,9 @@ public final class FlightSession {
         }
 
         // The storm.
-        if isAttract {
+        if isPractice {
+            stormX = x - max(0, practiceStormGap ?? Tuning.practiceNoStormGap)
+        } else if isAttract {
             stormX = x - Tuning.attractStormLag
         } else {
             let gapNow: Double = x - stormX
@@ -286,25 +369,25 @@ public final class FlightSession {
 
         // Lighthouses.
         var guardCount: Int = 0
-        while x >= nextLighthouseX && guardCount < 8 {
+        while !isPractice && x >= nextLighthouseX && guardCount < 8 {
             let name: String = nextLighthouseName
             let idx: Int = lighthouseCount
             lighthouseCount += 1
             lastLighthouseName = name
             if !isAttract { stormX -= Tuning.lighthouseGapBonus }
             nextLighthouseX = Lighthouses.x(index: lighthouseCount)
-            nextLighthouseName = Lighthouses.name(index: lighthouseCount, seed: seed)
+            nextLighthouseName = Lighthouses.name(index: lighthouseCount)
             events.append(.lighthouse(index: idx, name: name))
             guardCount += 1
         }
 
         // Milestones and the personal best.
         let meters: Double = distanceMeters
-        while meters >= Double(nextMilestoneKm) * 1000 {
+        while !isPractice && meters >= Double(nextMilestoneKm) * 1000 {
             events.append(.milestone(km: nextMilestoneKm))
             nextMilestoneKm += 1
         }
-        if !newBestFired && bestMeters > 0 && meters > bestMeters {
+        if !isPractice && !newBestFired && bestMeters > 0 && meters > bestMeters {
             newBestFired = true
             events.append(.newBest)
         }
@@ -427,7 +510,12 @@ public final class FlightSession {
     /// Classify a touchdown (GAME-DESIGN §5) from the raw velocity and surface angles (radians), after the landing
     /// assist (Tuning.landingAssistDeg). Pure, for tests and the pilot.
     static func classify(velocityAngle beta: Double, surfaceAngle phi: Double) -> TouchdownQuality {
-        let assisted: Double = Tuning.assistedAngle(velocityAngle: beta, surfaceAngle: phi)
+        return classify(velocityAngle: beta, surfaceAngle: phi, assistDeg: Tuning.landingAssistDeg)
+    }
+
+    /// The same with a given landing assist (degrees; practice uses Tuning.practiceLandingAssistDeg).
+    static func classify(velocityAngle beta: Double, surfaceAngle phi: Double, assistDeg: Double) -> TouchdownQuality {
+        let assisted: Double = Tuning.assistedAngle(velocityAngle: beta, surfaceAngle: phi, assistDeg: assistDeg)
         let alphaDeg: Double = abs(assisted - phi) * 180 / Double.pi
         let phiDeg: Double = phi * 180 / Double.pi
         if alphaDeg <= Tuning.perfectAngleDeg && phiDeg < Tuning.perfectSlopeDeg { return .perfect }
@@ -439,9 +527,10 @@ public final class FlightSession {
         let phi: Double = atan(sea.slope(at: x))
         let beta: Double = atan2(vy, vx)
         // The landing assist turns the velocity toward the tangent (speed kept) before it is judged.
-        let alpha: Double = abs(Tuning.assistedAngle(velocityAngle: beta, surfaceAngle: phi) - phi)
+        let assistDeg: Double = isPractice ? Tuning.practiceLandingAssistDeg : Tuning.landingAssistDeg
+        let alpha: Double = abs(Tuning.assistedAngle(velocityAngle: beta, surfaceAngle: phi, assistDeg: assistDeg) - phi)
         let impact: Double = (vx * vx + vy * vy).squareRoot()
-        let q: TouchdownQuality = FlightSession.classify(velocityAngle: beta, surfaceAngle: phi)
+        let q: TouchdownQuality = FlightSession.classify(velocityAngle: beta, surfaceAngle: phi, assistDeg: assistDeg)
         let s: Double
         switch q {
         case .perfect: s = impact * (1 + Tuning.perfectBoost)
@@ -487,6 +576,113 @@ public final class FlightSession {
             longestCleanPt = max(longestCleanPt, x - lastSplashX)
             lastSplashX = x
             events.append(.touchdown(.splash, speed: impact, chain: 0))
+        }
+    }
+
+    // MARK: Flight School practice API (Round 6, UX-FLIGHT-SCHOOL K1)
+
+    /// Step 3: keep the bird waiting on crest A until the eased tuck reaches `threshold` (0 = release now). Practice
+    /// sessions start with `Tuning.practiceHoldTuck` (0.6).
+    public func holdAtCrest(untilTuck threshold: Double) {
+        guard isPractice else { return }
+        holdTuck = threshold > 0 ? threshold : nil
+    }
+
+    /// Put the bird back at a checkpoint (after a failed step). Crest A also re-arms the crest hold.
+    public func rewind(to checkpoint: PracticeCheckpoint) {
+        guard isPractice else { return }
+        if case .countdown = phase {
+            countdownLeft = 0
+            phase = .flying
+        }
+        tailwindLeft = 0
+        tailwindFadeLeft = 0
+        tuckLimited = 0
+        tuckEased = 0
+        diveLength = 0
+        diveHeld = 0
+        switch checkpoint {
+        case .crestA:
+            holdTuck = Tuning.practiceHoldTuck
+            practiceWaveIndex = 0
+            place(x: Tuning.practiceCrestAX + 1, altitude: 0, vx: 0, vy: 0)
+        case .trough:
+            holdTuck = nil
+            practiceWaveIndex = 0
+            place(x: Tuning.practiceTroughX, altitude: 0, vx: Tuning.practiceTroughSpeed, vy: 0)
+        case .guided:
+            holdTuck = nil
+            practiceWaveIndex = 0
+            place(x: Tuning.practiceLaunchX, altitude: 1, vx: Tuning.practiceLaunchVelocity.vx,
+                  vy: Tuning.practiceLaunchVelocity.vy)
+        case .rhythm:
+            holdTuck = nil
+            practiceWaveIndex = 0
+            place(x: Tuning.practiceGuidedTroughX, altitude: 0, vx: Tuning.practiceRhythmSpeed, vy: 0)
+        }
+        stormX = x - (practiceStormGap ?? Tuning.practiceNoStormGap)
+        bodyAngle = skimming ? atan(sea.slope(at: x)) : atan2(vy, max(vx, 1e-6))
+    }
+
+    /// Step 5's retry after a miss: back into the air just past crest B for another go at the guided downslope.
+    public func nextGuidedSwell() {
+        guard isPractice else { return }
+        guidedAttempts += 1
+        rewind(to: .guided(guidedAttempts))
+    }
+
+    private func practiceTrack(xBefore: Double, wasSkimming: Bool, newEvents: [FlightEvent]) {
+        for e in newEvents {
+            switch e {
+            case .launched:
+                practiceSignals.append(.launched(tuck: tuckEased))
+                diveLength = 0
+                diveHeld = 0
+            case .touchdown(let q, _, _):
+                practiceSignals.append(.landed(q))
+            default:
+                break
+            }
+        }
+        if wasSkimming && skimming {
+            let dx: Double = max(0, x - xBefore)
+            if sea.slope(at: x) < 0 {
+                diveLength += dx
+                if tuckEased >= Tuning.practiceHeldTuck { diveHeld += dx }
+            } else {
+                if diveLength >= Tuning.practiceDiveMinLength {
+                    practiceSignals.append(.diveDone(heldFraction: min(1, diveHeld / diveLength)))
+                }
+                diveLength = 0
+                diveHeld = 0
+            }
+        }
+        let ends: [Double] = Tuning.practiceRhythmWaveEnds
+        while practiceWaveIndex < ends.count && x >= ends[practiceWaveIndex] {
+            practiceSignals.append(.waveDone(index: practiceWaveIndex))
+            practiceWaveIndex += 1
+        }
+    }
+
+    /// Put the bird at `x`: skimming at speed |(vx, vy)| when `altitude` ≤ 0, else airborne.
+    private func place(x newX: Double, altitude: Double, vx newVx: Double, vy newVy: Double) {
+        x = newX
+        let h: Double = sea.height(at: newX)
+        if altitude <= 0 {
+            let phi: Double = atan(sea.slope(at: newX))
+            let sp: Double = (newVx * newVx + newVy * newVy).squareRoot()
+            skimming = true
+            skimTime = 0
+            skimSpeed = sp
+            vx = sp * cos(phi)
+            vy = sp * sin(phi)
+            y = h
+        } else {
+            skimming = false
+            airTime = 0
+            y = h + altitude
+            vx = newVx
+            vy = newVy
         }
     }
 

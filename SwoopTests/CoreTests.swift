@@ -195,13 +195,13 @@ struct CoreTests {
         #expect(seen.count == Lighthouses.names.count)
         #expect(Lighthouses.name(index: 3, seed: 9) == Lighthouses.name(index: 3, seed: 9))
         #expect(Lighthouses.name(index: 0, seed: 9) == Lighthouses.name(index: Lighthouses.names.count, seed: 9))
-        var differs: Bool = false
+        // Round 6 (UX U1): names are fixed by index in every mode; the seed is ignored.
         i = 0
         while i < 10 {
-            if Lighthouses.name(index: i, seed: 1) != Lighthouses.name(index: i, seed: 2) { differs = true }
+            #expect(Lighthouses.name(index: i, seed: 1) == Lighthouses.name(index: i, seed: 2))
+            #expect(Lighthouses.name(index: i, seed: 77) == Lighthouses.name(index: i))
             i += 1
         }
-        #expect(differs)
     }
 
     @Test func dailySeedUsesUTCDays() {
@@ -1242,5 +1242,163 @@ struct CoreTests {
             #expect(n == 1, "rank \(rank)")
             rank += 1
         }
+    }
+
+    // MARK: Round 6 (Flight School practice sea, fixed lighthouse names)
+
+    @Test func lighthouseNamesAreFixedPlaces() {
+        #expect(Lighthouses.name(index: 0) == "Gull Point")
+        #expect(Lighthouses.name(index: 1) == "Saltlight")
+        #expect(Lighthouses.name(index: 2) == "Kestrel Head")
+        #expect(Lighthouses.name(index: 3) == "Old Harry")
+        #expect(Lighthouses.name(index: 40) == "Gull Point")
+        #expect(Lighthouses.name(index: -1) == Lighthouses.name(index: 39))
+        // Every mode: a Daily's first lighthouse is Gull Point too.
+        let daily = FlightSession(mode: .daily(day: 400, scored: true), seed: 1, bestMeters: 0, bird: .gull)
+        #expect(daily.snapshot.nextLighthouseName == "Gull Point")
+        // Route helpers.
+        #expect(Lighthouses.count(atOrBefore: 39_999) == 0)
+        #expect(Lighthouses.count(atOrBefore: 40_000) == 1)
+        #expect(Lighthouses.count(atOrBefore: 90_000) == 2)
+        #expect(Lighthouses.count(atOrBeforeMeters: 16_200) == 3)
+        #expect(Lighthouses.count(atOrBeforeMeters: 0) == 0)
+        #expect(Lighthouses.nextIndex(afterMeters: 9_500) == 2)
+        #expect(Lighthouses.meters(index: 1) == 9_000)
+        var k: Int = 0
+        while k < 30 {
+            #expect(Lighthouses.count(atOrBefore: Lighthouses.x(index: k)) == k + 1)
+            #expect(Lighthouses.count(atOrBefore: Lighthouses.x(index: k) - 1) == k)
+            k += 1
+        }
+    }
+
+    /// Fly a practice session: `tuckAt(x)` gives the input from the bird's x. Returns every signal, every event and
+    /// the session.
+    private func practiceRun(seconds: Double, _ tuckAt: (Double) -> Double) -> ([PracticeSignal], [FlightEvent], FlightSession) {
+        let s = FlightSession.practice(bird: .gull)
+        var signals: [PracticeSignal] = []
+        var events: [FlightEvent] = []
+        var i: Int = 0
+        while Double(i) / 120.0 < seconds {
+            events.append(contentsOf: s.step(dt: 1.0 / 120.0, tuck: tuckAt(Double(s.snapshot.position.x))))
+            signals.append(contentsOf: s.practiceSignals)
+            i += 1
+        }
+        return (signals, events, s)
+    }
+
+    @Test func practiceSessionIsCalmAndRecordsNothing() {
+        let s = FlightSession.practice(bird: .tern)
+        #expect(s.isPractice)
+        #expect(s.sea.isPractice)
+        #expect(abs(s.timeScale - Tuning.practiceTimeScale) < 1e-12)
+        if case .attract = s.mode {} else { Issue.record("practice must report .attract so nothing records it") }
+        // 0.8× time: 1 s of frames is 0.8 s of session time.
+        var i: Int = 0
+        while i < 60 {
+            _ = s.step(dt: 1.0 / 60.0, tuck: 0)
+            i += 1
+        }
+        #expect(abs(s.snapshot.time - 0.8) < 1e-6)
+        // It waits on crest A until the tuck comes in.
+        #expect(abs(Double(s.snapshot.position.x) - (Tuning.practiceCrestAX + 1)) < 1e-9)
+        #expect(s.snapshot.speed == 0)
+        // No storm: far away, and it never catches, even for minutes.
+        #expect(s.snapshot.gap > Tuning.practiceNoStormGap - 1)
+        let normal = FlightSession(mode: .flight, seed: 1, bestMeters: 0, bird: .gull)
+        #expect(!normal.isPractice)
+        #expect(normal.timeScale == 1)
+        _ = normal.step(dt: 1.0 / 60.0, tuck: 0)
+        #expect(normal.practiceSignals.isEmpty)
+        // The practice sea is smooth and gentle everywhere.
+        var x: Double = -2000
+        while x < 40_000 {
+            #expect(abs(s.sea.slope(at: x)) <= 0.75)
+            x += 7
+        }
+    }
+
+    @Test func practiceScriptGivesTheStepSignals() {
+        // Fold on crest A and hold it to the trough, then open: dive held, a clean launch, a Perfect on the guided
+        // downslope, then the 3 rhythm waves; no lighthouse, milestone or best events, and it never finishes.
+        let (signals, events, s) = practiceRun(seconds: 14) { (x: Double) -> Double in x < Tuning.practiceTroughX ? 1 : 0 }
+        var dive: Double = -1
+        var launchTuck: Double = -1
+        var firstLanding: TouchdownQuality? = nil
+        var waves: [Int] = []
+        for sig in signals {
+            switch sig {
+            case .diveDone(let f): if dive < 0 { dive = f }
+            case .launched(let u): if launchTuck < 0 { launchTuck = u }
+            case .landed(let q): if firstLanding == nil { firstLanding = q }
+            case .waveDone(let i): waves.append(i)
+            }
+        }
+        #expect(dive >= 0.7, "held fraction \(dive)")
+        #expect(launchTuck >= 0 && launchTuck <= 0.3, "tuck at launch \(launchTuck)")
+        #expect(firstLanding == .perfect)
+        #expect(waves == [0, 1, 2])
+        for e in events {
+            switch e {
+            case .lighthouse, .milestone, .newBest, .stormClose, .caught, .finished:
+                Issue.record("unexpected \(e) in practice")
+            default:
+                break
+            }
+        }
+        #expect(!s.isFinished)
+        #expect(s.result == nil)
+    }
+
+    @Test func practiceDiveOpenedEarlyIsNotHeld() {
+        let (signals, _, _) = practiceRun(seconds: 4) { (x: Double) -> Double in x < 600 ? 1 : 0 }
+        var dive: Double = -1
+        for sig in signals {
+            if case .diveDone(let f) = sig, dive < 0 { dive = f }
+        }
+        #expect(dive >= 0 && dive < 0.7, "held fraction \(dive)")
+    }
+
+    @Test func practiceRewindsAndRetries() {
+        let s = FlightSession.practice(bird: .gull)
+        _ = s.step(dt: 1.0 / 60.0, tuck: 0)
+        s.rewind(to: .trough)
+        #expect(abs(Double(s.snapshot.position.x) - Tuning.practiceTroughX) < 1e-9)
+        #expect(s.snapshot.skimming)
+        #expect(abs(s.snapshot.speed - Tuning.practiceTroughSpeed) < 1e-6)
+        s.rewind(to: .rhythm)
+        #expect(abs(Double(s.snapshot.position.x) - Tuning.practiceGuidedTroughX) < 1e-9)
+        // A miss on the guided swell: try again from the air just past crest B, wings open → a Perfect.
+        s.nextGuidedSwell()
+        #expect(!s.snapshot.skimming)
+        #expect(abs(Double(s.snapshot.position.x) - Tuning.practiceLaunchX) < 1e-9)
+        var landed: TouchdownQuality? = nil
+        var i: Int = 0
+        while i < 120 * 4 && landed == nil {
+            _ = s.step(dt: 1.0 / 120.0, tuck: 0)
+            for sig in s.practiceSignals {
+                if case .landed(let q) = sig { landed = q }
+            }
+            i += 1
+        }
+        #expect(landed == .perfect)
+        // Back to crest A: it waits again until the tuck comes in.
+        s.rewind(to: .crestA)
+        _ = s.step(dt: 1.0 / 60.0, tuck: 0.3)
+        #expect(s.snapshot.speed == 0)
+        s.holdAtCrest(untilTuck: 0)
+        _ = s.step(dt: 1.0 / 60.0, tuck: 0)
+        _ = s.step(dt: 1.0 / 60.0, tuck: 0)
+        #expect(s.snapshot.speed > 0)
+        // Step 7: the storm can be shown at a gap; it still never catches.
+        s.practiceStormGap = 3000
+        _ = s.step(dt: 1.0 / 60.0, tuck: 0)
+        #expect(abs(s.snapshot.gap - 3000) < 1e-6)
+        // Rewind and the other practice calls do nothing in a normal run.
+        let normal = flyingSession(seed: 3)
+        let x0: CGFloat = normal.snapshot.position.x
+        normal.rewind(to: .trough)
+        normal.nextGuidedSwell()
+        #expect(normal.snapshot.position.x == x0)
     }
 }

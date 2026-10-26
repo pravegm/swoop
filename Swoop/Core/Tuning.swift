@@ -228,6 +228,47 @@ public enum Tuning {
     /// Crest A's x, for reference and tests.
     public static let tutorialCrestX: Double = 200
 
+    // MARK: Flight School practice sea (Round 6, UX-FLIGHT-SCHOOL §1.2 / K1)
+
+    /// Practice runs at 0.8× time (the App may set `session.timeScale`, e.g. 0.5× in the air on step 4).
+    public static let practiceTimeScale: Double = 0.8
+    /// The scripted practice sea: half-cosine segments between these extrema, the same machinery as the tutorial.
+    /// Crest A (x 0) → a 1,500 pt downslope (slope ≤ 0.31) → the trough (x 1500) → an 800 pt up-face that launches the
+    /// bird with open wings → crest B (x 2300) → the guided 2,000 pt downslope (an open-wing glide lands Perfect on it
+    /// whether the dive was held to 70 % or past the trough; checked in Node) → its trough (x 4300) → 3 rhythm waves
+    /// (λ 2000 pt, 150 pt high, troughs at 6300 / 8300 / 10300) → then long, even swells (amplitude 300,
+    /// λ practiceSeaWavelength). Round 6b: at the ~1,700 pt/s the bird brings, λ 700 waves were flown over; with λ 2000
+    /// each wave is one clear ride (Node): open up the face → launch near its crest → fold on the way down → Perfect on
+    /// its own downslope → fold to the trough. About 1.1 s of sim time (1.4 s at 0.8×) per wave.
+    public static let practiceKnots: [(x: Double, y: Double)] = [
+        (x: -2400, y: -100), (x: 0, y: 150), (x: 1500, y: -150), (x: 2300, y: 0), (x: 4300, y: -300),
+        (x: 5300, y: -150), (x: 6300, y: -300), (x: 7300, y: -150), (x: 8300, y: -300), (x: 9300, y: -150),
+        (x: 10300, y: -300),
+    ]
+    public static let practiceSeaWavelength: Double = 4000
+    /// Checkpoints (sea x) and the states the bird is put in when the App rewinds to them.
+    public static let practiceCrestAX: Double = 0
+    public static let practiceTroughX: Double = 1500
+    public static let practiceLaunchX: Double = 2104
+    public static let practiceGuidedTroughX: Double = 4300
+    public static let practiceRhythmWaveEnds: [Double] = [6300, 8300, 10300]
+    /// Skimming speed on crest A when the hold releases, at the trough checkpoint, and at the rhythm checkpoint (pt/s);
+    /// the airborne launch state of the guided swell (as a held dive gives it).
+    public static let practiceStartSpeed: Double = 300
+    public static let practiceTroughSpeed: Double = 1600
+    public static let practiceRhythmSpeed: Double = 1700
+    public static let practiceLaunchVelocity: (vx: Double, vy: Double) = (vx: 1391, vy: 285)
+    /// Step 3: the bird waits on crest A until the eased tuck reaches this.
+    public static let practiceHoldTuck: Double = 0.6
+    /// A downslope counts as "held" where the eased tuck is ≥ this; `diveDone` needs at least practiceDiveMinLength of
+    /// skimmed downslope.
+    public static let practiceHeldTuck: Double = 0.5
+    public static let practiceDiveMinLength: Double = 300
+    /// The landing assist in practice (degrees): stronger, so the guided landing is easy.
+    public static let practiceLandingAssistDeg: Double = 12
+    /// With no storm, the gap the snapshot reports (pt): far off screen.
+    public static let practiceNoStormGap: Double = 1_000_000
+
     // MARK: Lighthouses
 
     /// First lighthouse at 4 km, then gaps of 5, 6, 7 km…, capped at 8 km (pt).
@@ -252,7 +293,12 @@ public enum Tuning {
 
     /// The touchdown velocity angle after the landing assist: beta turned toward phi by ≤ landingAssistDeg (radians).
     static func assistedAngle(velocityAngle beta: Double, surfaceAngle phi: Double) -> Double {
-        let a: Double = landingAssistDeg * Double.pi / 180
+        return assistedAngle(velocityAngle: beta, surfaceAngle: phi, assistDeg: landingAssistDeg)
+    }
+
+    /// The same with a given assist (degrees).
+    static func assistedAngle(velocityAngle beta: Double, surfaceAngle phi: Double, assistDeg: Double) -> Double {
+        let a: Double = max(0, assistDeg) * Double.pi / 180
         return beta + min(max(phi - beta, -a), a)
     }
 

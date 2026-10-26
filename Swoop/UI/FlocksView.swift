@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Goals (the Flocks ladder, UX §3 "Goals", ART A6): left page "RANK 2 OF 15" / "Puddle Hopper" / "2 of 3 done", the goals
-/// card and "Next rank: Tern"; right page the ladder scrolled to the current rank, then "Logbook 12 of 40". Past the top
-/// the star flocks rotate. Gold only for what is done and for the current rank; overlines in `mist`.
+/// card and "Next rank: Tern"; right page the rewards ladder ("REWARDS", R6 D4) scrolled to the current rank, then "Logbook 12 of 40". Past the top
+/// the star goals rotate. Gold only for what is done and for the current rank; overlines in `mist`.
 struct FlocksView: View {
     @ObservedObject var controller: GameController
     @ObservedObject var store: ProgressStore
@@ -68,8 +68,16 @@ struct FlocksView: View {
                 }
             }
             .swoopCard(padding: 18, radius: SwoopTheme.cardRadius(c))
+            if !maxed {
+                // R6 D4 (UX §5): what goals are for.
+                Text("Finish 3 goals to earn the next bird, sky or trail.")
+                    .font(SwoopType.body(c))
+                    .foregroundStyle(SwoopTheme.mist)
+                    .padding(.leading, 4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if !goals.isEmpty {
-                PageHeading(text: maxed ? "Star flock" : "Goals", compact: c)
+                PageHeading(text: maxed ? "Star goals" : "Goals", compact: c)
                 VStack(alignment: .leading, spacing: 16) {
                     ForEach(goals) { goal in
                         // QA-1 P2-9: lifetime goals read live from the lifetime metres.
@@ -100,13 +108,27 @@ struct FlocksView: View {
 
     private var rightPage: some View {
         VStack(alignment: .leading, spacing: 8) {
-            PageHeading(text: "The ladder", compact: c)
+            PageHeading(text: "Rewards", compact: c)
             ForEach(0...max(GoalCatalog.maxRank, 0), id: \.self) { r in
                 ladderRow(r)
                     .id(r)
             }
             logbook
                 .padding(.top, 10)
+            // R6 D4: the Goals footer into the Route (UX §4.4).
+            Button { controller.show(.route) } label: {
+                HStack(spacing: 8) {
+                    LighthouseIcon(state: .next, size: 22)
+                    Text("See your route ›")
+                        .font(SwoopType.headline(c))
+                        .foregroundStyle(SwoopTheme.foam)
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: AppCanvas.minTap)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 4)
         }
     }
 

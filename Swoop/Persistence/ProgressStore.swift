@@ -67,6 +67,8 @@ struct RecordOutcome: Equatable {
     var dailyGraceKept = false
     /// A star flock was finished past the top rank (its ★ count is `ProgressData.starFlocks`).
     var starEarned = false
+    /// R6: this run reached a lighthouse the route had never reached ("New on your route").
+    var newOnRoute = false
     /// Lighthouses entered in the logbook for the first time by this run.
     var newLogbook: [String] = []
     /// Achievements this run earned for the first time.
@@ -131,6 +133,10 @@ struct ProgressData: Codable, Equatable {
     var bestCleanMeters: Double = 0
     var bestCloudTouchesInRun = 0
     var bestSpeed: Double = 0
+    /// R6 (UX §1.4): Flight School.
+    var flightSchool: FlightSchoolState = .notStarted
+    /// R6 (UX U2): the most lighthouses passed in one run, in any mode: the route's progress.
+    var routeReached = 0
     init() {}
 
     /// Tolerant: unknown or missing fields fall back to their defaults, never wiping the rest.
@@ -172,6 +178,13 @@ struct ProgressData: Codable, Equatable {
         bestCleanMeters = (try? c.decodeIfPresent(Double.self, forKey: .bestCleanMeters)) ?? 0
         bestCloudTouchesInRun = (try? c.decodeIfPresent(Int.self, forKey: .bestCloudTouchesInRun)) ?? 0
         bestSpeed = (try? c.decodeIfPresent(Double.self, forKey: .bestSpeed)) ?? 0
+        flightSchool = (try? c.decodeIfPresent(FlightSchoolState.self, forKey: .flightSchool)) ?? .notStarted
+        if let reached = (try? c.decodeIfPresent(Int.self, forKey: .routeReached)) ?? nil {
+            routeReached = max(reached, 0)
+        } else {
+            // U2 migration: the route from the best distance (lighthouses at or before it).
+            routeReached = max(RouteRules.reached(within: bestMeters), bestLighthousesInRun)
+        }
         ProgressRules.migrate(&self, fromVersion: storedVersion)
     }
 
@@ -379,6 +392,8 @@ enum ProgressRules {
         data.bestLighthousesInRun = max(data.bestLighthousesInRun, result.lighthouses)
         data.bestTailwindsInRun = max(data.bestTailwindsInRun, result.tailwinds)
         data.bestCloudTouchesInRun = max(data.bestCloudTouchesInRun, result.cloudTouches)
+        outcome.newOnRoute = result.lighthouses > data.routeReached
+        data.routeReached = max(data.routeReached, result.lighthouses)
         if result.longestCleanMeters.isFinite { data.bestCleanMeters = max(data.bestCleanMeters, result.longestCleanMeters) }
         if result.maxSpeed.isFinite { data.bestSpeed = max(data.bestSpeed, result.maxSpeed) }
         data.totalPerfects += max(result.perfects, 0)
@@ -675,6 +690,18 @@ final class ProgressStore: ObservableObject {
     func markSeen(_ destination: String) {
         guard !data.seenDestinations.contains(destination) else { return }
         data.seenDestinations.insert(destination)
+        save()
+    }
+
+    /// R6: Flight School done or skipped.
+    func setFlightSchool(_ state: FlightSchoolState) {
+        guard data.flightSchool != state else { return }
+        data.flightSchool = state
+        if state == .done {
+            // U5: the school supersedes the fold / open hints.
+            data.learnedHints.insert(AppHint.fold.rawValue)
+            data.learnedHints.insert(AppHint.open.rawValue)
+        }
         save()
     }
 

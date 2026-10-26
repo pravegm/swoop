@@ -32,7 +32,7 @@ struct SettingsData: Codable, Equatable {
     var playWithTouch = false
     /// "Tuck by: Tapping" (UX §10): a tap toggles the tuck, for Switch Control and VoiceOver players.
     var tuckByTapping = false
-    /// "Bird on the other side": the flight runs right to left, the bird on the right half.
+    /// R3–R5 "Bird on the other side" (the bird on the right half). R6: read only to migrate into `birdSide`.
     var mirrored = false
     /// The one-time "Tap to tuck instead of holding?" offer (Switch Control / VoiceOver) was answered.
     var tapOfferAnswered = false
@@ -40,6 +40,15 @@ struct SettingsData: Codable, Equatable {
     var hingeReadout = false
     /// R5 P1-7: the player's resting book angle (Feel's calibrated "open"), restored at launch. nil = never learned.
     var hingeOpenAngle: Double?
+    /// R6 D1 (UX §2): Bird side. nil = never chosen: the device default (`resolvedBirdSide`), so an R3–R5 save's
+    /// `mirrored` keeps meaning "Right".
+    var birdSide: BirdSide?
+    /// Feel's `SharpHalf`: the sharp physical half and the orientation that names it (set on a Duo's first run).
+    var sharpHalf: SharpHalf?
+    /// The Wing check was answered (not skipped).
+    var wingCheckDone = false
+    /// The existing-player Wing check card (UX §2.4) was shown.
+    var wingCheckCardShown = false
 
     init() {}
 
@@ -58,6 +67,17 @@ struct SettingsData: Codable, Equatable {
         hingeReadout = (try? c.decodeIfPresent(Bool.self, forKey: .hingeReadout)) ?? false
         let open = (try? c.decodeIfPresent(Double.self, forKey: .hingeOpenAngle)) ?? nil
         hingeOpenAngle = open.flatMap { $0.isFinite ? $0 : nil }
+        birdSide = (try? c.decodeIfPresent(BirdSide.self, forKey: .birdSide)) ?? nil
+        sharpHalf = (try? c.decodeIfPresent(SharpHalf.self, forKey: .sharpHalf)) ?? nil
+        wingCheckDone = (try? c.decodeIfPresent(Bool.self, forKey: .wingCheckDone)) ?? false
+        wingCheckCardShown = (try? c.decodeIfPresent(Bool.self, forKey: .wingCheckCardShown)) ?? false
+    }
+
+    /// The bird side in effect: the chosen one, else the R3–R5 "Bird on the other side" (Right), else the sharp side
+    /// on a Duo and Left on an iPhone. Pure; tested.
+    func resolvedBirdSide(isDuo: Bool) -> BirdSide {
+        if let birdSide { return isDuo || birdSide != .sharp ? birdSide : .left }
+        return BirdSideRule.migrated(oldMirrored: mirrored, isDuo: isDuo)
     }
 }
 
@@ -78,6 +98,11 @@ final class SettingsStore: ObservableObject {
     @Published var hingeReadout: Bool { didSet { changed() } }
     /// Saved without `apply()` (it is input calibration, not feedback).
     @Published var hingeOpenAngle: Double? { didSet { save() } }
+    /// R6 D1: Bird side (nil = the device default) and the physical sharp half.
+    @Published var chosenBirdSide: BirdSide? { didSet { save() } }
+    @Published var sharpHalf: SharpHalf? { didSet { save() } }
+    @Published var wingCheckDone: Bool { didSet { save() } }
+    @Published var wingCheckCardShown: Bool { didSet { save() } }
 
     /// Set by the controller once the device is known to be a Duo (the Strong default).
     var isDuo = false {
@@ -101,6 +126,16 @@ final class SettingsStore: ObservableObject {
         tapOfferAnswered = stored.tapOfferAnswered
         hingeReadout = stored.hingeReadout
         hingeOpenAngle = stored.hingeOpenAngle
+        chosenBirdSide = stored.birdSide
+        sharpHalf = stored.sharpHalf
+        wingCheckDone = stored.wingCheckDone
+        wingCheckCardShown = stored.wingCheckCardShown
+    }
+
+    /// The bird side in effect on this device.
+    var birdSide: BirdSide {
+        get { snapshot.resolvedBirdSide(isDuo: isDuo) }
+        set { chosenBirdSide = newValue }
     }
 
     /// The haptic level in effect.
@@ -123,6 +158,10 @@ final class SettingsStore: ObservableObject {
         d.tapOfferAnswered = tapOfferAnswered
         d.hingeReadout = hingeReadout
         d.hingeOpenAngle = hingeOpenAngle.flatMap { $0.isFinite ? $0 : nil }
+        d.birdSide = chosenBirdSide
+        d.sharpHalf = sharpHalf
+        d.wingCheckDone = wingCheckDone
+        d.wingCheckCardShown = wingCheckCardShown
         return d
     }
 

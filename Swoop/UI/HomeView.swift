@@ -70,6 +70,15 @@ struct HomeView: View {
                        alignment: info.mirrored ? .topTrailing : .topLeading)
                 .position(x: l.caption.midX, y: l.caption.midY)
                 .accessibilitySortPriority(0)
+            if controller.showsWingCheckCard {
+                // R6 (UX §2.4): an existing Duo player is asked once which half stays sharp.
+                WingCheckCard(compact: info.isCompact, onCheck: { controller.openWingCheck() },
+                              onLater: { controller.dismissWingCheckCard() })
+                    .frame(width: min(info.birdPage.width, 380))
+                    .position(x: info.birdPage.midX, y: l.textBlock.midY)
+                    .transition(.opacity)
+                    .accessibilitySortPriority(11)
+            }
             menu(l)
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared || reduceMotion ? 0 : 24)
@@ -84,6 +93,19 @@ struct HomeView: View {
             }
             .position(x: l.gameCenter.midX, y: l.gameCenter.midY)
             .accessibilitySortPriority(4)
+            if isDuo {
+                // R6 D4 (UX §5 Home): the corner icon gets a visible label on the Duo.
+                Text("Leaderboards")
+                    .font(SwoopType.caption(info.isCompact))
+                    .foregroundStyle(SwoopTheme.mist)
+                    .lineLimit(1)
+                    .swoopLegible()
+                    .frame(width: 120, alignment: info.mirrored ? .trailing : .leading)
+                    .position(x: info.mirrored ? l.gameCenter.minX - 6 - 60 : l.gameCenter.maxX + 6 + 60,
+                              y: l.gameCenter.midY)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
             if gameCenterHint {
                 Text("Sign in to Game Center in Settings to see leaderboards.")
                     .font(SwoopType.caption(info.isCompact))
@@ -168,10 +190,13 @@ struct HomeView: View {
 
     /// The caption's copy (UX §2): the first-fold line, then the fold line in gold-light; flat on a Duo, the bend line.
     /// Pure; tested.
-    nonisolated static func captionText(duo: Bool, folded: Bool, flat: Bool, lowRest: Bool = false) -> String {
+    nonisolated static func captionText(duo: Bool, folded: Bool, flat: Bool, lowRest: Bool = false,
+                                        returning: Bool = false) -> String {
         if duo && flat { return "Bend it a little, like a book." }
         // R5 P1-7: a rest under the 132° floor would read as a tuck.
         if duo && lowRest { return "Open it a little wider." }
+        // R6 D3: a returning player's caption is the objective (UX §4.1).
+        if returning { return RouteRules.objective }
         if duo { return folded ? "Fold to dive. Open to soar." : "Hold your Duo like a book. These are your wings." }
         return folded ? "Hold to dive. Let go to soar." : "Press and hold the bird. That's a tuck."
     }
@@ -180,7 +205,7 @@ struct HomeView: View {
         // UX R3 P2-2: a returning player starts on the fold line (they already know the tuck).
         let folded = controller.homeFolded || !fresh
         let text = Self.captionText(duo: isDuo, folded: folded, flat: controller.homeFlat,
-                                    lowRest: isDuo && controller.homeLowRest)
+                                    lowRest: isDuo && controller.homeLowRest, returning: !fresh)
         let gold = folded && !(isDuo && (controller.homeFlat || controller.homeLowRest))
         return VStack(alignment: info.mirrored ? .trailing : .leading, spacing: 8) {
             Text(text)
@@ -214,13 +239,19 @@ struct HomeView: View {
                 dailyButton(l.daily)
                     .modifier(PopIn(shown: appeared, index: 0, reduceMotion: reduceMotion))
                     .accessibilitySortPriority(9)
-                menuTile(l.flocks, title: goalsTitle, icon: "flag.checkered", detail: goalsLine,
+                // R6 D4: plain names and pictures (Goals = checklist, Route = the lighthouse, Birds = the bird).
+                menuTile(l.flocks, title: goalsTitle, icon: .symbol("checklist"), detail: goalsDoneLine,
                          dot: !store.data.seenDestinations.contains("goals")) { controller.show(.goals) }
                     .modifier(PopIn(shown: appeared, index: 1, reduceMotion: reduceMotion))
                     .accessibilitySortPriority(8)
-                menuTile(l.birds, title: "Birds", icon: "bird.fill", detail: BirdCatalog.bird(store.activeBird).name,
-                         dot: !store.data.seenDestinations.contains("birds")) { controller.show(.birds) }
+                menuTile(l.route, title: "Route", icon: .lighthouse,
+                         detail: store.data.routeReached == 1 ? "1 reached" : "\(store.data.routeReached) reached",
+                         dot: !store.data.seenDestinations.contains("route")) { controller.show(.route) }
                     .modifier(PopIn(shown: appeared, index: 2, reduceMotion: reduceMotion))
+                    .accessibilitySortPriority(7.5)
+                menuTile(l.birds, title: "Birds", icon: .bird, detail: BirdCatalog.bird(store.activeBird).name,
+                         dot: !store.data.seenDestinations.contains("birds")) { controller.show(.birds) }
+                    .modifier(PopIn(shown: appeared, index: 3, reduceMotion: reduceMotion))
                     .accessibilitySortPriority(7)
             }
         }
@@ -230,6 +261,14 @@ struct HomeView: View {
     /// R5 (every critic): the tile is always "Goals"; the sub-line "1 of 3 · Crest Hopper" truncates at its tail.
     private var goalsTitle: String { "Goals" }
 
+    /// The Goals tile's detail (UX §5 Home): "1 of 3 done".
+    private var goalsDoneLine: String {
+        let d = store.data
+        let goals = d.currentGoals
+        let done = goals.filter { ProgressRules.liveProgress($0, data: d) >= 1 }.count
+        return d.rank >= GoalCatalog.maxRank ? goalsLine : "\(done) of \(max(goals.count, 3)) done"
+    }
+
     private var goalsLine: String {
         let d = store.data
         let goals = d.currentGoals
@@ -237,10 +276,9 @@ struct HomeView: View {
         return ProgressRules.goalsLine(rank: d.rank, done: done, total: max(goals.count, 3), starFlocks: d.starFlocks)
     }
 
-    /// Fly's second line: "Outfly the storm", or "Best 6.4 km" once there is one (the caption no longer repeats it).
-    /// Pure; tested.
-    nonisolated static func flySubtitle(best: Double) -> String {
-        best > 0 ? "Best \(ShareText.distance(best))" : "Outfly the storm"
+    /// Fly's second line (R6 UX §4.5): "Next: Saltlight · 9 km · best 6.42 km", shortened to fit. Pure; tested.
+    nonisolated static func flySubtitle(best: Double, routeReached: Int = 0, compact: Bool = false) -> String {
+        RouteRules.homeNext(routeReached: routeReached, best: best, maxChars: compact ? 30 : 40)
     }
 
     private func flyButton(_ r: CGRect) -> some View {
@@ -255,7 +293,11 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Fly")
                         .font(.system(size: r.height > 64 ? 30 : 25, weight: .black, design: .rounded))
-                    Text(Self.flySubtitle(best: store.data.bestMeters))
+                    HStack(spacing: 4) {
+                        LighthouseIcon(state: .next, size: 16)
+                        Text(Self.flySubtitle(best: store.data.bestMeters, routeReached: store.data.routeReached,
+                                              compact: c))
+                    }
                         .font(SwoopType.caption(c).weight(.bold))
                         .foregroundStyle(SwoopTheme.ink.opacity(0.75))
                         .lineLimit(1)
@@ -275,7 +317,7 @@ struct HomeView: View {
         .frame(width: r.width, height: r.height)
         .position(x: r.midX, y: r.midY)
         .accessibilityLabel("Fly")
-        .accessibilityHint(Self.flySubtitle(best: store.data.bestMeters))
+        .accessibilityHint(Self.flySubtitle(best: store.data.bestMeters, routeReached: store.data.routeReached))
     }
 
     private func dailyButton(_ r: CGRect) -> some View {
@@ -304,7 +346,7 @@ struct HomeView: View {
                 }
                 Spacer(minLength: 0)
                 if streak >= 2 { StreakLabel(days: streak, compact: info.isCompact) }
-                if !store.data.seenDestinations.contains("daily") { NewDot() }
+                if !store.data.seenDestinations.contains("daily") { NewCapsule() }
             }
             .padding(.horizontal, 6)
         }
@@ -324,26 +366,42 @@ struct HomeView: View {
         return "Everyone's sea · one try"
     }
 
-    private func menuTile(_ r: CGRect, title: String, icon: String, detail: String, dot: Bool,
+    enum TileIcon { case symbol(String), lighthouse, bird }
+
+    @ViewBuilder
+    private func tileIcon(_ icon: TileIcon) -> some View {
+        switch icon {
+        case let .symbol(name):
+            Image(systemName: name).font(.system(size: 17, weight: .semibold)).foregroundStyle(SwoopTheme.foam)
+        case .lighthouse:
+            LighthouseIcon(state: .reached, size: 20)
+        case .bird:
+            YouGlyph().fill(SwoopTheme.foam).frame(width: 22, height: 14)
+        }
+    }
+
+    private func menuTile(_ r: CGRect, title: String, icon: TileIcon, detail: String, dot: Bool,
                           action: @escaping () -> Void) -> some View {
         SwoopButton(kind: .secondary, height: r.height, compact: info.isCompact, action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(SwoopTheme.foam)
+            HStack(spacing: 6) {
+                tileIcon(icon)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
                         .font(SwoopType.body(info.isCompact).weight(.heavy))
                         .foregroundStyle(SwoopTheme.foam)
                         .lineLimit(1)
-                    Text(detail)
-                        .font(SwoopType.caption(true))
-                        .foregroundStyle(SwoopTheme.mist)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
+                        .minimumScaleFactor(0.8)
+                    // iPhone: icon + one word (UX §4.5); the Duo adds the detail line.
+                    if !info.isCompact {
+                        Text(detail)
+                            .font(SwoopType.caption(true))
+                            .foregroundStyle(SwoopTheme.mist)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
                 }
                 Spacer(minLength: 0)
-                if dot { NewDot() }
+                if dot { NewCapsule() }
             }
         }
         .frame(width: r.width, height: r.height)
@@ -379,6 +437,48 @@ struct HomeView: View {
             }
         }
         .swoopCard(radius: SwoopTheme.cardRadius(info.isCompact))
+    }
+}
+
+/// "Which half stays sharp when you fold?" (UX §2.4).
+struct WingCheckCard: View {
+    var compact = false
+    let onCheck: () -> Void
+    let onLater: () -> Void
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Text("Which half stays sharp when you fold?")
+                .font(SwoopType.headline(compact))
+                .foregroundStyle(SwoopTheme.foam)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+            Text("Your bird should fly on that half.")
+                .font(SwoopType.body(compact))
+                .foregroundStyle(SwoopTheme.mist)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            HStack(spacing: 10) {
+                SwoopButton(kind: .primary, height: SwoopTheme.primaryHeight(compact), compact: compact,
+                            action: onCheck) { Text("Check now").lineLimit(1) }
+                SwoopButton(kind: .secondary, height: SwoopTheme.secondaryHeight(compact), compact: compact,
+                            action: onLater) { Text("Not now").lineLimit(1) }
+            }
+        }
+        .swoopCard(radius: SwoopTheme.cardRadius(compact))
+    }
+}
+
+/// R6 D4: a small "New" capsule (the unexplained gold dot is cut) until the tile is first opened.
+struct NewCapsule: View {
+    var body: some View {
+        Text("New")
+            .font(.system(size: 11, weight: .heavy, design: .rounded))
+            .foregroundStyle(SwoopTheme.ink)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(SwoopTheme.rewardGold))
+            .accessibilityHidden(true)
     }
 }
 

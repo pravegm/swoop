@@ -26,6 +26,15 @@ enum FeelCue: Sendable, Equatable {
     case touchDown
     /// Round 4 (REVIEW-3-duo P1-2): the hinge tuck hit full (`hinge.consumeEndStop()`): the end-stop detent.
     case endStop
+    /// Round 6, Flight School (UX-FLIGHT-SCHOOL F4): step `n` (0…7) succeeded: the climbing step chime and the praise
+    /// tap. Also the Wing check's "Got it" (step 2).
+    case schoolStep(Int)
+    /// The school rewinds to a checkpoint (a missed dive, launch or landing).
+    case schoolRewind
+    /// Step 7: the storm rolls in for the first time.
+    case schoolStorm
+    /// 300 m before the next lighthouse (the goal chip).
+    case goalNear
 }
 
 /// Audio + haptics for Swoop (GAME-DESIGN §7). The App calls `start()` once at launch, sets the three toggles from its
@@ -123,6 +132,11 @@ final class FeedbackDirector: FeedbackSink {
     private var lastClosing: CFTimeInterval = -Double.infinity
     private var lastResultsTick: CFTimeInterval = -Double.infinity
     private var lastEndStop: CFTimeInterval = -Double.infinity
+    private var lastGoalNear: CFTimeInterval = -Double.infinity
+
+    /// Round 6 (D2): true during Flight School's practice sea: a calm wind, no rain and no thunder. The App sets it
+    /// when the school's Sea steps start and clears it when the real run begins.
+    var practiceAmbience = false
     /// Seconds around a lighthouse in which a milestone sparkle stays quiet (the bell and its card win).
     static let milestoneLighthouseQuiet: Double = 3
 
@@ -191,7 +205,9 @@ final class FeedbackDirector: FeedbackSink {
         let leavingFlight = wasPlaying && !telemetry.playing
         if now - lastBedSend >= 1.0 / 60 || leavingFlight {
             lastBedSend = now
-            var bed = FeelSoundBook.flightBed(telemetry: telemetry, master: master)
+            var bed = practiceAmbience
+                ? FeelSoundBook.practiceBed(telemetry: telemetry, master: master)
+                : FeelSoundBook.flightBed(telemetry: telemetry, master: master)
             if !telemetry.playing {
                 bed.glide = now - caughtAt < Self.caughtFadeWindow ? FeelSoundBook.caughtGlide : FeelSoundBook.fadeGlide
             }
@@ -252,6 +268,20 @@ final class FeedbackDirector: FeedbackSink {
             playHaptic(FeelHapticBook.resultsTick)
         case .touchDown:
             playHaptic(FeelHapticBook.touchDown)
+        case .schoolStep(let step):
+            audio.play(FeelSoundBook.schoolStep(step, dice: &dice))
+            playHaptic(FeelHapticBook.schoolPraise)
+        case .schoolRewind:
+            audio.play(FeelSoundBook.schoolRewind())
+            playHaptic(FeelHapticBook.schoolRewind)
+        case .schoolStorm:
+            audio.play(FeelSoundBook.schoolStorm(dice: &dice))
+            playHaptic(FeelHapticBook.schoolStorm)
+        case .goalNear:
+            guard now - lastGoalNear >= 2 else { return }
+            lastGoalNear = now
+            audio.play(FeelSoundBook.goalNear())
+            playHaptic(FeelHapticBook.goalNear)
         case .endStop:
             guard now - lastEndStop >= 0.15 else { return }
             lastEndStop = now
@@ -364,8 +394,9 @@ final class FeedbackDirector: FeedbackSink {
         case .tailwindEnded:
             audio.play(FeelSoundBook.tailwindEnded())
         case .lighthouse(let index, _):
-            audio.play(FeelSoundBook.lighthouse(index: index, dice: &dice))
-            playHaptic(FeelHapticBook.lighthouse)
+            // Round 6 (D3): the lighthouse is the goal, so this is the run's big success moment.
+            playHaptic(FeelHapticBook.lighthouseReached)
+            audio.play(FeelSoundBook.lighthouseReached(index: index, dice: &dice))
         case .cloudTouched:
             guard now - lastCloud >= Self.cloudGap else { return }
             lastCloud = now
@@ -380,7 +411,7 @@ final class FeedbackDirector: FeedbackSink {
             audio.play(FeelSoundBook.newBest(dice: &dice))
             playHaptic(FeelHapticBook.newBest)
         case .stormClose:
-            guard now - lastThunder >= Self.thunderGap else { return }
+            guard !practiceAmbience, now - lastThunder >= Self.thunderGap else { return }
             lastThunder = now
             audio.play(FeelSoundBook.thunder(dice: &dice))
             playHaptic(FeelHapticBook.thunder)

@@ -110,6 +110,48 @@ final class FlightScene: SKScene {
     /// The margin under the ceiling: the text rects + 24 pt, plus room for the bird's own half-height and its trail.
     static let attractClearance: CGFloat = 24 + 36
 
+    // MARK: Flight School (ROUND-6 D2, ART-FLIGHT-SCHOOL §2, SC1–SC2)
+
+    /// The practice sea: the "Morning practice" palette, no storm at all (no wall, sky shade, rain or chop), calmer far
+    /// swells (70 %) and a higher sun (0.24 h). Set it for Flight School's Sea steps; the scene also turns it on by
+    /// itself whenever the snapshot reports no storm (Core's practice sea: a gap ≥ 500,000 pt). A session starts with
+    /// the look already on (no fade); later changes crossfade over 2 s.
+    var practiceSea: Bool = false
+    /// A guide on the water (step 3 fold path, step 4 open mark, step 5 landing ring). The "…Ahead" cases are placed
+    /// on the sea ahead of the bird on the next frame, then stay put. A Perfect in the landing ring bursts it.
+    var guide: SceneGuide = .none {
+        didSet { pendingGuide = true }
+    }
+    /// Step 4's slow motion: a soft 6 % white bloom over the bird's half-page (the only visual cue of the slow time).
+    var slowMoBloom: Bool = false
+    /// The practice look now, 0 (the player's sky) … 1 (Morning practice), eased (tests).
+    private(set) var practiceLook: CGFloat = 0
+    /// Whether any of the storm is drawn this frame, and the rightmost u it can reach (tests: the fold band).
+    var stormShown: Bool { storm.isShown }
+    var stormDrawnRightU: CGFloat { storm.drawnRightU }
+    /// Storm glows so far (strikes included; tests).
+    var stormGlows: Int { storm.glowCount }
+    /// The lighthouse lamp's centre in canvas points (SpriteKit, y up) while the tower is on screen, so the App can keep
+    /// the reached card off the beam's source; nil when no tower shows.
+    private(set) var lampCanvasPoint: CGPoint?
+    /// The reached beam (tests).
+    var reachedBeamShown: Bool { reached.beamShown }
+    var reachedBeamAngle: CGFloat { reached.beamAngle }
+    /// The guide on the water now, resolved to sea positions (tests).
+    var shownGuide: SceneGuide { guides.shown }
+    /// The u-space roots' x scale: −1 when mirrored, so u-space motion (rain, gusts, speed lines) flips with it (tests).
+    var uSpaceXScale: CGFloat { frontRoot.xScale }
+
+    /// Step 7 (ART-FLIGHT-SCHOOL §2): the palette crossfades to the player's sky over 2 s while the storm rolls in
+    /// from the bird page's outer edge to `stormEdgeFar` (no catch); one glow inside it (no bolt, no flash) names it at
+    /// +1.2 s, and the rain starts last. The App fades in the meter and the goal chip at +1.6 s.
+    func rollInStorm() {
+        guard rollAge == nil else { return }
+        rollAge = 0
+        rollGlowDone = false
+        storm.deferGlows(SceneLook.rollInTime + 1)
+    }
+
     #if DEBUG
     private static let demoLogging: Bool = ProcessInfo.processInfo.arguments.contains("-swoopDemo")
     #endif
@@ -174,6 +216,15 @@ final class FlightScene: SKScene {
     private var stormEdge: CGFloat = -1
     private var dunkAge: CGFloat = 10
     private let nearGlitter: SKSpriteNode
+    private let guides: SceneGuides
+    private let reached: SceneReachedMoment
+    private let bloom: SKSpriteNode
+    private var bloomLevel: CGFloat = 0
+    private var pendingGuide = false
+    private var rollAge: Double?
+    private var rollGlowDone = false
+    private var lookSnapPending = true
+    private var appliedBlendStep: CGFloat = 0
 
     init(layout: ScreenLayout) {
         self.layout = layout
@@ -202,6 +253,9 @@ final class FlightScene: SKScene {
         gutterLeft = SKSpriteNode(texture: gutter)
         gutterRight = SKSpriteNode(texture: gutter)
         nearGlitter = SKSpriteNode(texture: SceneTextures.glitter)
+        guides = SceneGuides()
+        reached = SceneReachedMoment()
+        bloom = SKSpriteNode(texture: SceneTextures.glow)
         super.init(size: layout.size)
         setUp()
     }
@@ -224,6 +278,9 @@ final class FlightScene: SKScene {
         // The lighthouse stands between the two far swell layers (−14 and −12 in the backdrop).
         props.lighthouseRoot.zPosition = -12.5
         backdrop.root.addChild(props.lighthouseRoot)
+        // The reached beam and lamp flare, just over the lighthouse (under the far-front swells).
+        reached.backRoot.zPosition = -12.3
+        backdrop.root.addChild(reached.backRoot)
 
         world.zPosition = 0
         addChild(world)
@@ -236,8 +293,10 @@ final class FlightScene: SKScene {
         fx.root.zPosition = 15
         birdView.root.zPosition = 20
         fx.glowRoot.zPosition = 30
-        for n in [props.cloudRoot, props.buoyRoot, seaView.root, birdView.shadow, fx.waterRoot, birdView.trailRoot,
-                  fx.root, birdView.root, fx.glowRoot] as [SKNode] {
+        // Flight School's guides lie on the water, under the rings and the bird.
+        guides.root.zPosition = -6.2
+        for n in [props.cloudRoot, props.buoyRoot, seaView.root, guides.root, birdView.shadow, fx.waterRoot,
+                  birdView.trailRoot, fx.root, birdView.root, fx.glowRoot] as [SKNode] {
             world.addChild(n)
         }
 
@@ -267,6 +326,14 @@ final class FlightScene: SKScene {
         flareStreak.zPosition = 4.1
         flareStreak.isHidden = true
         frontRoot.addChild(flareStreak)
+        reached.frontRoot.zPosition = 5
+        frontRoot.addChild(reached.frontRoot)
+        bloom.blendMode = .add
+        bloom.colorBlendFactor = 1
+        bloom.color = .white
+        bloom.zPosition = 2.5
+        bloom.isHidden = true
+        frontRoot.addChild(bloom)
 
         titleRoot.zPosition = 70
         titleRoot.isHidden = true
@@ -332,6 +399,12 @@ final class FlightScene: SKScene {
         lighthouseU = nil
         stormEdge = -1
         dunkAge = 10
+        reached.clear()
+        guides.clear()
+        pendingGuide = true
+        rollAge = nil
+        rollGlowDone = false
+        lookSnapPending = true
     }
 
     /// The Home → play morph (ART §7, UX-S3): the dorsal title bird, as Home drew it across the top of the canvas,
@@ -518,9 +591,16 @@ final class FlightScene: SKScene {
         let anchorU = w * ScreenLayout.birdScreenFraction
         var gap = s.gap != 0 ? s.gap : bx - s.stormX
         if driver == nil { gap = Tuning.gapStart }
+
+        // Flight School (ROUND-6 D2): the practice look (set by the App, or seen in a snapshot with no storm), and
+        // step 7's roll-in.
+        let inSchool = practiceSea || (driver != nil && gap >= SceneLook.noStormGap)
+        updatePracticeLook(target: inSchool && rollAge == nil ? 1 : 0, dt: fxDt)
+        let lookK = practiceLook * practiceLook * (3 - 2 * practiceLook)
+
         let fill = SceneStormMap.meterFill(gap: gap)
         stormMeterFill = fill
-        let closeness = SceneStormMap.closeness(meterFill: fill)
+        var closeness = SceneStormMap.closeness(meterFill: fill)
         let target = SceneStormMap.edgeU(meterFill: fill, birdPageWidth: layout.creaseMinX, anchorU: anchorU)
         if stormEdge < 0 {
             stormEdge = target
@@ -528,18 +608,38 @@ final class FlightScene: SKScene {
             stormEdge += (target - stormEdge) * min(1, dt * 3.5)
         }
         var edgeU = stormEdge
+        var presence: CGFloat = 1 - lookK
+        var rainPresence: CGFloat = 1
+        if let ra = rollAge {
+            rollAge = ra + fxDt
+            presence = 1
+            let k = CGFloat(min(ra / SceneLook.rollInTime, 1))
+            rainPresence = SceneMoments.smooth(CGFloat(SceneLook.rollInRainFrom), CGFloat(SceneLook.rollInRainFull),
+                                               CGFloat(ra))
+            if inSchool {
+                // No catch in school: the wall slides in from off screen and stays at `stormEdgeFar`.
+                edgeU = SceneLook.rollInFrom + (SceneLook.stormEdgeFar - SceneLook.rollInFrom) * (k * k * (3 - 2 * k))
+                stormEdge = edgeU
+                closeness = 0
+            }
+            if !rollGlowDone && ra >= SceneLook.rollInGlowAt {
+                rollGlowDone = true
+                storm.glowOnce(strength: 0.6)
+            }
+        }
         let caughtEdge = SceneLook.stormCaughtEdge * w
         edgeU += (max(edgeU, caughtEdge) - edgeU) * caughtEase
 
-        // The near sea: rebuilt only when the cached surface no longer covers the view (QA-2 P2-2).
+        // The near sea: rebuilt only when the cached surface no longer covers the view (QA-2 P2-2). No chop in school.
         let range = viewCam.visibleSeaRange(margin: SceneLook.seaSideMargin)
         let calm = Double(1 - caughtness)
-        let chopOnScreen = s.stormX + SceneLook.chopReach > range.lo
-        if let req = seaView.rebuildRequest(visibleLo: range.lo, visibleHi: range.hi, zoom: z, stormX: s.stormX,
+        let seaStormX = inSchool ? -1e12 : s.stormX
+        let chopOnScreen = seaStormX + SceneLook.chopReach > range.lo
+        if let req = seaView.rebuildRequest(visibleLo: range.lo, visibleHi: range.hi, zoom: z, stormX: seaStormX,
                                             chopOnScreen: chopOnScreen, closeness: Double(closeness), calm: calm,
                                             originX: originX) {
             fillSamples(from: req.lo, to: req.hi, step: req.step)
-            seaView.rebuild(samples: sampleBuffer, lo: req.lo, hi: req.hi, zoom: z, stormX: s.stormX,
+            seaView.rebuild(samples: sampleBuffer, lo: req.lo, hi: req.hi, zoom: z, stormX: seaStormX,
                             closeness: Double(closeness), calm: calm, originX: originX)
         }
         let sunSeaX = bx + Double((SceneLook.sunU * w - anchorU) / max(z, 0.01))
@@ -550,8 +650,10 @@ final class FlightScene: SKScene {
         // Sky and far swells; the sun dims 0.15 c in play and by half when caught.
         let meanY = CGFloat(viewCam.meanWaterScreenY) + bumpY
         let sunDim = SceneLook.stormSunDim * closeness * (1 - caughtEase) + SceneLook.caughtSunDim * caughtEase
+        let farAlpha = 1 - (1 - SceneLook.practiceFarAlpha) * lookK
+        let sunLift = SceneLook.sunLiftFraction + (SceneLook.practiceSunLift - SceneLook.sunLiftFraction) * lookK
         backdrop.update(width: w, height: h, visibleTop: visMaxY, meanY: meanY, zoom: z, scroll: scrollPx, time: t,
-                        dt: dt, sunDim: sunDim, drift: !reduceMotion)
+                        dt: dt, sunDim: sunDim, drift: !reduceMotion, farAlpha: farAlpha, sunLift: sunLift)
 
         let sunU = backdrop.sunPosition.x
         sunCanvasPoint = CGPoint(x: layout.mirrored ? w - sunU : sunU, y: backdrop.sunPosition.y)
@@ -560,11 +662,20 @@ final class FlightScene: SKScene {
         nearGlitter.size = CGSize(width: w * SceneLook.glitterWidth, height: SceneLook.nearGlitterDepth)
         nearGlitter.alpha = SceneLook.nearGlitterAlpha * backdrop.sunBrightness * CGFloat(0.85 + 0.15 * sin(t * 6.0))
         storm.update(edgeU: edgeU, closeness: closeness, lead: CGFloat(s.lead), caughtness: caughtEase,
-                     size: layout.size, minY: visMinY, maxY: visMaxY, horizonY: backdrop.horizonY, birdU: anchorU, dt: dt)
+                     presence: presence, rainPresence: rainPresence, size: layout.size, minY: visMinY, maxY: visMaxY,
+                     horizonY: backdrop.horizonY, birdU: anchorU, dt: dt)
 
-        // Props: the lighthouse (depth layer), the personal-best buoy (Flight only, UX-S2), the cloud band.
-        updateLighthouse(s, bx: bx, zoom: z, anchorU: anchorU, width: w, dt: dt)
-        if s.bestMeters > 0 && s.mode == .flight {
+        // Props: the lighthouse (depth layer), the personal-best buoy (Flight only, UX-S2), the cloud band. Neither
+        // shows in school (there is no distance there).
+        updateLighthouse(s, bx: bx, zoom: z, width: w, hide: inSchool, dt: dt)
+        reached.update(dt: dt, lamp: props.lighthouseShown ? props.lampPoint : nil, minU: seaPageMinU())
+        if props.lighthouseShown {
+            let lamp = props.lampPoint
+            lampCanvasPoint = CGPoint(x: layout.mirrored ? w - lamp.x : lamp.x, y: lamp.y)
+        } else {
+            lampCanvasPoint = nil
+        }
+        if s.bestMeters > 0 && s.mode == .flight && !inSchool {
             let bxBest = s.bestMeters * 10
             if bxBest > range.lo - 80 && bxBest < range.hi + 80 {
                 let bob = 1.5 * sin(t * 2.1)
@@ -577,6 +688,14 @@ final class FlightScene: SKScene {
             props.hideBuoy()
         }
         props.updateClouds(birdX: bx, originX: originX)
+
+        // Flight School's guides on the water, and step 4's bloom.
+        if pendingGuide {
+            pendingGuide = false
+            guides.show(SceneGuidePlacement.resolve(guide, birdX: bx, height: { x in self.seaHeight(x) }))
+        }
+        guides.update(dt: dt, time: t, zoom: z, originX: originX, height: { x in self.seaHeight(x) })
+        updateBloom(dt: dt, width: w, height: h)
 
         // The bird.
         var tuck = s.tuck
@@ -716,30 +835,102 @@ final class FlightScene: SKScene {
         }
     }
 
-    /// The lighthouse stands on the far swells: u = the bird's + `lighthouseLead` + (its x − the bird's) × zoom ×
-    /// parallax. So it comes in from the right well before the pass, stands just ahead of the bird at the pass, and
-    /// drifts back slowly afterwards (REVIEW-1 P0-7).
-    private func updateLighthouse(_ s: FlightSnapshot, bx: Double, zoom z: CGFloat, anchorU: CGFloat, width w: CGFloat,
+    /// The lighthouse is the goal (ROUND-6 D3, ART-FLIGHT-SCHOOL §4/§6). It stands on the far swells:
+    /// - **Ahead, from 1.5 km:** small on the far horizon of the sea page (u = 0.90 w), fading in and growing as it
+    ///   nears, so the goal chip points at something visible.
+    /// - **Closer:** u = 0.76 w + (its x − the bird's) × zoom × parallax, moving in to stand on the sea page at the
+    ///   pass (the reached beam sweeps from there), then drifting back slowly (REVIEW-1 P0-7).
+    private func updateLighthouse(_ s: FlightSnapshot, bx: Double, zoom z: CGFloat, width w: CGFloat, hide: Bool,
                                   dt: CGFloat) {
+        guard !hide else {
+            lighthouseU = nil
+            props.hideLighthouse()
+            return
+        }
         let p = SceneLook.lighthouseParallax
+        let passU = w * SceneLook.lighthousePassU
         var shown: CGFloat?
+        var scale = SceneLook.lighthouseScale * (0.55 + 0.45 * z)
+        var alpha: CGFloat = 1
         if s.lighthousesPassed > 0 {
             let passed = Lighthouses.x(index: s.lighthousesPassed - 1)
-            let u = anchorU + SceneLook.lighthouseLead + CGFloat(passed - bx) * z * p
+            let u = passU + CGFloat(passed - bx) * z * p
             if u > -220 { shown = u }
         }
         if shown == nil {
             let next = s.nextLighthouseX > 0 ? s.nextLighthouseX : Lighthouses.x(index: max(s.lighthousesPassed, 0))
-            let u = anchorU + SceneLook.lighthouseLead + CGFloat(next - bx) * z * p
-            if u < w + 220 { shown = u }
+            let d = next - bx
+            if d <= SceneLook.lighthouseAheadFrom {
+                let near = passU + CGFloat(d) * z * p
+                let far = w * SceneLook.lighthouseFarU
+                if near <= far {
+                    shown = near
+                } else {
+                    let join = Double((far - passU) / max(z * p, 0.001))
+                    let span = max(SceneLook.lighthouseAheadFrom - join, 1)
+                    let k = CGFloat(min(max((SceneLook.lighthouseAheadFrom - d) / span, 0), 1))
+                    shown = far
+                    scale *= SceneLook.lighthouseFarScale + (1 - SceneLook.lighthouseFarScale) * k
+                    alpha = min(1, k * 8)
+                }
+            }
         }
         lighthouseU = shown
         guard let u = shown else {
             props.hideLighthouse()
             return
         }
-        let scale = SceneLook.lighthouseScale * (0.55 + 0.45 * z)
-        props.showLighthouse(at: CGPoint(x: u, y: backdrop.frontBaseY + 4), scale: scale, dt: dt)
+        props.showLighthouse(at: CGPoint(x: u, y: backdrop.frontBaseY + 4), scale: scale, alpha: alpha, dt: dt)
+    }
+
+    /// The sea page's inner limit in u-space: the fold band's far side + its 28 pt art margin (the canvas middle
+    /// without a fold). The reached beam and motes stay beyond it.
+    private func seaPageMinU() -> CGFloat {
+        let w = layout.size.width
+        guard layout.hasFold else { return w * 0.5 }
+        let mid = (layout.creaseMinX + layout.creaseMaxX) * 0.5
+        return layout.mirrored ? w - (mid - SceneLook.foldArtBand) : mid + SceneLook.foldArtBand
+    }
+
+    /// The bird page's outer half-width in u-space (from the behind edge to the fold band's near side).
+    private func birdPageWidthU() -> CGFloat {
+        let w = layout.size.width
+        guard layout.hasFold else { return w * 0.5 }
+        let mid = (layout.creaseMinX + layout.creaseMaxX) * 0.5
+        return layout.mirrored ? w - (mid + SceneLook.foldArtBand) : mid - SceneLook.foldArtBand
+    }
+
+    /// Eases the practice look toward `target` (snapping at a session's start), and re-tints in steps.
+    private func updatePracticeLook(target: CGFloat, dt: Double) {
+        if lookSnapPending {
+            lookSnapPending = false
+            practiceLook = target
+        } else if practiceLook != target {
+            let rate = CGFloat(dt / SceneLook.practiceCrossfade)
+            practiceLook = target > practiceLook ? min(target, practiceLook + rate) : max(target, practiceLook - rate)
+        }
+        let e = practiceLook * practiceLook * (3 - 2 * practiceLook)
+        let n = SceneLook.practiceBlendSteps
+        let step = (e * n).rounded() / n
+        if step != appliedBlendStep {
+            appliedBlendStep = step
+            applyCosmetics(bird: bird, sky: sky)
+        }
+    }
+
+    /// Step 4's slow-motion bloom over the bird's half-page.
+    private func updateBloom(dt: CGFloat, width w: CGFloat, height h: CGFloat) {
+        if slowMoBloom {
+            bloomLevel = min(1, bloomLevel + dt / SceneLook.guideFadeIn)
+        } else {
+            bloomLevel = max(0, bloomLevel - dt / SceneLook.guideFadeOut)
+        }
+        bloom.isHidden = bloomLevel <= 0.002
+        guard !bloom.isHidden else { return }
+        let page = birdPageWidthU()
+        bloom.position = CGPoint(x: page * 0.5, y: h * 0.5)
+        bloom.size = CGSize(width: page * 1.5, height: h * 1.3)
+        bloom.alpha = SceneLook.slowMoBloomAlpha * bloomLevel
     }
 
     // MARK: Events → FX
@@ -761,6 +952,11 @@ final class FlightScene: SKScene {
                 case .perfect:
                     fx.perfect(at: waterPoint, chain: chain, zoom: z, foamColor: foamColor)
                     goldTimer = SceneLook.perfectGoldTime
+                    // Flight School step 5: a Perfect in the ghost ring bursts it into 8 motes.
+                    if let rx = guides.perfectLanded(at: bx) {
+                        let p = CGPoint(x: CGFloat(rx - originX), y: CGFloat(seaHeight(rx)) + 6 / max(z, 0.01))
+                        fx.sparkles(at: p, count: 8, radius: 70, zoom: z, colors: [ScenePaint.gold, ScenePaint.paleGold])
+                    }
                     // The punch-in comes only at chain milestones (ROUND-4 P1-8: make Perfects special again).
                     if FlightScene.isChainMilestone(chain) { punchAge = 0 }
                 case .good:
@@ -779,7 +975,12 @@ final class FlightScene: SKScene {
                 fx.sparkles(at: birdLocal, count: 22, radius: 60, zoom: z,
                             colors: [ScenePaint.gold, ScenePaint.paleGold, ScenePaint.white])
             case .lighthouse:
-                props.sweepBeam()
+                // "Gull Point reached!" (ART-FLIGHT-SCHOOL §4): the beam sweep, the lamp flare, the gust toward the
+                // storm, the motes; the horizon haze pulses to 0.75.
+                props.quietBeam(for: 1.4)
+                backdrop.pulse()
+                reached.play(birdU: layout.size.width * ScreenLayout.birdScreenFraction, birdY: birdCanvasPoint.y,
+                             reduceMotion: reduceMotion)
             case .cloudTouched:
                 fx.cloudPuff(at: birdLocal, zoom: z, color: puffColor)
             case .milestone:
@@ -798,6 +999,9 @@ final class FlightScene: SKScene {
             case .stormClose:
                 storm.strike(strength: 1)
             case .caught, .countdownTick, .started, .tailwindEnded, .finished:
+                break
+            default:
+                // Events added later (e.g. Flight School's) need nothing from the scene.
                 break
             }
         }
@@ -885,15 +1089,28 @@ final class FlightScene: SKScene {
     private func applyCosmetics(bird b: Bird, sky k: Sky) {
         bird = b
         sky = k
-        let p = ScenePalette.palette(k.id)
+        let real = ScenePalette.palette(k.id)
+        // Flight School: the practice palette, or a step of the 2 s crossfade to the player's sky (the storm always
+        // takes the player's sky: it is hidden in practice and rolls in with the real colours).
+        let blend = appliedBlendStep
+        var p = real
+        var key: String?
+        if blend >= 0.999 {
+            p = ScenePalette.practice
+            key = "practice"
+        } else if blend > 0.001 {
+            p = ScenePalette.blended(real, ScenePalette.practice, blend)
+            key = "practice-\(k.id.rawValue)-\(Int((blend * SceneLook.practiceBlendSteps).rounded()))"
+        }
         palette = p
         backgroundColor = ScenePaint.ui(p.horizon)
         foamColor = ScenePaint.ui(p.foam)
         sprayColor = ScenePaint.ui(p.foam.mixed(with: b.trail, 0.25))
         puffColor = ScenePaint.ui(p.cloud.mixed(with: ScenePaint.white, 0.6))
-        backdrop.apply(palette: p, sky: k.id)
-        seaView.apply(palette: p, sky: k.id)
-        storm.apply(palette: p, sky: k.id)
+        backdrop.apply(palette: p, sky: k.id, key: key, dither: blend <= 0.001 || blend >= 0.999)
+        seaView.apply(palette: p, sky: k.id, key: key)
+        storm.apply(palette: real, sky: k.id)
+        guides.apply(foam: foamColor)
         props.apply(palette: p)
         birdView.apply(bird: b, palette: p)
         speedLines.apply(color: ScenePaint.ui(p.foam), gold: ScenePaint.ui(ScenePaint.gold),

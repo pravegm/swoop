@@ -92,14 +92,15 @@ final class SceneSeaView {
         pts.reserveCapacity(400)
     }
 
-    func apply(palette p: ScenePalette, sky id: SkyID) {
+    /// `key`: the texture cache key (nil = the sky's own); Flight School's crossfade steps pass their own.
+    func apply(palette p: ScenePalette, sky id: SkyID, key: String? = nil) {
         let lit = p.nearCrest.mixed(with: p.nearMean, 0.4)
         let mean85 = ScenePaint.darker(p.nearMean, 0.15)
         let deep70 = ScenePaint.darker(p.nearDeep, 0.30)
         // Seven eased stops over the fixed extent 700 … −1400 sea pt: crests (≈ +150 … +320) in the lit colour, the
         // mean line (≈ −50) at `nearMean`, troughs darker, the deep beyond.
         fill.fillTexture = SceneTextures.verticalGradient(
-            key: "sea3-\(id.rawValue)",
+            key: "sea3-" + (key ?? id.rawValue),
             colors: [ScenePaint.ui(p.nearCrest), ScenePaint.ui(p.nearCrest), ScenePaint.ui(lit), ScenePaint.ui(p.nearMean),
                      ScenePaint.ui(mean85), ScenePaint.ui(p.nearDeep), ScenePaint.ui(deep70)],
             locations: [0, 0.18, 0.26, 0.33, 0.40, 0.48, 1])

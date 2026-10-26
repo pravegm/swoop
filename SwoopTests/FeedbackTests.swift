@@ -721,4 +721,97 @@ struct FeedbackTests {
         #expect(sound.count == 1)
         #expect((sound.first?.gain ?? 1) <= 0.05)
     }
+
+    // MARK: Round 6: Flight School cues, the lighthouse reached, the practice sea (UX-FLIGHT-SCHOOL F4, D2, D3)
+
+    @Test func schoolStepChimesClimbAndStaySoft() {
+        var dice = FeelDice(seed: 21)
+        var previous: Float = 0
+        for step in 0...7 {
+            let chime = FeelSoundBook.schoolStep(step, dice: &dice)
+            #expect(chime.count == 2)
+            var pitch: Float = 0
+            if case .ring(let ring) = chime[0] { pitch = ring.fundamental }
+            #expect(pitch > previous)
+            previous = pitch
+            for command in chime {
+                #expect(command.gain > 0)
+                // Softer than a Perfect: the school praises, it doesn't fanfare.
+                #expect(command.gain <= 0.1)
+            }
+        }
+        // Out-of-range steps clamp.
+        var low: Float = 0
+        if case .ring(let ring) = FeelSoundBook.schoolStep(-4, dice: &dice)[0] { low = ring.fundamental }
+        #expect(abs(low - Float(FeelSoundBook.chimeBaseHz)) < 0.5)
+        // The rewind breath falls, then rises; the school storm is half the real thunder.
+        let rewind = FeelSoundBook.schoolRewind()
+        if case .noise(let fall) = rewind[0] { #expect(fall.cutoffEnd < fall.cutoff) }
+        if case .noise(let rise) = rewind[1] { #expect(rise.cutoffEnd > rise.cutoff) }
+        var a = FeelDice(seed: 3)
+        var b = FeelDice(seed: 3)
+        let storm = FeelSoundBook.schoolStorm(dice: &a).map { $0.gain }.reduce(0, +)
+        let thunder = FeelSoundBook.thunder(dice: &b).map { $0.gain }.reduce(0, +)
+        #expect(abs(storm - thunder * 0.5) < 0.001)
+        #expect(FeelHapticBook.schoolPraise.notes.count == 2)
+        #expect((FeelHapticBook.schoolPraise.notes.map { $0.intensity }.max() ?? 1) <= 0.5)
+    }
+
+    @Test func lighthouseReachedIsTheBigSuccessOnTheHitStop() {
+        var dice = FeelDice(seed: 22)
+        let bell = FeelSoundBook.lighthouse(index: 0, dice: &dice)
+        let reached = FeelSoundBook.lighthouseReached(index: 0, dice: &dice)
+        #expect(reached.count > bell.count)
+        var glintOnRelease = false
+        for command in reached {
+            if case .ring(let ring) = command, ring.kind == .glass, abs(ring.delay - FeelSoundBook.hitStop) < 0.0001 {
+                glintOnRelease = true
+            }
+            #expect(command.gain <= 0.2)
+        }
+        #expect(glintOnRelease)
+        let notes = FeelHapticBook.lighthouseReached.notes
+        #expect(notes.count == 4)
+        #expect(notes[0].time == 0)
+        #expect(abs(notes[1].time - Double(FeelSoundBook.hitStop)) < 1e-6)
+        #expect(notes[0].intensity > notes[1].intensity)
+        // The goal-near glint is small.
+        for command in FeelSoundBook.goalNear() { #expect(command.gain <= 0.05) }
+        #expect(FeelHapticBook.goalNear.notes.count == 2)
+    }
+
+    @Test func practiceSeaIsCalmWithNoRain() {
+        // Even with telemetry that would mean a close storm, the practice sea has no rain and a softer wind.
+        let telemetry = flying(speed: 1800, tuck: 1, skimming: false, lead: 0.05)
+        let real = FeelSoundBook.flightBed(telemetry: telemetry, master: 1)
+        let calm = FeelSoundBook.practiceBed(telemetry: telemetry, master: 1)
+        #expect(real.rainGain > 0)
+        #expect(calm.rainGain == 0)
+        #expect(calm.rumbleGain == 0)
+        #expect(calm.dropRate == 0)
+        #expect(calm.windGain < real.windGain)
+        #expect(abs(calm.windGain - real.windGain * FeelSoundBook.practiceWindShare) < 1e-6)
+        #expect(calm.whistleGain <= real.whistleGain * 0.5 + 1e-6)
+        #expect(calm.gust < real.gust)
+        #expect(calm.windGain > 0)
+        // Not playing: still just the master.
+        var idle = telemetry
+        idle.playing = false
+        #expect(FeelSoundBook.practiceBed(telemetry: idle, master: 1).windGain == 0)
+    }
+
+    @Test func directorPlaysTheSchoolCuesAndSilencesTheStormInPractice() {
+        let director = FeedbackDirector()
+        director.soundOn = false
+        director.hapticProfile = .off
+        director.practiceAmbience = true
+        let cues: [FeelCue] = [.schoolStep(0), .schoolStep(3), .schoolStep(7), .schoolRewind, .schoolStorm, .goalNear,
+                               .goalNear]
+        for cue in cues { director.cue(cue) }
+        director.handle([.stormClose, .lighthouse(index: 0, name: "Gull Point")],
+                        telemetry: flying(speed: 900, lead: 0.05))
+        director.practiceAmbience = false
+        director.handle([.stormClose], telemetry: flying(speed: 900, lead: 0.05))
+        #expect(director.practiceAmbience == false)
+    }
 }

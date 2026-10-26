@@ -4,7 +4,7 @@ import Foundation
 
 public enum Lighthouses {
 
-    /// Invented headland names (seeded order per sea).
+    /// Invented headland names, in route order (Round 6: fixed by index in every mode).
     static let names: [String] = [
         "Gull Point", "Saltlight", "Kestrel Head", "Old Harry", "Wren Ness",
         "Lantern Rock", "Herring Bight", "Curlew Spit", "Sealfold", "Brightwater Head",
@@ -28,25 +28,45 @@ public enum Lighthouses {
         return x
     }
 
-    /// The n-th lighthouse's name for this sea. Every 40 lighthouses the list repeats in the same seeded order.
-    public static func name(index: Int, seed: UInt64) -> String {
-        let order: [Int] = permutation(seed: seed)
+    /// The n-th lighthouse's name (0-based). Round 6 (UX U1): fixed by index in every mode, so each one is a place on the
+    /// route: 0 Gull Point (4 km), 1 Saltlight (9 km), 2 Kestrel Head (15 km), 3 Old Harry (22 km)… The list repeats
+    /// every 40.
+    public static func name(index: Int) -> String {
         let count: Int = names.count
         let i: Int = ((index % count) + count) % count
-        return names[order[i]]
+        return names[i]
     }
 
-    /// A seeded shuffle of 0..<names.count (Fisher–Yates).
-    static func permutation(seed: UInt64) -> [Int] {
-        var order: [Int] = Array(0..<names.count)
-        var rng = SeededRandom(seed: seed ^ 0x11_6874_6F75_7365)
-        var i: Int = order.count - 1
-        while i > 0 {
-            let j: Int = rng.int(i + 1)
-            order.swapAt(i, j)
-            i -= 1
+    /// Kept for callers from before Round 6: the seed is ignored (names are fixed by index).
+    public static func name(index: Int, seed: UInt64) -> String {
+        return name(index: index)
+    }
+
+    /// How many lighthouses stand at or before sea x (pt): the route count for a flight that reached x (UX K3).
+    public static func count(atOrBefore seaX: Double) -> Int {
+        if !seaX.isFinite { return 0 }
+        var n: Int = 0
+        var lx: Double = Tuning.lighthouseFirstX
+        while n < 100_000 && lx <= seaX {
+            n += 1
+            lx += min(Tuning.lighthouseMaxGap, Tuning.lighthouseFirstGap + Tuning.lighthouseGapGrowth * Double(n - 1))
         }
-        return order
+        return n
+    }
+
+    /// The same for a distance in metres (10 pt = 1 m), e.g. migrating `routeReached` from `bestMeters`.
+    public static func count(atOrBeforeMeters meters: Double) -> Int {
+        return count(atOrBefore: meters * Tuning.pointsPerMeter)
+    }
+
+    /// The index of the next lighthouse beyond a distance in metres ("Next: Saltlight · 9 km").
+    public static func nextIndex(afterMeters meters: Double) -> Int {
+        return count(atOrBeforeMeters: meters)
+    }
+
+    /// A lighthouse's distance in metres.
+    public static func meters(index: Int) -> Double {
+        return x(index: index) / Tuning.pointsPerMeter
     }
 }
 

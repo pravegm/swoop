@@ -47,8 +47,28 @@ struct PlayLayer: View {
                     .position(ripple)
                     .allowsHitTesting(false)
             }
-            HUDView(hud: hud, layout: l, info: info, tag: controller.hudTag, mirrored: info.mirrored,
-                    onPause: { controller.pause() })
+            if hud.schoolSea {
+                // Flight School's practice sea: only a quiet pause (the way out); no meter, chip or distance.
+                SwoopIconButton(systemName: "pause.fill", size: 44, compact: true, label: "Pause") { controller.pause() }
+                    .position(x: l.pause.midX, y: l.pause.midY)
+                if hud.schoolStormHUD {
+                    // Step 7 (Scene SC1): the meter and the first lighthouse fade in as the storm arrives.
+                    Group {
+                        LeadMeter(lead: hud.lead, stormClose: false, mirrored: info.mirrored)
+                            .frame(width: l.meter.width, height: l.meter.height)
+                            .position(x: l.meter.midX, y: l.meter.midY)
+                        GoalChip(index: 0, metersLeft: RouteRules.meters(0), mirrored: info.mirrored, compact: c)
+                            .position(x: l.meter.midX, y: l.meter.maxY + 34)
+                    }
+                    .allowsHitTesting(false)
+                    .transition(.opacity.animation(.easeOut(duration: 0.4)))
+                }
+            } else {
+                HUDView(hud: hud, layout: l, info: info, tag: controller.hudTag, mirrored: info.mirrored,
+                        onPause: { controller.pause() })
+                ReachedStage(hud: hud, info: info, reduceMotion: reduceMotion)
+                    .allowsHitTesting(false)
+            }
             PerfectCalloutView(hud: hud, info: info, reduceMotion: reduceMotion)
                 .allowsHitTesting(false)
             SplashMarkView(hud: hud, info: info, reduceMotion: reduceMotion)
@@ -105,9 +125,18 @@ struct PlayLayer: View {
                 .position(x: l.card.midX, y: l.card.midY)
                 .transition(.opacity)
         } else if controller.isUserPaused {
+            if controller.schoolSeaRun {
+                SchoolPauseCard(compact: c, onResume: { controller.resume() }, onSkip: { controller.skipSchool() },
+                                onHome: { controller.goHome() })
+                    .frame(width: min(l.card.width, 400))
+                    .position(x: l.card.midX, y: l.card.midY)
+                    .transition(.opacity)
+            } else {
             PauseCard(meters: controller.currentMeters, compact: c, canRestart: !controller.isScoredDaily,
                       scoredDaily: controller.isScoredDaily,
                       offersTouch: controller.input == .hinge && controller.hasHinge,
+                      goalLine: controller.currentGoalLine,
+                      objectiveLine: controller.showsObjectiveLine,
                       onResume: { controller.resume() },
                       onRestart: { controller.flyAgain() },
                       onHome: { controller.goHome() },
@@ -115,6 +144,7 @@ struct PlayLayer: View {
                 .frame(width: min(l.card.width, 400))
                 .position(x: l.card.midX, y: l.card.midY)
                 .transition(.opacity)
+            }
         } else if controller.isClosingPaused {
             ClosingCard(meters: controller.currentMeters, compact: c, onResume: { controller.resumeFromClosing() })
                 .frame(width: min(l.card.width, 380))
@@ -205,7 +235,7 @@ struct DeckPlayView: View {
                     .allowsHitTesting(false)
                 HUDDistance(meters: hud.meters, compact: true, alignTrailing: true)
                     .opacity(hud.countdown == nil && hud.countdownWord == nil ? 1 : 0)
-                ChainPill(chain: hud.chain, tailwind: hud.tailwind > 0, lost: nil, compact: true)
+                ChainPill(chain: hud.chain, tailwind: hud.tailwind > 0, lost: nil, compact: true, teach: hud.chainTeach)
             }
             .frame(width: page.width, height: rowH)
             .position(x: page.midX, y: rowH / 2 + 8)
@@ -314,6 +344,11 @@ struct HUDView: View {
                            alignment: mirrored ? .trailing : .leading)
                     .position(x: layout.tagLine.midX, y: layout.tagLine.midY)
                     .allowsHitTesting(false)
+                // R6 (ART AP8): the chain / Tailwind pill lives on the bird page, by the meter it pushes back.
+                ChainPill(chain: hud.chain, tailwind: hud.tailwind > 0, lost: nil, compact: c, teach: hud.chainTeach)
+                    .frame(width: layout.meter.width, alignment: mirrored ? .leading : .trailing)
+                    .position(x: layout.meter.midX, y: layout.meter.maxY + (hud.meterLabel ? 66 : 34))
+                    .allowsHitTesting(false)
             }
             .opacity(hud.caught ? 0 : 1)
             VStack(alignment: mirrored ? .leading : .trailing, spacing: 6) {
@@ -322,8 +357,15 @@ struct HUDView: View {
                     .opacity(hud.countdown == nil && hud.countdownWord == nil ? 1 : 0)
                     .animation(.easeOut(duration: 0.3), value: hud.countdownWord)
                 Group {
-                    // R4 P1-9: "×N lost" is said at the bird now (`SplashMarkView`), not in this corner.
-                    ChainPill(chain: hud.chain, tailwind: hud.tailwind > 0, lost: nil, compact: c)
+                    // R6 (UX §4.2): the sea page carries WHERE: the distance, the goal chip, "Best in".
+                    if hud.goalVisible {
+                        VStack(alignment: mirrored ? .leading : .trailing, spacing: 2) {
+                            if hud.goalOverline { SwoopOverline(text: "Your goal", compact: c) }
+                            GoalChip(index: hud.goalIndex, metersLeft: hud.goalMetersLeft, mirrored: mirrored,
+                                     compact: c)
+                        }
+                        .transition(.opacity)
+                    }
                     if let left = hud.bestIn {
                         Text("Best in \(ShareText.distance(left, roundUp: true))")
                             .font(SwoopType.caption(c))
@@ -449,12 +491,19 @@ struct LeadMeter: View {
                         Circle().fill(Color(swoopHex: Contrast.scrim))
                             .overlay(Circle().stroke(SwoopTheme.foam.opacity(0.9), lineWidth: 1.5))
                             .frame(width: 24, height: 24)
-                        BirdGlyph()
+                        YouGlyph(facingLeft: mirrored)
                             .fill(SwoopTheme.foam)
-                            .frame(width: 20, height: 12)
+                            .frame(width: 20, height: 13)
                     }
                     .position(x: knobX, y: h / 2)
                     if showsLabels {
+                        // D4 (UX §5 Meter): the coral end zone's label on the first 3 runs.
+                        Text("Too close")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundStyle(SwoopTheme.coral)
+                            .fixedSize()
+                            .swoopLegible()
+                            .position(x: mirrored ? w - zone / 2 : zone / 2, y: h / 2 + 40)
                         Text("You")
                             .font(.system(size: 12, weight: .bold, design: .rounded))
                             .foregroundStyle(SwoopTheme.foam)
@@ -512,13 +561,16 @@ struct ChainPill: View {
     let tailwind: Bool
     let lost: HUDChainLost?
     let compact: Bool
+    /// D4 (UX §5): the run that first chains reads "✦ ×2 in a row".
+    var teach: Bool = false
 
     @State private var shake: CGFloat = 0
 
     /// The pill's text, or nil when hidden. Pure; tested.
-    nonisolated static func text(chain: Int, tailwind: Bool) -> String? {
+    nonisolated static func text(chain: Int, tailwind: Bool, teach: Bool = false) -> String? {
         guard chain >= 2 else { return nil }
-        return tailwind ? "×\(chain) · TAILWIND" : "×\(chain)"
+        if tailwind { return "×\(chain) · TAILWIND" }
+        return teach ? "×\(chain) in a row" : "×\(chain)"
     }
 
     var body: some View {
@@ -538,7 +590,7 @@ struct ChainPill: View {
                         }
                     }
                     .transition(.opacity)
-            } else if let text = Self.text(chain: chain, tailwind: tailwind) {
+            } else if let text = Self.text(chain: chain, tailwind: tailwind, teach: teach) {
                 HStack(spacing: 5) {
                     Image(systemName: tailwind ? "wind" : "sparkle")
                         .font(.system(size: compact ? 12 : 13, weight: .semibold))
@@ -810,9 +862,27 @@ struct HintStage: View {
             return HintPlacement.center(bird: bird, size: CGSize(width: min(Self.size.width, info.birdPage.width),
                                                                 height: Self.size.height), canvas: info)
         }()
-        HintBubble(hint: hud.hint, done: hud.hintDone, touch: touch, info: info)
-            .frame(width: min(fixed.width, Self.size.width + 80), height: Self.size.height)
-            .position(center)
+        Group {
+            if let tip = hud.tipLine, hud.hint == nil {
+                // R6: the one-time lines (the storm line, the Tailwind teach, the flat tip) use the hint slot.
+                Text(tip)
+                    .font(SwoopType.body(info.isCompact).weight(.semibold))
+                    .foregroundStyle(SwoopTheme.foam)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.8)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color(swoopHex: Contrast.scrim).opacity(Contrast.surfaceAlpha)))
+                    .frame(width: min(fixed.width, 380))
+                    .transition(.opacity)
+            } else {
+                HintBubble(hint: hud.hint, done: hud.hintDone, touch: touch, info: info)
+                    .frame(width: min(fixed.width, Self.size.width + 80), height: Self.size.height)
+            }
+        }
+        .position(center)
             .animation(.easeOut(duration: 0.4), value: center)
             .frame(width: info.size.width, height: info.size.height, alignment: .topLeading)
     }
@@ -1100,12 +1170,54 @@ struct RippleMark: View {
 
 // MARK: - Pause, closing and the book prompt
 
+/// Flight School's pause (UX §1.1): "Paused · Flight School", Resume (back to the step's start) · Skip · Home.
+struct SchoolPauseCard: View {
+    var compact = false
+    let onResume: () -> Void
+    let onSkip: () -> Void
+    let onHome: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("Paused · Flight School")
+                .font(SwoopType.title(compact))
+                .foregroundStyle(SwoopTheme.foam)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            SwoopButton(kind: .primary, height: SwoopTheme.primaryHeight(compact), compact: compact, action: onResume) {
+                Label("Resume", systemImage: "play.fill")
+            }
+            HStack(spacing: 10) {
+                SwoopButton(kind: .secondary, height: SwoopTheme.secondaryHeight(compact), compact: compact,
+                            action: onSkip) {
+                    Text("Skip Flight School").lineLimit(1).minimumScaleFactor(0.75)
+                }
+                SwoopButton(kind: .secondary, height: SwoopTheme.secondaryHeight(compact), compact: compact,
+                            action: onHome) {
+                    Label("Home", systemImage: "house.fill").lineLimit(1).minimumScaleFactor(0.8)
+                }
+            }
+        }
+        .swoopCard(radius: SwoopTheme.cardRadius(compact))
+    }
+}
+
 struct PauseCard: View {
+    /// "2.12 km · Gull Point in 1.9 km" (UX §5), "Leaving ends today's try." on a scored Daily. Pure; tested.
+    nonisolated static func subline(meters: Double, scoredDaily: Bool, goalLine: String?) -> String {
+        if scoredDaily { return "Leaving ends today's try." }
+        if let goalLine { return "\(ShareText.distance(meters)) · \(goalLine)" }
+        return "\(ShareText.distance(meters)) · the storm waits."
+    }
+
     let meters: Double
     var compact: Bool = false
     let canRestart: Bool
     var scoredDaily: Bool = false
     var offersTouch: Bool = false
+    /// R6: "Gull Point in 1.9 km", and the objective sentence on the first 3 runs (UX §5 Pause).
+    var goalLine: String? = nil
+    var objectiveLine: Bool = false
     let onResume: () -> Void
     let onRestart: () -> Void
     let onHome: () -> Void
@@ -1116,11 +1228,18 @@ struct PauseCard: View {
             Text("Paused")
                 .font(SwoopType.title(compact))
                 .foregroundStyle(SwoopTheme.foam)
-            Text(scoredDaily ? "Leaving ends today's try." : "\(ShareText.distance(meters)) · the storm waits.")
+            Text(Self.subline(meters: meters, scoredDaily: scoredDaily, goalLine: goalLine))
                 .font(SwoopType.body(compact))
                 .foregroundStyle(SwoopTheme.mist)
                 .multilineTextAlignment(.center)
-                .padding(.bottom, 4)
+            if objectiveLine {
+                Text(RouteRules.objective)
+                    .font(SwoopType.caption(compact))
+                    .foregroundStyle(SwoopTheme.foam)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            }
+            Color.clear.frame(height: 4)
             SwoopButton(kind: .primary, height: SwoopTheme.primaryHeight(compact), compact: compact,
                         action: onResume) {
                 Label("Resume", systemImage: "play.fill")
@@ -1218,5 +1337,105 @@ struct BookPromptCard: View {
             }
         }
         .swoopCard(radius: SwoopTheme.cardRadius(compact))
+    }
+}
+
+// MARK: - The goal (R6 D3, UX §4.2–4.3, ART §3–4)
+
+/// "← Gull Point · 1.2 km": the next lighthouse, pointing the way the bird flies, counting down; gold under 300 m.
+struct GoalChip: View {
+    let index: Int
+    let metersLeft: Double
+    let mirrored: Bool
+    var compact = false
+
+    var body: some View {
+        let near = RouteRules.isNear(metersLeft: metersLeft)
+        HStack(spacing: 6) {
+            Image(systemName: mirrored ? "chevron.left" : "chevron.right")
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundStyle(SwoopTheme.rewardGold)
+            LighthouseIcon(state: .next, size: 22 * RouteRules.iconScale(metersLeft: metersLeft))
+            Text(RouteRules.name(index))
+                .font(.system(size: compact ? 17 : 19, weight: .bold, design: .rounded))
+                .foregroundStyle(near ? SwoopTheme.rewardGold : SwoopTheme.foam)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text("·").foregroundStyle(SwoopTheme.mist)
+            Text(ShareText.distance(metersLeft, roundUp: true))
+                .font(.system(size: compact ? 17 : 19, weight: .heavy, design: .rounded).monospacedDigit())
+                .foregroundStyle(SwoopTheme.goldLight)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, compact ? 12 : 14)
+        .frame(height: compact ? 34 : 40)
+        .background(Capsule().fill(SwoopTheme.surface.opacity(0.62))
+            .overlay(Capsule().stroke(near ? SwoopTheme.rewardGold.opacity(0.6) : SwoopTheme.stroke, lineWidth: 1)))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Next lighthouse, \(RouteRules.name(index)), "
+                            + "\(ShareText.distance(metersLeft, roundUp: true).replacingOccurrences(of: "km", with: "kilometres"))")
+    }
+}
+
+/// "Gull Point reached!" (UX §4.3, ART §4): the sea page, y 0.40 h (0.62 h when the sun is near), for 1.9 s.
+struct ReachedStage: View {
+    @ObservedObject var hud: HUDState
+    let info: AppCanvas
+    let reduceMotion: Bool
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if let r = hud.reached {
+                let usual = CGPoint(x: info.farPage.midX, y: info.size.height * 0.40)
+                // SC4: the card also drops to 0.62 h when it would cover the lamp, so the beam is seen leaving it.
+                let avoid = hud.lampPoint ?? hud.sunPoint
+                let p = AppRules.stageCenter(usual: usual, sun: avoid.map { info.screenPoint($0) },
+                                             height: info.size.height)
+                ReachedCard(reached: r, compact: info.isCompact)
+                    .frame(width: min(info.isCompact ? 320 : 380, info.farPage.width))
+                    .position(p)
+                    .id(r.serial)
+                    .transition(reduceMotion ? AnyTransition.opacity
+                                : AnyTransition.scale(scale: 0.92).combined(with: .opacity))
+            }
+        }
+        .frame(width: info.size.width, height: info.size.height, alignment: .topLeading)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.72),
+                   value: hud.reached)
+    }
+}
+
+struct ReachedCard: View {
+    let reached: HUDReached
+    var compact = false
+
+    var body: some View {
+        VStack(spacing: 8) {
+            LighthouseIcon(state: .reached, size: 44)
+            Text("\(reached.name) reached!")
+                .font(SwoopType.title(compact))
+                .foregroundStyle(SwoopTheme.foam)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text("Lighthouse \(reached.index + 1) · the storm falls back")
+                .font(SwoopType.body(compact))
+                .foregroundStyle(SwoopTheme.mist)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            if reached.newOnRoute {
+                Text("New on your route")
+                    .font(SwoopType.chip(compact))
+                    .kerning(SwoopType.chipKerning(compact))
+                    .foregroundStyle(SwoopTheme.ink)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(SwoopTheme.rewardGold))
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity)
+        .background(RoundedRectangle(cornerRadius: compact ? 24 : 28, style: .continuous)
+            .fill(SwoopTheme.surface.opacity(0.88)))
+        .accessibilityElement(children: .combine)
     }
 }

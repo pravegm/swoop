@@ -61,6 +61,17 @@ import UIKit
 // - `paused` (R4)                 1.5 s into the run, the manual Pause card (`SWOOP-T paused user`).
 // - `nudge` (R4)                  the countdown holds on "Open a little wider" (the open angle on the floor).
 // - `pose=phone` (R4)             with `screen=pose`: the iPhone TurnCard ("Turn your iPhone sideways").
+// Round 6 keys (design/UX-FLIGHT-SCHOOL.md §7)
+// - `school=<step>[:<phase>]`     Flight School at a step (0–7 or hold wings wingcheck dive soar land rhythm storm),
+//                                 held for the frame; phases `done` (praise), `fail` (help), and the Wing check's
+//                                 `explain|fold|ask|confirm`. Logs `SWOOP-T school <step> <phase>`.
+// - `schoolTouch`, `schoolTap`    the touch / tapping variants.
+// - `birdSide=sharp|left|right`, `sharp=a|b`, `orient=landscapeLeft|landscapeRight`: the bird's side (D1).
+// - `flatTip`                     the flat-open tip, 1.5 s into the run.
+// - `screen=route`                the Route page.
+// - `goalNear`                    the run starts 250 m short of the first lighthouse (the chip's near state).
+// - `resultsFrame=caught|reached|newroute|first`: the Results variants.
+// - `existingPlayer`              the Home Wing check card (a Duo player from before R6).
 // - `shortCountdown`              the run uses the 1.5 s "Ready · Go" restart countdown (with `freezeOn=countdown`
 //                                 the frame holds 1.3 s in: "Go").
 //
@@ -70,7 +81,10 @@ import UIKit
 // `SWOOP-T icon ok|failed`, `SWOOP-T badges done <n>`. (`SWOOP-H` hinge samples come from Input's HingeReader.)
 
 struct DemoConfig: Equatable {
-    enum Screen: String, Equatable { case home, play, results, goals, birds, settings, pose, icon, badges, cover, daily }
+    enum Screen: String, Equatable {
+        case home, play, results, goals, birds, settings, pose, icon, badges, cover, daily, route
+    }
+    enum ResultsFrame: String, Equatable { case caught, reached, newroute, first }
     enum CoverState: String, Equatable { case home, midrun, results }
     enum ModeKey: String, Equatable { case flight, daily, attract }
     enum Freeze: String, Equatable {
@@ -121,6 +135,19 @@ struct DemoConfig: Equatable {
     var paused = false
     var nudge = false
     var posePhone = false
+    // R6 (UX §7)
+    var schoolStep: SchoolStep?
+    var schoolPhase: String?
+    var schoolTouch = false
+    var schoolTap = false
+    var birdSide: BirdSide?
+    /// `sharp=a|b`: Feel's physical half, with landscapeRight as the reference (a = screen-right in landscapeRight).
+    var sharpHalf: SharpHalf?
+    var orientLandscape: InterfaceSide?
+    var flatTip = false
+    var goalNear = false
+    var resultsFrame: ResultsFrame?
+    var existingPlayer = false
 
     init(raw: String) { self.raw = raw }
 
@@ -196,7 +223,22 @@ struct DemoConfig: Equatable {
             case "holdReady": config.holdReady = flag(value)
             case "foldFill":
                 if let x = number(value) { config.foldFill = min(max(x, 0), 1) }
-            case "orient": config.orientPortrait = value == "portrait"
+            case "orient":
+                config.orientPortrait = value == "portrait"
+                config.orientLandscape = InterfaceSide(rawValue: value)
+            case "school":
+                let bits = value.split(separator: ":", maxSplits: 1).map(String.init)
+                config.schoolStep = bits.first.flatMap { SchoolStep.from(key: $0) }
+                config.schoolPhase = bits.count > 1 ? bits[1] : nil
+            case "schoolTouch": config.schoolTouch = flag(value)
+            case "schoolTap": config.schoolTap = flag(value)
+            case "birdSide": config.birdSide = BirdSide(rawValue: value)
+            case "sharp":
+                if let half = FeelPhysicalHalf(rawValue: value) { config.sharpHalf = SharpHalf(physical: half, reference: .right) }
+            case "flatTip": config.flatTip = flag(value)
+            case "goalNear": config.goalNear = flag(value)
+            case "resultsFrame": config.resultsFrame = ResultsFrame(rawValue: value)
+            case "existingPlayer": config.existingPlayer = flag(value)
             case "shortCountdown": config.shortCountdown = flag(value)
             case "paused": config.paused = flag(value)
             case "nudge": config.nudge = flag(value)
@@ -230,6 +272,17 @@ enum DemoOrientation {
             }
         }
         AppTrace.t("SWOOP-T orient portrait requested")
+    }
+
+    /// R6 `orient=landscapeLeft|landscapeRight`: the physical-half frames.
+    static func request(_ o: InterfaceSide) {
+        let mask: UIInterfaceOrientationMask = o == .landscapeLeft ? .landscapeLeft : .landscapeRight
+        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { error in
+                AppTrace.t("SWOOP-T orient request error: \(error.localizedDescription)")
+            }
+        }
+        AppTrace.t("SWOOP-T orient \(o.rawValue) requested")
     }
 }
 
@@ -293,6 +346,9 @@ enum DemoPresets {
             if let sky = SkyCatalog.all.filter({ $0.unlockRank <= data.rank }).last { data.sky = sky.id }
         }
         data.bestDailyStreak = max(data.bestDailyStreak, data.dailyStreak(today: today))
+        // R6: the route follows the best; a returning player has done Flight School.
+        data.routeReached = RouteRules.reached(within: data.bestMeters)
+        data.flightSchool = (preset ?? .fresh) == .fresh ? .notStarted : .done
         return data
     }
 

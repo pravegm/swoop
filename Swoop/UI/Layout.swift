@@ -193,11 +193,13 @@ struct HomeLayout: Equatable {
     var fly: CGRect
     var daily: CGRect
     var flocks: CGRect
+    /// R6 (UX §4.5): Goals | Route | Birds.
+    var route: CGRect
     var birds: CGRect
     var settings: CGRect
     var gameCenter: CGRect
 
-    var buttons: [CGRect] { [fly, daily, flocks, birds, settings, gameCenter] }
+    var buttons: [CGRect] { [fly, daily, flocks, route, birds, settings, gameCenter] }
     /// The text the attract bird must keep under (R5b, Scene `homeTextRects`): the wordmark and the caption block.
     var textRects: [CGRect] { [wordmark, textBlock].filter { !$0.isEmpty } }
 
@@ -255,9 +257,10 @@ struct HomeLayout: Equatable {
         let y0 = max(menuTop, bottom - need)
         let fly = CGRect(x: mx, y: y0, width: menuW, height: flyH)
         let daily = CGRect(x: mx, y: fly.maxY + gap, width: menuW, height: dailyH)
-        let half = max((menuW - gap) / 2, 0)
-        let flocks = CGRect(x: mx, y: daily.maxY + gap, width: half, height: rowH)
-        let birds = CGRect(x: mx + half + gap, y: daily.maxY + gap, width: half, height: rowH)
+        let third = max((menuW - 2 * gap) / 3, 0)
+        let flocks = CGRect(x: mx, y: daily.maxY + gap, width: third, height: rowH)
+        let route = CGRect(x: mx + third + gap, y: daily.maxY + gap, width: third, height: rowH)
+        let birds = CGRect(x: mx + 2 * (third + gap), y: daily.maxY + gap, width: third, height: rowH)
         let panel = CGRect(x: mx - 10, y: y0 - 10, width: menuW + 20, height: birds.maxY - y0 + 20)
 
         let bp = c.birdPage
@@ -287,7 +290,8 @@ struct HomeLayout: Equatable {
             if scrim.maxX > maxX { scrim.size.width = max(maxX - scrim.minX, 0) }
         }
         return HomeLayout(bird: bird, wordmark: wordmark, caption: caption, menuPanel: panel, textBlock: textBlock,
-                          scrim: scrim, fly: fly, daily: daily, flocks: flocks, birds: birds, settings: settings,
+                          scrim: scrim, fly: fly, daily: daily, flocks: flocks, route: route, birds: birds,
+                          settings: settings,
                           gameCenter: gameCenter)
     }
 }

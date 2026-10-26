@@ -199,6 +199,8 @@ struct RootView: View {
     private func refreshWindowInsets() {
         let read = OrientationLock.windowSafeArea()
         if read != windowInsets { windowInsets = read }
+        // R6 D1: the bird's physical half follows the interface orientation.
+        if let o = OrientationLock.interfaceSide() { controller.setInterfaceSide(o) }
         // The window settles its insets a beat after a rotation or a display handover.
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 350_000_000)
@@ -316,6 +318,24 @@ struct RootView: View {
             case .settings:
                 SettingsView(controller: controller, store: store, settings: settings, info: info)
                     .transition(SwoopTheme.pageTransition(reduceMotion))
+            case .route:
+                RouteView(controller: controller, store: store, info: info)
+                    .transition(SwoopTheme.pageTransition(reduceMotion))
+            case .school:
+                // R6 Flight School: the Studio (title bird + diagram) or the Sea (the practice flight + its chrome).
+                if controller.schoolDisplay.isSea {
+                    ZStack {
+                        PlayLayer(controller: controller, hud: controller.hud, info: info)
+                        SchoolSeaChrome(controller: controller, info: info)
+                    }
+                    .transition(.opacity)
+                } else {
+                    SchoolStudioView(controller: controller, info: info)
+                        .transition(.opacity)
+                }
+            case .wingCheck:
+                StandaloneWingCheckView(controller: controller, info: info)
+                    .transition(.opacity)
             }
         }
         .frame(width: info.size.width, height: info.size.height)

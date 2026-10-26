@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UIKit
 @testable import Swoop
 
 /// A fake Duo hinge for tests: the hand's angle as a function of time, reported like the real hinge (≤ 30 Hz, and only
@@ -653,5 +654,95 @@ struct InputTests {
         #expect(HingeTuckSource(logs: false).lowRestFallback(at: 1) == .moving)
         // The worst allowed start (119°) is a third of a tuck, never full.
         #expect(HingeTuckSource.tuck(forAngle: HingeTuckTuning.lowRestFloor, open: HingeTuckTuning.openMin) < 0.4)
+    }
+
+    // MARK: Round 6: the sharp half (D1, UX-FLIGHT-SCHOOL §2.1, F5) and the flat-open counter (D1.4, F3)
+
+    @Test func sharpHalfDefaultsToScreenRightInTheFirstOrientation() {
+        // Whichever way the Duo is first held, the default sharp half is the one on screen-right then.
+        for first in FeelLandscape.allCases {
+            let sharp = SharpHalf.firstRun(in: first)
+            #expect(sharp.physical == .a)
+            #expect(sharp.reference == first)
+            #expect(sharp.screenSide(in: first) == .right)
+            // A 180° turn moves that physical half to screen-left: the bird follows it.
+            #expect(sharp.screenSide(in: first.turned) == .left)
+            #expect(sharp.screenSide(in: first.turned.turned) == .right)
+        }
+    }
+
+    @Test func sharpHalfTracksThePhysicalHalfThroughTurnsAndAnswers() {
+        let sharp = SharpHalf.firstRun(in: .right)
+        // The Wing check, answered "this side ←" while held landscapeRight: the other physical half.
+        let answered = sharp.recording(sharpSide: .left, in: .right)
+        #expect(answered.physical == .b)
+        #expect(answered.reference == .right)
+        #expect(answered.screenSide(in: .right) == .left)
+        #expect(answered.screenSide(in: .left) == .right)
+        // The same physical answer given the other way up names the same half.
+        let turnedAnswer = sharp.recording(sharpSide: .right, in: .left)
+        #expect(turnedAnswer == answered)
+        // Each screen side maps to one physical half, and the two differ.
+        for o in FeelLandscape.allCases {
+            let onLeft = sharp.physicalHalf(onScreen: .left, in: o)
+            let onRight = sharp.physicalHalf(onScreen: .right, in: o)
+            #expect(onLeft != onRight)
+            #expect(onLeft == onRight.other)
+        }
+        #expect(FeelScreenSide.left.opposite == .right)
+        // UIKit orientations.
+        #expect(FeelLandscape.from(.landscapeLeft) == .left)
+        #expect(FeelLandscape.from(.landscapeRight) == .right)
+        #expect(FeelLandscape.from(.portrait) == nil)
+        #expect(FeelLandscape.from(.unknown) == nil)
+        // The CI log line.
+        #expect(answered.logLine(in: .left) == "SWOOP-T birdside right physical=b o=L")
+    }
+
+    @Test func sharpHalfPersistsAsJSON() throws {
+        let sharp = SharpHalf(physical: .b, reference: .left)
+        let data = try JSONEncoder().encode(sharp)
+        let back = try JSONDecoder().decode(SharpHalf.self, from: data)
+        #expect(back == sharp)
+    }
+
+    @Test func flatOpeningsAreCountedWithHysteresis() {
+        let source = HingeTuckSource(logs: false)
+        let hinge = FakeHinge(source: source)
+        hinge.run(0.5) { _ in 150 }
+        source.resetFlatOpenings()
+        #expect(source.flatOpenings == 0)
+        // Open to 175°, wobble around 172–176° (no re-arm above 166°), back to 150°: one opening.
+        hinge.run(0.5) { t in 150 + 25 * min(t / 0.3, 1) }
+        hinge.run(0.5) { t in 174 + 2 * sin(2 * Double.pi * 4 * t) }
+        hinge.run(0.5) { t in 175 - 25 * min(t / 0.3, 1) }
+        #expect(source.flatOpenings == 1)
+        // Two more full openings: three, the tip's trigger.
+        for _ in 0..<2 {
+            hinge.run(0.4) { t in 150 + 28 * min(t / 0.3, 1) }
+            hinge.run(0.4) { t in 178 - 28 * min(t / 0.3, 1) }
+        }
+        #expect(source.flatOpenings == 3)
+        // 173° is not flat.
+        hinge.run(0.4) { t in 150 + 23 * min(t / 0.3, 1) }
+        hinge.run(0.4) { t in 173 - 23 * min(t / 0.3, 1) }
+        #expect(source.flatOpenings == 3)
+        // A new run starting already flat doesn't count until the hinge comes back under 166°.
+        hinge.run(0.5) { t in 150 + 28 * min(t / 0.3, 1) }
+        source.resetFlatOpenings()
+        hinge.run(0.5) { _ in 177 }
+        #expect(source.flatOpenings == 0)
+    }
+
+    @Test func stepZeroStillnessUsesItsOwnWindow() {
+        let source = HingeTuckSource(logs: false)
+        let hinge = FakeHinge(source: source)
+        hinge.run(0.3) { t in 150 - 10 * t / 0.3 }
+        hinge.run(0.35) { _ in 140 }
+        // 0.35 s after the hand stopped: still over 0.3 s, not yet over 0.5 s.
+        #expect(source.isStill(at: hinge.time))
+        #expect(source.isStill(at: hinge.time, window: 0.5) == false)
+        hinge.run(0.3) { _ in 140 }
+        #expect(source.isStill(at: hinge.time, window: 0.5))
     }
 }

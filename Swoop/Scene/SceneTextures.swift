@@ -256,9 +256,11 @@ enum SceneTextures {
     }
 
     /// The sky (ART-S1): five fixed stops (0, 0.45, 0.80, 0.96, 1.0) with ±1/255 dither against banding.
-    static func sky(key: String, colors: [UIColor]) -> SKTexture {
+    /// `dither` false: no dither (the short-lived steps of the Flight School crossfade, made in < 1 ms each).
+    static func sky(key: String, colors: [UIColor], dither: Bool = true) -> SKTexture {
         make("sky5-" + key, width: 32, height: 512, scale: 1) { ctx, s in
             linear(ctx, colors, [0, 0.45, 0.80, 0.96, 1], from: CGPoint(x: 0, y: 0), to: CGPoint(x: 0, y: s.height))
+            guard dither else { return }
             var rng = SceneRNG(seed: 0xD1_7E2)
             let light = UIColor(white: 1, alpha: 1.0 / 255.0)
             let dark = UIColor(white: 0, alpha: 1.0 / 255.0)
@@ -314,34 +316,88 @@ enum SceneTextures {
         }
     }
 
-    /// A storm lobe (REVIEW-3: billowing, not tyres): a nearly solid disc with a soft rim, lit from the upper right
-    /// (the sun ahead) and darker below, so overlapping lobes read as volume. Tinted by the sprite colour.
-    static var stormLobe: SKTexture {
-        make("stormlobe", width: 128, height: 128, scale: 2) { ctx, s in
-            let c = CGPoint(x: s.width / 2, y: s.height / 2)
-            radial(ctx, [white(1), white(1), white(0.85), white(0)], [0, 0.62, 0.8, 1], center: c, radius: s.width / 2)
-            ctx.saveGState()
-            ctx.setBlendMode(.sourceAtop)
-            linear(ctx, [UIColor(white: 1, alpha: 0), UIColor(white: 0, alpha: 0.28)], [0.35, 1],
-                   from: CGPoint(x: s.width * 0.7, y: 0), to: CGPoint(x: s.width * 0.3, y: s.height))
-            ctx.restoreGState()
-        }
+    // MARK: The storm cloud (R6: rendered once from noise, `SceneStormCloud`)
+
+    private static var stormField: SceneStormCloud.Field?
+
+    /// The storm cloud's field, made on first use and kept (about 0.15 M pixels).
+    static var stormCloudField: SceneStormCloud.Field {
+        if let f = stormField { return f }
+        let f = SceneStormCloud.makeField()
+        stormField = f
+        return f
     }
 
-    /// A lobe's sunlit rim (REVIEW-4 juror #2): a soft crescent of light on the top-right edge (the sun is ahead),
-    /// drawn additively over a `stormLobe` of the same size.
-    static var stormRimLight: SKTexture {
-        make("stormrim", width: 128, height: 128, scale: 2) { ctx, s in
-            let c = CGPoint(x: s.width / 2, y: s.height / 2)
+    /// The storm cloud tinted for one sky (cached per key).
+    static func stormCloud(key: String, body: RGBA, top: RGBA, rim: RGBA, rain: RGBA) -> SKTexture {
+        let k = "stormcloud6-" + key
+        if let t = cache[k] { return t }
+        let f = stormCloudField
+        let bytes = SceneStormCloud.pixels(f, body: body, top: top, rim: rim, rain: rain)
+        let t = texture(fromPremultiplied: bytes, width: f.w, height: f.h)
+        cache[k] = t
+        return t
+    }
+
+    /// The left two columns of a storm-cloud texture, stretched behind it so the storm runs on off screen.
+    static func stormBacking(key: String, of tex: SKTexture) -> SKTexture {
+        let k = "stormbacking6-" + key
+        if let t = cache[k] { return t }
+        let f = stormCloudField
+        let cols = 2 / CGFloat(max(f.w, 2))
+        let t = SKTexture(rect: CGRect(x: 0, y: 0, width: cols, height: 1), in: tex)
+        t.filteringMode = .linear
+        cache[k] = t
+        return t
+    }
+
+    /// A lightning glow inside the cloud around `SceneStormCloud.glowSpots[index]` (white, premultiplied).
+    static func stormGlow(_ index: Int) -> SKTexture {
+        let spots = SceneStormCloud.glowSpots
+        let i = min(max(index, 0), max(spots.count - 1, 0))
+        let k = "stormglow6-\(i)"
+        if let t = cache[k] { return t }
+        let f = stormCloudField
+        let spot = spots.isEmpty ? CGPoint(x: 800, y: 400) : spots[i]
+        let g = SceneStormCloud.glowPixels(f, spot: spot, radius: 260, step: 2)
+        let t = texture(fromPremultiplied: g.bytes, width: g.w, height: g.h)
+        cache[k] = t
+        return t
+    }
+
+    /// A texture from premultiplied RGBA8 pixels (row 0 at the top).
+    static func texture(fromPremultiplied bytes: [UInt8], width: Int, height: Int) -> SKTexture {
+        guard width > 0, height > 0, bytes.count >= width * height * 4 else { return SKTexture() }
+        var data = bytes
+        let image: CGImage? = data.withUnsafeMutableBytes { raw -> CGImage? in
+            guard let base = raw.baseAddress,
+                  let ctx = CGContext(data: base, width: width, height: height, bitsPerComponent: 8,
+                                      bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+            return ctx.makeImage()
+        }
+        guard let img = image else { return SKTexture() }
+        let t = SKTexture(cgImage: img)
+        t.filteringMode = .linear
+        return t
+    }
+
+    /// The lighthouse-reached beam (ART-FLIGHT-SCHOOL §4): a 40° cone from its apex (left), fading along its length and
+    /// softly at its sides.
+    static var beamWide: SKTexture {
+        make("beam40", width: 256, height: 188, scale: 1) { ctx, s in
             ctx.saveGState()
-            ctx.addEllipse(in: CGRect(x: s.width * 0.1, y: s.height * 0.1, width: s.width * 0.8, height: s.height * 0.8))
+            ctx.move(to: CGPoint(x: 0, y: s.height * 0.5 - 2))
+            ctx.addLine(to: CGPoint(x: s.width, y: 0))
+            ctx.addLine(to: CGPoint(x: s.width, y: s.height))
+            ctx.addLine(to: CGPoint(x: 0, y: s.height * 0.5 + 2))
+            ctx.closePath()
             ctx.clip()
-            radial(ctx, [white(1), white(0.4), white(0)], [0, 0.45, 1],
-                   center: CGPoint(x: s.width * 0.74, y: s.height * 0.24), radius: s.width * 0.42)
-            // Hollow it into a crescent: cut away a disc shifted down and to the left.
-            ctx.setBlendMode(.destinationOut)
-            radial(ctx, [white(1), white(1), white(0)], [0, 0.7, 1],
-                   center: CGPoint(x: c.x - s.width * 0.05, y: c.y + s.height * 0.06), radius: s.width * 0.36)
+            linear(ctx, [white(1), white(0.55), white(0)], [0, 0.4, 1],
+                   from: CGPoint(x: 0, y: s.height / 2), to: CGPoint(x: s.width, y: s.height / 2))
+            ctx.setBlendMode(.destinationIn)
+            linear(ctx, [white(0), white(1), white(1), white(0)], [0, 0.3, 0.7, 1],
+                   from: CGPoint(x: 0, y: 0), to: CGPoint(x: 0, y: s.height))
             ctx.restoreGState()
         }
     }

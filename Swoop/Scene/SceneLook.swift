@@ -83,6 +83,36 @@ struct ScenePalette: Equatable {
                                 cloud: c(0x3C4E7E), glitter: c(0xE6ECFF), darkContourForAll: false)
         }
     }
+
+    /// Flight School's "Morning practice" (ART-FLIGHT-SCHOOL §2): brighter, softer and stormless; it says "safe,
+    /// rehearsal". Not a selectable sky. Its storm colours are Golden Hour's (the storm is hidden until step 7, and
+    /// then it takes the player's sky).
+    static let practice = ScenePalette(
+        zenith: RGBA(hex: 0x3D6FB0), mid: RGBA(hex: 0x9DB7D9), low: RGBA(hex: 0xF5D3B0), horizon: RGBA(hex: 0xFFE7C2),
+        sunline: RGBA(hex: 0xFFF1D8), sunDisk: RGBA(hex: 0xFFF8E6), sunGlow: RGBA(hex: 0xFFD99A), sunDiskAlpha: 1,
+        sunGlowScale: 1, farBack: RGBA(hex: 0xA9C4D8), farFront: RGBA(hex: 0x6E9FBE), nearCrest: RGBA(hex: 0x4FA3BF),
+        nearMean: RGBA(hex: 0x2A7392), nearDeep: RGBA(hex: 0x123E58), foam: RGBA(hex: 0xFFFFFF),
+        stormBody: RGBA(hex: 0x3A4252), stormTop: RGBA(hex: 0x262C38), stormRim: RGBA(hex: 0xFFD9A6),
+        rain: RGBA(hex: 0xA9B6C6), birdKeyRim: RGBA(hex: 0xFFE9BE), cloud: RGBA(hex: 0xFFFFFF),
+        glitter: RGBA(hex: 0xFFF6D8), darkContourForAll: false)
+
+    /// A step of the crossfade between two palettes (Flight School's step 7 only: a transition, never a designed
+    /// stop). `t` 0 = `a`, 1 = `b`.
+    static func blended(_ a: ScenePalette, _ b: ScenePalette, _ t: CGFloat) -> ScenePalette {
+        let k = Double(min(max(t, 0), 1))
+        func m(_ x: RGBA, _ y: RGBA) -> RGBA { x.mixed(with: y, k) }
+        return ScenePalette(
+            zenith: m(a.zenith, b.zenith), mid: m(a.mid, b.mid), low: m(a.low, b.low), horizon: m(a.horizon, b.horizon),
+            sunline: m(a.sunline, b.sunline), sunDisk: m(a.sunDisk, b.sunDisk), sunGlow: m(a.sunGlow, b.sunGlow),
+            sunDiskAlpha: a.sunDiskAlpha + (b.sunDiskAlpha - a.sunDiskAlpha) * CGFloat(k),
+            sunGlowScale: a.sunGlowScale + (b.sunGlowScale - a.sunGlowScale) * CGFloat(k),
+            farBack: m(a.farBack, b.farBack), farFront: m(a.farFront, b.farFront), nearCrest: m(a.nearCrest, b.nearCrest),
+            nearMean: m(a.nearMean, b.nearMean), nearDeep: m(a.nearDeep, b.nearDeep), foam: m(a.foam, b.foam),
+            stormBody: m(a.stormBody, b.stormBody), stormTop: m(a.stormTop, b.stormTop),
+            stormRim: m(a.stormRim, b.stormRim), rain: m(a.rain, b.rain), birdKeyRim: m(a.birdKeyRim, b.birdKeyRim),
+            cloud: m(a.cloud, b.cloud), glitter: m(a.glitter, b.glitter),
+            darkContourForAll: k < 0.5 ? a.darkContourForAll : b.darkContourForAll)
+    }
 }
 
 /// Every tunable number of the scene in one place (ROUND-1 rule 7). Canvas sizes are in canvas points ("px" below);
@@ -340,9 +370,18 @@ enum SceneLook {
 
     // MARK: Props (ART-S13)
 
-    static let lighthouseParallax: CGFloat = 0.3
-    static let lighthouseLead: CGFloat = 120       // px ahead of the bird at the pass
+    /// R6: the lighthouse is a goal on the far sea (ART-FLIGHT-SCHOOL §4/§6). At the pass it stands on the sea page
+    /// (u = 0.76 w, well clear of the fold), drifting back at a far-swell parallax, so the reached beam sweeps across the
+    /// sea page. From 1.5 km out the next tower is already drawn small on the far horizon (u = 0.90 w), growing.
+    static let lighthouseParallax: CGFloat = 0.15
+    static let lighthousePassU: CGFloat = 0.76
+    static let lighthouseFarU: CGFloat = 0.90
+    static let lighthouseAheadFrom: Double = 15_000   // sea pt (1.5 km)
+    static let lighthouseFarScale: CGFloat = 0.35
     static let lighthouseScale: CGFloat = 0.9      // × (0.55 + 0.45 zoom)
+    /// The tower (AP4's icon colours, so the icon and the world are one object): two warm-red bands on off-white.
+    static let lighthouseWhite = RGBA(hex: 0xF4F1EA)
+    static let lighthouseRed = RGBA(hex: 0xD8574A)
     static let beamSpeed: CGFloat = 1.3            // rad/s of the beam's turn
     static let beamAlpha: CGFloat = 0.25
     static let lampGlowSize: CGFloat = 60
@@ -387,4 +426,69 @@ enum SceneLook {
     static let splashMist: CGFloat = 117
     /// How often (frames) the scene re-reads the driver's bird and sky.
     static let cosmeticsCheckFrames: Int = 30
+
+    // MARK: Flight School (ART-FLIGHT-SCHOOL §2, SC1–SC2)
+
+    /// A snapshot gap at least this large means "no storm" (Core's practice sea reports 1,000,000).
+    static let noStormGap: Double = 500_000
+    /// The practice look crossfades to the player's sky over 2 s (ease-in-out), in this many palette steps.
+    static let practiceCrossfade: Double = 2.0
+    static let practiceBlendSteps: CGFloat = 12
+    /// The far swells at 70 % (calmer), and the sun higher (0.24 h instead of 0.16 h).
+    static let practiceFarAlpha: CGFloat = 0.7
+    static let practiceSunLift: CGFloat = 0.24
+    /// Step 7's roll-in: the wall slides in from off screen to `stormEdgeFar` over 2 s, one glow (no bolt, no flash)
+    /// names it at +1.2 s, and the rain comes in last (+1.6 … +2.6 s).
+    static let rollInTime: Double = 2.0
+    static let rollInFrom: CGFloat = -260
+    static let rollInGlowAt: Double = 1.2
+    static let rollInRainFrom: Double = 1.6
+    static let rollInRainFull: Double = 2.6
+    /// Step 4's slow motion: a soft 6 % white bloom over the bird's half-page (in 0.3 s, out 0.25 s).
+    static let slowMoBloomAlpha: CGFloat = 0.06
+    /// Guides on the water fade in over 0.3 s and out over 0.25 s.
+    static let guideFadeIn: CGFloat = 0.3
+    static let guideFadeOut: CGFloat = 0.25
+    /// The fold path: a 12 pt reward-gold ribbon on the foam line, α 0.40 at the crest → 0 at the trough, shimmering
+    /// down the slope every 1.2 s.
+    static let foldPathWidth: CGFloat = 12
+    static let foldPathAlpha: CGFloat = 0.40
+    static let foldPathShimmer: Double = 1.2
+    static let foldPathSegments: Int = 24
+    /// The open mark: three 14 × 8 chevrons, 2.5 pt, white at 70 %, pointing up and ahead, a 0.15 s stagger loop.
+    static let chevronWidth: CGFloat = 14
+    static let chevronHeight: CGFloat = 8
+    static let chevronStroke: CGFloat = 2.5
+    static let chevronAlpha: CGFloat = 0.7
+    static let chevronStagger: Double = 0.15
+    static let chevronLift: CGFloat = 30
+    /// The landing target: a ghost Perfect ring 150 pt wide (1 : 0.32), 2.5 pt dashed 8 / 6 foam at 60 %, breathing
+    /// 0.97 ↔ 1.03 at 1 Hz; a Perfect within this many sea pt of it bursts it into 8 motes.
+    static let landingRingWidth: CGFloat = 150
+    static let landingRingAlpha: CGFloat = 0.6
+    static let landingRingStroke: CGFloat = 2.5
+    static let landingHitRange: Double = 260
+
+    // MARK: Lighthouse reached (ART-FLIGHT-SCHOOL §4, SC4)
+
+    /// The beam: a 40° cone 900 pt long, additive #FFF3C4 at α ≤ 0.35, sweeping 70° (from 60° up to 10° down) over
+    /// 0.9 s, ease-out, then fading over 0.3 s. It points ahead, so it never crosses toward the fold.
+    static let reachedBeamLength: CGFloat = 900
+    static let reachedBeamAlpha: CGFloat = 0.35
+    static let reachedBeamSweep: Double = 0.9
+    static let reachedBeamFade: Double = 0.3
+    static let reachedBeamFrom: CGFloat = 60 * .pi / 180
+    static let reachedBeamTo: CGFloat = -10 * .pi / 180
+    /// The lamp flare: a 140 pt additive disc of reward gold, α 0.55 → 0 over 0.6 s.
+    static let reachedFlareSize: CGFloat = 140
+    static let reachedFlareAlpha: CGFloat = 0.55
+    static let reachedFlareTime: Double = 0.6
+    /// The gust (from +0.05 s): 6 wind streaks, 80–160 pt, foam at 0.5, from the bird toward the storm.
+    static let gustCount: Int = 6
+    static let gustDelay: Double = 0.05
+    static let gustAlpha: CGFloat = 0.5
+    /// The motes (from +0.2 s): 12 soft gold motes, 4–7 pt, rising 60–120 pt from the lamp over 1.2 s.
+    static let moteCount: Int = 12
+    static let moteDelay: Double = 0.2
+    static let moteTime: Double = 1.2
 }

@@ -76,6 +76,17 @@ enum OrientationLock {
         return EdgeInsets(top: i.top, leading: i.left, bottom: i.bottom, trailing: i.right)
     }
 
+    /// R6 D1: the window scene's landscape orientation (nil in portrait or before a scene connects).
+    static func interfaceSide() -> InterfaceSide? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard let o = scenes.first?.interfaceOrientation else { return nil }
+        switch o {
+        case .landscapeLeft: return .landscapeLeft
+        case .landscapeRight: return .landscapeRight
+        default: return nil
+        }
+    }
+
     /// The main screen's size in points (zero before the first scene connects).
     static func screenSize() -> CGSize {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }

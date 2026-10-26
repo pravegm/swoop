@@ -216,6 +216,24 @@ enum FeelHapticBook {
     )
     /// Lighthouse: a soft triple, in time with the bell.
     static let lighthouse = FeelHapticCue(notes: [.tap(0.3, 0.4), .tap(0.3, 0.4, at: 0.16), .tap(0.35, 0.45, at: 0.32)])
+    /// Round 6 (D3): a lighthouse reached, the run's goal. A firm tap the moment it is reached (the App's 60 ms
+    /// hit-stop starts), a keen one as it lets go, then the soft pair with the bell.
+    static let lighthouseReached = FeelHapticCue(notes: [.tap(0.7, 0.6),
+                                                         .tap(0.45, 0.85, at: Double(FeelSoundBook.hitStop)),
+                                                         .tap(0.3, 0.4, at: 0.22), .tap(0.35, 0.45, at: 0.38)])
+    /// Round 6: 300 m to the lighthouse, a light glint.
+    static let goalNear = FeelHapticCue(notes: [.tap(0.3, 0.9), .tap(0.25, 0.95, at: 0.08)])
+    /// Round 6, Flight School: the praise tap on each step's success (light and crisp; the chime carries it too).
+    static let schoolPraise = FeelHapticCue(notes: [.tap(0.45, 0.8), .tap(0.3, 0.9, at: 0.07)])
+    /// The rewind to a checkpoint: a soft sag.
+    static let schoolRewind = FeelHapticCue(notes: [.buzz(0.25, 0.2, duration: 0.18)],
+                                            curve: [FeelHapticPoint(time: 0, value: 1),
+                                                    FeelHapticPoint(time: 0.18, value: 0)])
+    /// The storm's first roll-in.
+    static let schoolStorm = FeelHapticCue(notes: [.buzz(0.3, 0.05, duration: 0.7)],
+                                           curve: [FeelHapticPoint(time: 0, value: 0.2),
+                                                   FeelHapticPoint(time: 0.25, value: 0.8),
+                                                   FeelHapticPoint(time: 0.7, value: 0)])
     /// The storm closes in: a low distant roll.
     static let thunder = FeelHapticCue(
         notes: [.buzz(0.45, 0.05, duration: 0.9)],

@@ -97,6 +97,10 @@ enum HingeTuckTuning {
     /// countdown's nudge runs out, so the run starts with at most ~0.36 tuck. Under 119° nothing is safe: the App keeps
     /// holding and offers touch.
     static let lowRestFloor = 119.0
+    /// Round 6 (D1.4, UX-FLIGHT-SCHOOL §3): an opening that reaches this counts as "opened flat" (the fold-blur risk);
+    /// the counter re-arms only below `flatOpenRearm`.
+    static let flatOpenAngle = 174.0
+    static let flatOpenRearm = 166.0
 
     /// Tuck for a hinge angle: smoothstep((open − θ) / 36°). 0 at and above `open` (and always at ≥ 175°, flat),
     /// 1 at and below open − 36°. NaN → 0.
@@ -157,6 +161,10 @@ final class HingeTuckSource: TuckSource {
     private var homeFoldHeld = false
     private var lastHomeRest: (angle: Double, time: TimeInterval)?
     private var reportedOpen: Double = HingeTuckTuning.initialOpen
+    private var flatOpenArmed = true
+    /// Round 6 (D1.4): openings to ≥ 174° since `resetFlatOpenings()` (call it at each run's start). The App shows the
+    /// "no need to open flat" tip on the 3rd in a run.
+    private(set) var flatOpenings = 0
 
     /// Round 5 (P1-7): called after every snap that moves "open" by 0.5° or more (Home, countdown, resume hold, the
     /// low-rest fallback), with the new open angle, so the App can save it (SettingsStore) for the next launch.
@@ -242,6 +250,7 @@ final class HingeTuckSource: TuckSource {
         stabiliser.sample(raw, at: stamp)
         let tracked = predictor.estimate ?? raw
         updateFlat(raw: raw, at: stamp)
+        countFlatOpening(raw: raw)
         // Keep `angle` fresh while no frame asks (menus, the pause card); frames take over again at once.
         let lastFrame = lastQuery ?? -Double.infinity
         let framesLive = stamp - lastFrame <= 0.1
@@ -407,8 +416,34 @@ final class HingeTuckSource: TuckSource {
     /// True while the hinge is still enough for the ready-pose snap (see `snapCalibration`). The App may use it to
     /// hold the resume "Ready" ring until the hand has come to rest.
     func isStill(at time: TimeInterval = CACurrentMediaTime()) -> Bool {
-        guard hasHinge, time.isFinite else { return false }
-        return stabiliser.spread(over: T.snapStillWindow, at: time) <= T.snapStillSpread
+        isStill(at: time, window: T.snapStillWindow)
+    }
+
+    /// Still over a chosen window (Round 6, Flight School step 0: ≤ 1.5° spread over 0.5 s).
+    func isStill(at time: TimeInterval, window: TimeInterval) -> Bool {
+        guard hasHinge, time.isFinite, window.isFinite else { return false }
+        return stabiliser.spread(over: max(window, 0.05), at: time) <= T.snapStillSpread
+    }
+
+    /// Start a run's flat-opening count. A hinge that is already open flat doesn't count until it comes back under 166°.
+    func resetFlatOpenings() {
+        flatOpenings = 0
+        if let raw = lastRawAngle {
+            flatOpenArmed = raw < T.flatOpenAngle
+        } else {
+            flatOpenArmed = true
+        }
+    }
+
+    private func countFlatOpening(raw: Double) {
+        if flatOpenArmed {
+            if raw >= T.flatOpenAngle {
+                flatOpenings += 1
+                flatOpenArmed = false
+            }
+        } else if raw < T.flatOpenRearm {
+            flatOpenArmed = true
+        }
     }
 
     /// Round 4 (REVIEW-3-duo P1-1): the hand is at rest under the 132° floor (still, filtered angle < `openMin`). The

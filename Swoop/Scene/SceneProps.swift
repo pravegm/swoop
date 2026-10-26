@@ -22,10 +22,16 @@ final class SceneProps {
     private let pennant: SKShapeNode
     private var clouds: [SKSpriteNode] = []
     private var beamPhase: CGFloat = 0
-    private var sweep: CGFloat = 0
+    private var quiet: CGFloat = 0
     private var cheer: CGFloat = 0
 
     var lighthouseShown: Bool { !lighthouseRoot.isHidden }
+    /// The lamp's centre in u-space this frame (the reached beam starts here).
+    var lampPoint: CGPoint {
+        CGPoint(x: lighthouseRoot.position.x, y: lighthouseRoot.position.y + 131 * lighthouseRoot.yScale)
+    }
+    /// The tower's current scale (the reached moment sizes its lamp flare to it).
+    var lighthouseScale: CGFloat { lighthouseRoot.yScale }
     var buoyShown: Bool { !buoyRoot.isHidden }
 
     init() {
@@ -59,10 +65,12 @@ final class SceneProps {
         lighthouseRoot.addChild(rock)
         lighthouseRoot.addChild(rockRim)
 
-        // The tower: white with two red bands, a gallery, the lamp room and a red cap.
-        let white = UIColor(red: 0.96, green: 0.94, blue: 0.90, alpha: 1)
-        let red = UIColor(red: 0.78, green: 0.22, blue: 0.20, alpha: 1)
+        // The tower (R6, ART-FLIGHT-SCHOOL §3): off-white #F4F1EA with exactly two warm-red bands #D8574A, the same
+        // object as the App's lighthouse icon; a dark gallery, the lamp room and a dark cap (no third red stripe).
+        let white = ScenePaint.ui(SceneLook.lighthouseWhite)
+        let red = ScenePaint.ui(SceneLook.lighthouseRed)
         let dark = UIColor(red: 0.16, green: 0.17, blue: 0.20, alpha: 1)
+        let buoyRed = UIColor(red: 0.78, green: 0.22, blue: 0.20, alpha: 1)
         func taper(_ y0: CGFloat, _ y1: CGFloat) -> CGPath {
             let w0 = 17 - 5 * (y0 / 118), w1 = 17 - 5 * (y1 / 118)
             let p = CGMutablePath()
@@ -89,7 +97,7 @@ final class SceneProps {
         roof.addLines(between: [CGPoint(x: -13, y: 139), CGPoint(x: 13, y: 139), CGPoint(x: 0, y: 157)])
         roof.closeSubpath()
         let roofNode = SKShapeNode(path: roof)
-        roofNode.fillColor = red
+        roofNode.fillColor = dark
         roofNode.strokeColor = .clear
         roofNode.zPosition = 1.2
         lighthouseRoot.addChild(roofNode)
@@ -141,7 +149,7 @@ final class SceneProps {
 
         // The buoy: a red float with a white band, a pole and a gold pennant. y = 0 is the waterline.
         let floatNode = SKShapeNode(ellipseOf: CGSize(width: 20, height: 16))
-        floatNode.fillColor = red
+        floatNode.fillColor = buoyRed
         floatNode.strokeColor = UIColor(white: 0, alpha: 0.25)
         floatNode.lineWidth = 1
         floatNode.position = CGPoint(x: 0, y: 1)
@@ -185,36 +193,39 @@ final class SceneProps {
     }
 
     func reset() {
-        sweep = 0
+        quiet = 0
         cheer = 0
         lighthouseRoot.isHidden = true
         buoyRoot.isHidden = true
     }
 
-    /// The lighthouse was passed: a bright, faster sweep that starts pointing ahead, across the right half.
-    func sweepBeam() {
-        sweep = 1
+    /// The lighthouse was reached: the turning beam goes quiet for `seconds` while the reached moment's own wide beam
+    /// sweeps the sea page (ART-FLIGHT-SCHOOL §4), then fades back.
+    func quietBeam(for seconds: CGFloat) {
+        quiet = max(quiet, seconds)
         beamPhase = 0
     }
 
     /// The personal best was beaten: the pennant flutters.
     func cheerBuoy() { cheer = 1 }
 
-    /// `p`: the rock top in u-space; `scale`: the depth layer's scale.
-    func showLighthouse(at p: CGPoint, scale: CGFloat, dt: CGFloat) {
+    /// `p`: the rock top in u-space; `scale`: the depth layer's scale; `alpha`: the far tower fades in from 1.5 km.
+    func showLighthouse(at p: CGPoint, scale: CGFloat, alpha: CGFloat = 1, dt: CGFloat) {
         lighthouseRoot.isHidden = false
         lighthouseRoot.position = p
         lighthouseRoot.setScale(scale)
-        beamPhase += dt * (SceneLook.beamSpeed + 3.2 * sweep)
+        lighthouseRoot.alpha = min(max(alpha, 0), 1)
+        quiet = max(0, quiet - dt)
+        let calmK = min(quiet / 0.4, 1)
+        beamPhase += dt * SceneLook.beamSpeed
         let c = cos(beamPhase)
         // The beam turns about the tower: long to one side, foreshortened as it faces us (the lamp flares), the other.
-        // A soft cone, α ≤ 0.25 (a little more during the pass sweep).
+        // A soft cone, α ≤ 0.25 (out while the reached beam sweeps).
         beam.xScale = c
         let facing = pow(1 - abs(c), 4)
-        beam.alpha = (SceneLook.beamAlpha * (0.4 + 0.6 * abs(c))) * (1 + 0.6 * sweep)
-        lamp.alpha = min(1, 0.6 + 0.4 * facing + 0.3 * sweep)
-        lamp.setScale(1 + 0.6 * facing + 0.5 * sweep)
-        sweep = max(0, sweep - dt * 0.4)
+        beam.alpha = SceneLook.beamAlpha * (0.4 + 0.6 * abs(c)) * (1 - calmK)
+        lamp.alpha = min(1, 0.6 + 0.4 * facing + 0.4 * calmK)
+        lamp.setScale(1 + 0.6 * facing + 0.4 * calmK)
     }
 
     func hideLighthouse() { lighthouseRoot.isHidden = true }

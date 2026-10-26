@@ -294,3 +294,109 @@ gutter, so ART-S15's `SceneDriver.hasFold` isn't needed. Please wire these `Flig
   and/or `scene.attractCeiling` (canvas y, y up) while Home shows. In `.attract` mode only, the camera keeps the bird
   below the lowest edge minus 60 pt: your 24 pt margin plus 36 for the bird and its trail. It zooms out sooner to
   fit, and never sets the ceiling lower than 20 % of the visible height. Clear both when you leave Home.
+
+## Feel → App (Round 6: D1 sharp half, D1.4 flat tip, Flight School cues)
+- **Sharp half (UX S4 / F5), `Swoop/Input/SharpHalf.swift`:** `SharpHalf(physical: FeelPhysicalHalf (.a/.b),
+  reference: FeelLandscape (.left/.right))`, which is Codable. Store it in SettingsData; it replaces the bare
+  `sharpPhysical`.
+  - **First run on a Duo** (no stored value): `SharpHalf.firstRun(in: FeelLandscape.from(windowScene.interfaceOrientation))`.
+    The half on screen-right *now* is the sharp one, and that orientation is the reference from then on (ROUND-6's
+    correction). Save it at once.
+  - **Every layout:** `sharp.screenSide(in: currentLandscape)` gives `.left` or `.right`, so `mirrored = (that ==
+    .right)` when Bird side is "Sharp side". A 180° turn flips it; re-lay out as UX §2.1 says. `FeelLandscape.from`
+    returns nil in portrait (keep the last landscape value).
+  - **Wing check answer:** `sharp = sharp.recording(sharpSide: .left/.right, in: currentLandscape)`.
+  - **Log:** `sharp.logLine(in: o)` is the `SWOOP-T birdside … physical=… o=…` line.
+- **Flat-open tip (F3):** call `hinge.resetFlatOpenings()` at each run's start (and Flight School start). Read
+  `hinge.flatOpenings` (openings to ≥ 174°, re-armed under 166°). Show the tip on the 3rd.
+- **Step 0 stillness (F1):** `hinge.isStill(at: now, window: 0.5)` (≤ 1.5° spread over 0.5 s).
+- **Cues (F4):**
+  - `feedback.cue(.schoolStep(n))` on each step's success (the climbing chime and praise tap; also the Wing check's
+    "Got it"). The step 5 Perfect still plays its own sound from the event.
+  - `.schoolRewind` on each rewind. `.schoolStorm` when step 7's storm rolls in.
+  - `.goalNear` once at 300 m to the next lighthouse.
+- **Lighthouse reached:** the `lighthouse` event now plays the bigger "reached" bell, swell and haptic, timed to a
+  **60 ms hit-stop** (`FeelSoundBook.hitStop`). Please hold that hit-stop on the lighthouse frame.
+- **Practice sea:** set `feedback.practiceAmbience = true` for Flight School's Sea steps (a calm wind, no rain, no
+  thunder), and back to false when the real run's Ready ring starts.
+
+## Core → App / Scene / Feel (Round 6: Flight School practice, fixed lighthouse names)
+- **Practice session:** `FlightSession.practice(bird:)`. Contracts are unchanged: it reports `mode == .attract`, so
+  ProgressStore and Game Center already ignore it, and it never finishes. Check `session.isPractice` (also
+  `session.sea.isPractice`). There's no storm (gap 1,000,000), and no lighthouse, milestone or best events.
+  - `timeScale` defaults to 0.8 and can be set any time, e.g. 0.5 in the air.
+  - The bird waits on crest A until the eased tuck reaches 0.6 (`holdAtCrest(untilTuck:)`; 0 releases it).
+  - `rewind(to: .crestA | .trough | .guided(n) | .rhythm)` and `nextGuidedSwell()`.
+  - `practiceStormGap = 3000` shows the storm, held behind and never catching, for step 7.
+- **Step signals:** read `session.practiceSignals` after each `step`. They are not `FlightEvent` cases, so no
+  existing switch breaks: `.diveDone(heldFraction:)` at the trough, `.launched(tuck:)`, `.landed(quality)` and
+  `.waveDone(index: 0...2)`.
+- **Practice sea (Scene):** the layout is in `Tuning.practiceKnots`. Crest A is at x 0, the trough at 1500, crest B
+  at 2300, the guided trough at 4300, and the rhythm troughs at 6300, 8300 and 10300. Round 6b: the rhythm waves are
+  λ 2000 and 150 pt high, one clear launch-and-land per wave at the practice speed; draw the rhythm bar per 2000 pt
+  wave. After that come even swells (amplitude 300, λ 4000). The guided landing ring belongs on 2300–4300, where an open glide lands at ~x 3150–3760.
+- **Lighthouse names** are fixed by index: `Lighthouses.name(index:)` gives 0 Gull Point, 1 Saltlight, 2 Kestrel
+  Head, 3 Old Harry… `name(index:seed:)` still compiles and ignores the seed. Route helpers:
+  `Lighthouses.count(atOrBefore:)`, `count(atOrBeforeMeters:)` (`routeReached` migration from `bestMeters`),
+  `nextIndex(afterMeters:)`, `meters(index:)`.
+
+## Scene → App (Round 6: Flight School, the goal, the mirrored default)
+- **Practice sea (SC1):** set `scene.practiceSea = true` for Flight School's Sea steps (3–7), false when the real
+  Flight's session starts. The scene also turns the look on by itself whenever a snapshot reports no storm (Core's
+  practice gap, ≥ 500,000 pt). A session starts in the look with no fade (`reset()` snaps it).
+  - **Step 7:** call `scene.rollInStorm()` with its first line. The palette crossfades to the player's sky over 2 s, the
+    storm slides in to 70 pt (no catch), one glow inside it names it at +1.2 s, and the rain comes last (+1.6 … 2.6 s).
+    The meter and the goal chip fade in at +1.6 s (yours).
+- **Guides (SC2):** `scene.guide = .foldPathAhead` (step 3, set while the bird waits on crest A), `.openMarkAhead`
+  (step 4), `.landingAhead` (step 5), `.none` between steps. They are placed on the sea ahead of the bird on the next
+  frame. If you know the exact spots, pass sea x instead: `.foldPath(from: crestA, to: trough)`, `.openMark(at:)`,
+  `.landing(at:)`. A Perfect within 260 pt of the ring bursts it into 8 motes (the scene does that).
+  - **Step 4's slow motion:** `scene.slowMoBloom = true` for the 0.5× span (a 6 % bloom on the bird page).
+- **SC3 (Faster! capsule, rhythm bar):** not drawn by the scene. Anchor them at `onBirdPoint` (30 Hz, view points):
+  + (0, −46) and + (0, +38).
+- **Lighthouse reached (SC4):** automatic on the `lighthouse` event: the beam sweep, the lamp flare, the haze pulse,
+  the gust toward the storm, and the motes. Keep Feel's 60 ms hit-stop on that frame. The tower now stands on the sea
+  page at the pass (u = 0.76 w: screen x ≈ 228 mirrored), and the next tower is drawn on the far horizon from 1.5 km
+  out (u = 0.90 w: screen x ≈ 95 mirrored), so the goal chip points at something visible. The tower is the icon's
+  colours: #F4F1EA with two #D8574A bands.
+  - `scene.lampCanvasPoint` (canvas, y up; nil when no tower shows) gives the lamp's centre. A 380 pt card at 0.40 h
+    can sit right over it; if it does, use the 0.62 h position (as for the sun), so the beam is seen leaving the
+    lamp.
+- **Art helpers (SC7, SC8, AP1), CoreGraphics, y down; draw with `Path(cgPath)`:**
+  - `RouteArt`: `coastPath(width:headlands:)` (land), `coastline(width:headlands:offset:)` (offset 0 = the cliff rim,
+    4 = the foam line), `contours(width:headlands:)` (30 / 60 / 100), `lighthouseXs(count:spacing:startX:towardLowerX:)`
+    (150 / 130 by index), `routePoints` / `routePoint(at:)` (the best pin) / `routePath(headlands:from:to:)`,
+    `snapOffset(proposed:centres:band:)` (keeps every centre out of 447 … 503), `stormGlyph(size:)` with
+    `stormRainTicks(size:)`, and `quayGlyph(size:)`.
+  - `DuoDiagramArt.geometry(angle:box:)`: both panels and screens as quads (spine top, outer top, outer bottom, spine
+    bottom), the spine rect, φ. Also `quadPath`, `mittenPath(outerTop:outerBottom:outward:)`, and the gauge:
+    `gaugeAngle(hinge:)`, `gaugePoint`, `gaugeArc(center:radius:from:to:)` (100° = left end, 180° = right end), with
+    `openBand`, `tuckBand` and `flatWarning`.
+  - `BirdArt.youGlyph(facingLeft:in:)`: the "you" gull (meter knob, map pin, diagram, touch glyph). Face it the flight
+    direction: `facingLeft = layout.mirrored`.
+- **Storm (ROUND-6 settled point):** it is now one noise-rendered cloud texture, not lobes. `SceneStormMap` is
+  unchanged, so the meter needs nothing new. It still stays ≥ 120 pt under the visible top, and in play it never
+  reaches the fold band.
+
+## App status (Round 6, end): Feel F1–F5, Core K1–K3, Scene SC1–SC2 wired
+- **Feel:** `SharpHalf` is stored in `SettingsData.sharpHalf`. It is set to `firstRun(in:)` the first time a Duo
+  reports its landscape orientation (never assumed landscapeRight), mapped through `screenSide(in:)` on every layout,
+  and the Wing check records into it. `logLine(in:)` is logged on the first record, after each 180° turn and after
+  each answer. The App also uses `resetFlatOpenings()`/`flatOpenings` (the tip on the 3rd), `isStill(at:window: 0.5)`,
+  the cues `.schoolStep(dot)`, `.schoolRewind`, `.schoolStorm` and `.goalNear` (once per lighthouse at < 300 m), and
+  `practiceAmbience` (on for the Sea steps, off in `endSchool`, before the real run's countdown).
+- **Core:** the school's Sea steps fly `FlightSession.practice(bird:)`. `timeScale` is set from the school each frame;
+  `practiceSignals` are authoritative for steps 3–6. A miss calls `rewind(to:)`: dive → crestA, soar → trough,
+  rhythm → rhythm; step 5 calls `nextGuidedSwell()`. Step 7 sets `practiceStormGap = 3000`. RouteRules uses
+  `Lighthouses.name(index:)`, `meters(index:)` and `count(atOrBeforeMeters:)`.
+- **Scene (all of "Scene → App (Round 6)"):**
+  - `practiceSea`, `guide` (exact sea x: `.foldPath(0→1500)`, `.openMark(1500)`, `.landing(3450)`), `slowMoBloom`
+    (the 0.5× launch) and `rollInStorm()` at step 7. The meter and the goal chip fade in at +1.6 s.
+  - The 60 ms hit-stop is held on the lighthouse frame. The reached card drops to 0.62 h when it would cover
+    `lampCanvasPoint`.
+  - The Route strip draws with `RouteArt`: coast, rim, foam, contours, route, storm glyph and quay. The diagram and
+    gauge use `DuoDiagramArt`. `BirdArt.youGlyph` (the App's `YouGlyph` shape) is used for the meter knob, the route
+    pins, the diagram and the rank-up chip.
+  - SC3 is App-drawn (`SchoolBirdHUD`): the Faster! capsule at bird + (0, −46) and the rhythm bar at bird + (0, +38),
+    one bar per λ 2000 wave from `Tuning.practiceRhythmWaveEnds`.
+  - Not used yet: `RouteArt.snapOffset`. The Route scroll centres the next lighthouse on the far page.

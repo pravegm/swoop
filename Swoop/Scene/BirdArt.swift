@@ -661,3 +661,44 @@ enum BirdArt {
                        y: s * s * a.y + 2 * s * t * c.y + t * t * b.y)
     }
 }
+
+// MARK: The "you" glyph (ART-FLIGHT-SCHOOL §7.4, SC8)
+
+extension BirdArt {
+    /// "You": a one-path, simplified gull side view at about tuck 0.2 (a body, one raised swept wing, a beak) that reads
+    /// at 16 pt. The meter knob, the route map's pin, the phone diagram and the touch glyph all use it; the brand mark
+    /// stays `markPath`. Fitted (aspect kept, centred) into `rect`, **y down**, facing left or right (the flight
+    /// direction). Every subpath winds the same way, so the default non-zero fill draws it as one shape.
+    static func youGlyph(facingLeft: Bool, in rect: CGRect) -> CGPath {
+        // The unit design faces right in a 1 × 0.62 box.
+        let unitW: CGFloat = 1, unitH: CGFloat = 0.62
+        let k = min(rect.width / unitW, rect.height / unitH)
+        guard k > 0, k.isFinite else { return CGMutablePath() }
+        let ox = rect.midX - unitW * k * 0.5, oy = rect.midY - unitH * k * 0.5
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            let ux = facingLeft ? unitW - x : x
+            return CGPoint(x: ox + ux * k, y: oy + y * k)
+        }
+        let path = CGMutablePath()
+        // The body: tail tip along the back to the head, then back under the belly.
+        path.move(to: p(0.04, 0.42))
+        path.addQuadCurve(to: p(0.62, 0.26), control: p(0.30, 0.24))
+        path.addQuadCurve(to: p(0.84, 0.27), control: p(0.74, 0.22))
+        path.addQuadCurve(to: p(0.88, 0.38), control: p(0.92, 0.32))
+        path.addQuadCurve(to: p(0.40, 0.49), control: p(0.70, 0.50))
+        path.addQuadCurve(to: p(0.04, 0.42), control: p(0.18, 0.48))
+        path.closeSubpath()
+        // The beak.
+        path.move(to: p(0.86, 0.29))
+        path.addLine(to: p(1.00, 0.335))
+        path.addLine(to: p(0.87, 0.37))
+        path.closeSubpath()
+        // The near wing, raised and swept back with a wrist bend.
+        path.move(to: p(0.34, 0.31))
+        path.addQuadCurve(to: p(0.12, 0.02), control: p(0.26, 0.12))
+        path.addQuadCurve(to: p(0.44, 0.09), control: p(0.30, 0.03))
+        path.addQuadCurve(to: p(0.58, 0.28), control: p(0.52, 0.16))
+        path.closeSubpath()
+        return path
+    }
+}

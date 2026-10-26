@@ -13,6 +13,17 @@ enum CoreAdapter {
     }
 }
 
+/// R6 (Core K1): Flight School's practice sea. Core's `FlightSession.practice(bird:)` (the scripted calm sea, no storm,
+/// never finishes, reports mode `.attract` so nothing records it). The App's own `mode` stays a Flight for the HUD.
+extension CoreAdapter {
+    static var practiceMode: RunMode { .flight }
+
+    static func makePracticeSession(bird: BirdID) -> FlightSession { FlightSession.practice(bird: bird) }
+
+    /// Step 7's storm: shown behind, held there, never catching.
+    static let practiceStormGap: Double = 3000
+}
+
 /// Scene: where the bird is on screen (ART-S14 / UX-S1), for the "Perfect ×N" callout, plus the Round 3 hooks
 /// (the title morph, effects quality, fine detail).
 @MainActor
@@ -69,6 +80,39 @@ enum SceneAdapter {
         guard let scene else { return nil }
         let p = scene.sunCanvasPoint
         guard p != .zero, p.x.isFinite, p.y.isFinite else { return nil }
+        return CGPoint(x: (p.x / 8).rounded() * 8, y: (p.y / 8).rounded() * 8)
+    }
+
+    /// R6 (Scene SC1–SC2): Flight School's practice look, the guide on the water for the step (fixed sea positions on
+    /// Core's scripted practice sea) and step 4's slow-motion bloom. nil = off. Only changes are written.
+    static func setSchool(_ scene: FlightScene?, step: SchoolStep?, slowMo: Bool) {
+        guard let scene else { return }
+        let sea = step?.isSea ?? false
+        if scene.practiceSea != sea { scene.practiceSea = sea }
+        let g = guide(for: step)
+        if scene.guide != g { scene.guide = g }
+        if scene.slowMoBloom != slowMo { scene.slowMoBloom = slowMo }
+    }
+
+    /// The guide for a school step (Core's practice knots: crest A 0, trough 1500, crest B 2300; the guided landing
+    /// falls around x 3150–3760). Pure; tested.
+    nonisolated static func guide(for step: SchoolStep?) -> SceneGuide {
+        switch step {
+        case .some(.dive): return .foldPath(from: Tuning.practiceCrestAX, to: Tuning.practiceTroughX)
+        case .some(.soar): return .openMark(at: Tuning.practiceTroughX)
+        case .some(.land): return .landing(at: practiceLandingX)
+        default: return SceneGuide.none
+        }
+    }
+
+    nonisolated static let practiceLandingX: Double = 3450
+
+    /// Step 7: the storm rolls in (no catch).
+    static func rollInStorm(_ scene: FlightScene?) { scene?.rollInStorm() }
+
+    /// SC4: the lit lighthouse's lamp (DESIGN canvas, y up, 8 pt steps), nil when no tower shows.
+    static func lampDesignPoint(_ scene: FlightScene?) -> CGPoint? {
+        guard let p = scene?.lampCanvasPoint, p.x.isFinite, p.y.isFinite else { return nil }
         return CGPoint(x: (p.x / 8).rounded() * 8, y: (p.y / 8).rounded() * 8)
     }
 

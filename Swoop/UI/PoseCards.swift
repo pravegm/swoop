@@ -314,20 +314,33 @@ struct ClosedCard: View {
     private func pausedContent(_ run: PausedRun) -> some View {
         VStack(spacing: 12) {
             VStack(spacing: 12) {
-                SwoopOverline(text: "Paused")
-                Text(Self.heroDistance(run.meters))
-                    .font(.system(size: 56, weight: .heavy, design: .rounded).monospacedDigit())
-                    .foregroundStyle(SwoopTheme.foam)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                Text("Open your wings to keep flying.")
+                // R6 (UX §1.4, §5 Cover): the school's own pause copy; a real run names the next lighthouse.
+                SwoopOverline(text: run.inSchool ? "Flight School paused" : "Paused")
+                if !run.inSchool {
+                    Text(Self.heroDistance(run.meters))
+                        .font(.system(size: 56, weight: .heavy, design: .rounded).monospacedDigit())
+                        .foregroundStyle(SwoopTheme.foam)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                    if !run.goalLine.isEmpty {
+                        Text(run.goalLine)
+                            .font(SwoopType.headline(false))
+                            .foregroundStyle(SwoopTheme.rewardGold)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                    }
+                }
+                Text(run.inSchool ? "Open your wings to carry on." : "Open your wings to keep flying.")
                     .font(SwoopType.body(false))
                     .foregroundStyle(SwoopTheme.mist)
                     .multilineTextAlignment(.center)
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Paused at \(ShareText.hudDistance(run.meters).value) "
-                                + "\(run.meters < 1000 ? "metres" : "kilometres"). Open your Duo to keep flying.")
+            .accessibilityLabel(run.inSchool ? "Flight School paused. Open your wings to carry on."
+                                : "Paused at \(ShareText.hudDistance(run.meters).value) "
+                                + "\(run.meters < 1000 ? "metres" : "kilometres")"
+                                + (run.goalLine.isEmpty ? "" : ", \(run.goalLine)") + ". Open your Duo to keep flying.")
+            if !run.inSchool {
             VStack(alignment: .leading, spacing: 10) {
                 let storm = Self.stormLine(run.stormMeters)
                 HStack(spacing: 8) {
@@ -362,6 +375,7 @@ struct ClosedCard: View {
             }
             .swoopCard(padding: 16, radius: SwoopTheme.cardRadius(true))
             .accessibilityElement(children: .combine)
+            }
             SwoopButton(kind: .secondary, height: SwoopTheme.secondaryHeight(false), compact: true,
                         action: { controller.keepFlyingHere() }) {
                 Label("Keep flying here", systemImage: "hand.point.up.left.fill")

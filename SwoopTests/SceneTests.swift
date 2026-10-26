@@ -286,6 +286,395 @@ struct SceneTests {
         #expect(!FlightScene.isChainMilestone(1) && !FlightScene.isChainMilestone(4) && !FlightScene.isChainMilestone(12))
     }
 
+    // MARK: Round 6: the storm cloud (a noise texture, not lobes)
+
+    /// Made once for the cloud tests (≈ 0.15 M pixels).
+    static let cloudField = SceneStormCloud.makeField()
+
+    /// ROUND-6 "the storm": one soft cloud, empty beyond its front and its top (no hard cut at the sprite's edges),
+    /// solid inside, its shelf's front at `edgeX`.
+    @Test func stormCloudIsSoftAndEndsAtItsFront() {
+        let f = SceneTests.cloudField
+        let ppp = SceneStormCloud.pixelsPerPoint
+        #expect(f.w == Int((SceneStormCloud.width * ppp).rounded()))
+        var maxBeyond: Float = 0, maxTop: Float = 0
+        for j in 0..<f.h {
+            let y = SceneStormCloud.height - (CGFloat(j) + 0.5) / ppp
+            for i in 0..<f.w {
+                let x = (CGFloat(i) + 0.5) / ppp
+                let a = SceneStormCloud.alpha(f, i: i, j: j)
+                if x > SceneStormCloud.drawnRight { maxBeyond = max(maxBeyond, a) }
+                if y > SceneStormCloud.drawnTop { maxTop = max(maxTop, a) }
+            }
+        }
+        #expect(maxBeyond < 0.004)
+        #expect(maxTop < 0.004)
+        func alphaAt(_ x: CGFloat, _ y: CGFloat) -> Float {
+            SceneStormCloud.alpha(f, i: Int(x * ppp), j: Int((SceneStormCloud.height - y) * ppp))
+        }
+        // Solid in the body, the shelf's front near `edgeX` at the base, nothing in the clear sky ahead of it.
+        #expect(alphaAt(600, 420) > 0.98)
+        #expect(alphaAt(SceneStormCloud.edgeX - 60, 220) > 0.5)
+        #expect(alphaAt(SceneStormCloud.edgeX + 140, 220) < 0.01)
+        #expect(alphaAt(SceneStormCloud.edgeX + 60, 640) < 0.01)
+    }
+
+    /// Lit from the sun side: the anvil's top reads at least 1.4× brighter than the dark base (it is weather, not a
+    /// row of stones of one value), and the rain curtain hangs under the base.
+    @Test func stormCloudIsLitFromAboveAndRainsBelow() {
+        let f = SceneTests.cloudField
+        let p = ScenePalette.palette(.goldenHour)
+        let px = SceneStormCloud.pixels(f, body: p.stormBody, top: p.stormTop, rim: p.stormRim, rain: p.rain)
+        #expect(px.count == f.w * f.h * 4)
+        let ppp = SceneStormCloud.pixelsPerPoint
+        var top: Double = 0, nTop = 0, low: Double = 0, nLow = 0, rain = 0
+        for j in 0..<f.h {
+            let y = SceneStormCloud.height - (CGFloat(j) + 0.5) / ppp
+            for i in 0..<f.w {
+                let k = j * f.w + i
+                let a = Double(px[k * 4 + 3]) / 255
+                if f.depth[k] > 30 && a > 0.5 {
+                    let lum = (0.2126 * Double(px[k * 4]) + 0.7152 * Double(px[k * 4 + 1])
+                               + 0.0722 * Double(px[k * 4 + 2])) / 255 / a
+                    if y > 560 {
+                        top += lum
+                        nTop += 1
+                    } else if y > 200 && y < 330 {
+                        low += lum
+                        nLow += 1
+                    }
+                }
+                if y < SceneStormCloud.baseY - 20 && y > SceneStormCloud.baseY - 100 && a > 0.08 { rain += 1 }
+            }
+        }
+        #expect(nTop > 100 && nLow > 100)
+        if nTop > 0 && nLow > 0 { #expect(top / Double(nTop) > 1.4 * low / Double(nLow)) }
+        #expect(rain > 200)
+    }
+
+    /// The storm keeps out of the fold band and the HUD on every layout, the mirrored Duo default included, at any
+    /// gap; caught, it sweeps past the fold and ends outside the band (ART-FLIGHT-SCHOOL §6, SC5).
+    @Test @MainActor func stormNeverDrawsInTheFoldBandOrTheHUD() {
+        for layout in [SceneTests.duo, SceneTests.duoMirrored, SceneTests.phone] {
+            for stormX in [-9000.0, -3000.0, -800.0, -60.0] {
+                let scene = FlightScene(layout: layout)
+                let driver = SceneTestsDriver()
+                scene.driver = driver
+                scene.reset()
+                driver.snap.phase = .flying
+                driver.snap.stormX = stormX
+                driver.stormSpeed = 300
+                var now: TimeInterval = 90
+                let limit: CGFloat = layout.hasFold ? 447 : layout.size.width * 0.5
+                for _ in 0..<120 {
+                    scene.update(now)
+                    now += 1.0 / 120.0
+                    #expect(scene.stormShown)
+                    #expect(scene.stormDrawnRightU < limit)
+                    #expect(scene.stormTopY <= layout.visibleRect.maxY - SceneLook.stormHUDClearance + 0.5)
+                }
+            }
+        }
+        // Caught (mirrored): the edge ends at ≤ 0.40 w from the left on screen, never inside the fold band.
+        let scene = FlightScene(layout: SceneTests.duoMirrored)
+        let driver = SceneTestsDriver()
+        scene.driver = driver
+        scene.reset()
+        driver.snap.phase = .caught(elapsed: 0)
+        var now: TimeInterval = 5
+        for _ in 0..<300 {
+            scene.update(now)
+            now += 1.0 / 120.0
+        }
+        let screenEdge = 952 - scene.stormEdgeU
+        #expect(screenEdge <= 952 * 0.40)
+        #expect(screenEdge < 447 || screenEdge > 503)
+    }
+
+    /// ART-FLIGHT-SCHOOL §6: the mirrored Duo default puts the bird at 0.70 w and the sun at 0.20 w, and every u-space
+    /// layer (rain, gusts, speed lines, the storm) flips with it, so the rain moves away from the storm.
+    @Test @MainActor func mirroredDefaultComposition() {
+        let scene = FlightScene(layout: SceneTests.duoMirrored)
+        let driver = SceneTestsDriver()
+        scene.driver = driver
+        scene.reset()
+        driver.snap.phase = .flying
+        var now: TimeInterval = 3
+        for _ in 0..<60 {
+            scene.update(now)
+            now += 1.0 / 120.0
+        }
+        #expect(abs(scene.birdCanvasPoint.x - 952 * 0.70) < 1)
+        #expect(abs(scene.sunCanvasPoint.x - 952 * 0.20) < 1)
+        #expect(abs(scene.sunCanvasPoint.x - 475) >= 120)
+        #expect(scene.uSpaceXScale == -1)
+        // Rain runs +u (away from the storm's behind edge): with the flip, leftward on the mirrored screen.
+        #expect(SceneLook.rainVX > 0)
+        let plain = FlightScene(layout: SceneTests.duo)
+        #expect(plain.uSpaceXScale == 1)
+    }
+
+    // MARK: Round 6: Flight School's practice sea
+
+    /// SC1: a snapshot with no storm (Core's practice sea) starts in the Morning practice look with no storm drawn;
+    /// step 7 rolls the storm in over 2 s to `stormEdgeFar`, names it with one glow, and crossfades to the sky.
+    @Test @MainActor func practiceSeaHidesTheStormThenRollsItIn() {
+        let scene = FlightScene(layout: SceneTests.duoMirrored)
+        let driver = SceneTestsDriver()
+        driver.snap.stormX = -1_000_000
+        driver.snap.gap = 1_000_000
+        scene.driver = driver
+        scene.reset()
+        driver.snap.phase = .flying
+        var now: TimeInterval = 7
+        func frames(_ n: Int) {
+            for _ in 0..<n {
+                scene.update(now)
+                now += 1.0 / 120.0
+            }
+        }
+        frames(30)
+        #expect(scene.practiceLook == 1)
+        #expect(!scene.stormShown)
+        let glowsBefore = scene.stormGlows
+        scene.rollInStorm()
+        frames(60)
+        #expect(scene.stormShown)
+        #expect(scene.practiceLook < 1 && scene.practiceLook > 0)
+        #expect(scene.stormEdgeU < SceneLook.stormEdgeFar)
+        frames(120)
+        #expect(scene.stormGlows > glowsBefore)
+        frames(80)
+        #expect(scene.practiceLook == 0)
+        #expect(abs(scene.stormEdgeU - SceneLook.stormEdgeFar) < 1)
+        #expect(scene.stormDrawnRightU < 447)
+        // No catch in school: the edge stays put.
+        frames(120)
+        #expect(abs(scene.stormEdgeU - SceneLook.stormEdgeFar) < 1)
+    }
+
+    /// The App's flag alone also hides the storm (a session starts in the look, with no fade).
+    @Test @MainActor func practiceFlagHidesTheStorm() {
+        let scene = FlightScene(layout: SceneTests.duo)
+        let driver = SceneTestsDriver()
+        scene.driver = driver
+        scene.practiceSea = true
+        scene.reset()
+        driver.snap.phase = .flying
+        var now: TimeInterval = 2
+        for _ in 0..<10 {
+            scene.update(now)
+            now += 1.0 / 120.0
+        }
+        #expect(scene.practiceLook == 1)
+        #expect(!scene.stormShown)
+        scene.practiceSea = false
+        for _ in 0..<300 {
+            scene.update(now)
+            now += 1.0 / 120.0
+        }
+        #expect(scene.practiceLook == 0)
+        #expect(scene.stormShown)
+    }
+
+    @Test func practicePaletteIsMorningAndBlends() {
+        let p = ScenePalette.practice
+        #expect(p.zenith == RGBA(hex: 0x3D6FB0) && p.horizon == RGBA(hex: 0xFFE7C2) && p.nearMean == RGBA(hex: 0x2A7392))
+        let g = ScenePalette.palette(.goldenHour)
+        #expect(ScenePalette.blended(g, p, 0) == g)
+        let end = ScenePalette.blended(g, p, 1)
+        #expect(abs(end.zenith.r - p.zenith.r) < 1e-9 && abs(end.nearMean.b - p.nearMean.b) < 1e-9)
+        let mid = ScenePalette.blended(g, p, 0.5)
+        #expect(abs(mid.zenith.g - (g.zenith.g + p.zenith.g) * 0.5) < 1e-9)
+    }
+
+    /// SC2: the guides find the sea ahead of the bird: the next downslope (crest → trough), its trough, and the middle
+    /// of the next downslope for the landing ring.
+    @Test func guidesFindTheSeaAhead() {
+        let h: (Double) -> Double = { x in 100 * sin(2 * Double.pi * x / 1000) }
+        let d = SceneGuidePlacement.nextDownslope(after: 0, height: h)
+        #expect(d != nil)
+        if let d = d {
+            #expect(abs(d.from - 250) <= 10 && abs(d.to - 750) <= 10)
+        }
+        if case .landing(let x) = SceneGuidePlacement.resolve(.landingAhead, birdX: 0, height: h) {
+            #expect(abs(x - 500) <= 10)
+        } else {
+            Issue.record("no landing guide")
+        }
+        // Sliding down a slope already: the ring goes on the next one.
+        if case .landing(let x) = SceneGuidePlacement.resolve(.landingAhead, birdX: 400, height: h) {
+            #expect(abs(x - 1500) <= 10)
+        } else {
+            Issue.record("no landing guide")
+        }
+        if case .openMark(let x) = SceneGuidePlacement.resolve(.openMarkAhead, birdX: 400, height: h) {
+            #expect(abs(x - 750) <= 10)
+        } else {
+            Issue.record("no open mark")
+        }
+    }
+
+    /// A Perfect in the ghost landing ring bursts it (the guide goes).
+    @Test @MainActor func perfectInTheLandingRingBurstsIt() {
+        let scene = FlightScene(layout: SceneTests.duoMirrored)
+        let driver = SceneTestsDriver()
+        scene.driver = driver
+        scene.reset()
+        driver.snap.phase = .flying
+        var now: TimeInterval = 4
+        scene.update(now)
+        scene.guide = .landing(at: Double(driver.snap.position.x) + 100)
+        for _ in 0..<40 {
+            now += 1.0 / 120.0
+            scene.update(now)
+        }
+        if case .landing = scene.shownGuide {} else { Issue.record("the ring is not up") }
+        driver.pending = [.touchdown(.perfect, speed: 1400, chain: 1)]
+        now += 1.0 / 120.0
+        scene.update(now)
+        #expect(scene.shownGuide == .none)
+        scene.guide = .foldPathAhead
+        now += 1.0 / 120.0
+        scene.update(now)
+        if case .foldPath(let from, let to) = scene.shownGuide {
+            #expect(to > from && from >= Double(driver.snap.position.x) - 1)
+        } else {
+            Issue.record("no fold path")
+        }
+    }
+
+    // MARK: Round 6: the lighthouse is the goal
+
+    /// SC4 / N3: the next tower stands on the far horizon from 1.5 km out; at the pass it stands on the sea page and
+    /// its beam sweeps down across it (never toward the fold); Reduce Motion has no sweep.
+    @Test @MainActor func lighthouseReachedSweepsTheSeaPage() {
+        for still in [false, true] {
+            let scene = FlightScene(layout: SceneTests.duoMirrored)
+            scene.reduceMotion = still
+            let driver = SceneTestsDriver()
+            scene.driver = driver
+            scene.reset()
+            let lx = Lighthouses.x(index: 0)
+            driver.snap.phase = .flying
+            driver.snap.speed = 2000
+            driver.snap.stormX = lx - 30_000
+            driver.snap.nextLighthouseX = lx
+            driver.snap.position = CGPoint(x: lx - 20_000, y: 200)
+            var now: TimeInterval = 60
+            scene.update(now)
+            #expect(scene.lighthouseU == nil)
+            driver.snap.position = CGPoint(x: lx - 14_000, y: 200)
+            scene.reset()
+            for _ in 0..<3 {
+                now += 1.0 / 120.0
+                scene.update(now)
+            }
+            if let u = scene.lighthouseU { #expect(abs(u - 952 * SceneLook.lighthouseFarU) < 1) }
+            #expect(scene.lighthouseU != nil)
+            driver.snap.position = CGPoint(x: lx - 10, y: 200)
+            scene.reset()
+            for _ in 0..<3 {
+                now += 1.0 / 120.0
+                scene.update(now)
+            }
+            driver.snap.lighthousesPassed = 1
+            driver.snap.nextLighthouseX = Lighthouses.x(index: 1)
+            driver.pending = [.lighthouse(index: 0, name: "Gull Point")]
+            var sawBeam = false
+            var angles: [CGFloat] = []
+            for i in 0..<120 {
+                now += 1.0 / 120.0
+                scene.update(now)
+                if i == 1, let u = scene.lighthouseU { #expect(u >= 952 - (476 - SceneLook.foldArtBand)) }
+                if scene.reachedBeamShown {
+                    sawBeam = true
+                    angles.append(scene.reachedBeamAngle)
+                }
+            }
+            #expect(sawBeam == !still)
+            if let first = angles.first, let last = angles.last { #expect(first > last) }
+            for a in angles { #expect(a <= SceneLook.reachedBeamFrom + 0.001 && a >= SceneLook.reachedBeamTo - 0.001) }
+        }
+    }
+
+    // MARK: Round 6: art helpers for the App
+
+    @Test func routeArtCoastHeadlandsAndSnap() {
+        let heads: [CGFloat] = [150, 300, 450]
+        let plain = RouteArt.coastY(at: 300, headlands: [])
+        #expect(abs(RouteArt.coastY(at: 300, headlands: heads) - plain - RouteArt.headlandBulge) < 0.01)
+        #expect(abs(RouteArt.coastY(at: 225, headlands: heads) - RouteArt.coastY(at: 225, headlands: [])) < 0.01)
+        let land = RouteArt.coastPath(width: 600, headlands: heads).boundingBoxOfPath
+        #expect(land.minY <= 0.01 && land.maxY <= RouteArt.coastBase + 22 + 12 + RouteArt.headlandBulge + 0.5)
+        let contours = RouteArt.contours(width: 600, headlands: heads)
+        #expect(contours.count == 3)
+        if let deep = contours.last { #expect(deep.boundingBoxOfPath.minY > RouteArt.coastBase + 100 - 34 - 1) }
+        let xs = RouteArt.lighthouseXs(count: 3, spacing: RouteArt.spacingDuo, startX: 900, towardLowerX: true)
+        #expect(xs == [750, 600, 450])
+        let pin = RouteArt.routePoint(at: 375, headlands: heads)
+        #expect(pin.y > RouteArt.coastY(at: 375, headlands: heads))
+        #expect(!RouteArt.routePath(headlands: heads, from: 100, to: 420).isEmpty)
+        // A lighthouse whose centre would land in the fold band is scrolled out of it.
+        let band: ClosedRange<CGFloat> = 447...503
+        let centres: [CGFloat] = [470, 620]
+        let o = RouteArt.snapOffset(proposed: 0, centres: centres, band: band)
+        for c in centres { #expect(!band.contains(c - o)) }
+        #expect(abs(o) < 60)
+        let clear: [CGFloat] = [300, 600]
+        #expect(RouteArt.snapOffset(proposed: 0, centres: clear, band: band) == 0)
+        for g in [RouteArt.stormGlyph(size: 40), RouteArt.quayGlyph(size: 26), RouteArt.stormRainTicks(size: 40)] {
+            let b = g.boundingBoxOfPath
+            #expect(!g.isEmpty && b.minX >= -0.01 && b.minY >= -0.01 && b.maxX <= 40.01 && b.maxY <= 40.01)
+        }
+    }
+
+    @Test func duoDiagramFoldsLikeABook() {
+        let box = CGSize(width: 240, height: 170)
+        let flat = DuoDiagramArt.geometry(angle: 180, box: box)
+        #expect(abs(flat.phi) < 0.0001)
+        #expect(abs(flat.leftPanel[1].x - 0) < 0.01 && abs(flat.rightPanel[1].x - 240) < 0.01)
+        let folded = DuoDiagramArt.geometry(angle: 100, box: box)
+        let flatW = flat.rightPanel[1].x - flat.rightPanel[0].x
+        let foldW = folded.rightPanel[1].x - folded.rightPanel[0].x
+        #expect(abs(foldW / flatW - cos(40 * CGFloat.pi / 180)) < 0.01)
+        // The near (outer) edges read taller when folded; nothing leaves the box.
+        let outer = folded.rightPanel[2].y - folded.rightPanel[1].y
+        let spine = folded.rightPanel[3].y - folded.rightPanel[0].y
+        #expect(outer > spine)
+        for p in folded.leftPanel + folded.rightPanel { #expect(p.y >= 0 && p.y <= 170 && p.x >= 0 && p.x <= 240) }
+        // Screens sit inside their panels; the gauge spans 140°.
+        #expect(folded.rightScreen[0].x > folded.rightPanel[0].x && folded.rightScreen[1].x < folded.rightPanel[1].x)
+        #expect(abs(DuoDiagramArt.gaugeAngle(hinge: 100) - 200 * CGFloat.pi / 180) < 0.0001)
+        #expect(abs(DuoDiagramArt.gaugeAngle(hinge: 180) - 340 * CGFloat.pi / 180) < 0.0001)
+        #expect(DuoDiagramArt.gaugeAngle(hinge: 60) == DuoDiagramArt.gaugeAngle(hinge: 100))
+        let top = DuoDiagramArt.gaugePoint(center: CGPoint(x: 120, y: 200), radius: 74, hinge: 140)
+        #expect(abs(top.x - 120) < 0.01 && abs(top.y - 126) < 0.01)
+        #expect(!DuoDiagramArt.mittenPath(outerTop: folded.rightPanel[1], outerBottom: folded.rightPanel[2],
+                                          outward: 1).isEmpty)
+    }
+
+    /// SC8: "you" is one gull path that fits its box and faces the flight direction.
+    @Test func youGlyphFitsAndFaces() {
+        let rect = CGRect(x: 10, y: 20, width: 32, height: 20)
+        let right = BirdArt.youGlyph(facingLeft: false, in: rect)
+        let left = BirdArt.youGlyph(facingLeft: true, in: rect)
+        for g in [right, left] {
+            let b = g.boundingBoxOfPath
+            #expect(b.minX >= rect.minX - 0.01 && b.maxX <= rect.maxX + 0.01)
+            #expect(b.minY >= rect.minY - 0.01 && b.maxY <= rect.maxY + 0.01)
+            #expect(b.width > rect.width * 0.85)
+        }
+        // The beak leads: right-facing, the rightmost tip; left-facing, mirrored.
+        let k = min(rect.width / 1, rect.height / 0.62)
+        let ox = rect.midX - k * 0.5, oy = rect.midY - 0.62 * k * 0.5
+        #expect(right.contains(CGPoint(x: ox + 0.94 * k, y: oy + 0.335 * k)))
+        #expect(left.contains(CGPoint(x: ox + 0.06 * k, y: oy + 0.335 * k)))
+        #expect(!right.contains(CGPoint(x: ox + 0.06 * k, y: oy + 0.335 * k)))
+        // Body and wing are filled (one shape, not a hole where they overlap).
+        #expect(right.contains(CGPoint(x: ox + 0.45 * k, y: oy + 0.30 * k)))
+    }
+
     // MARK: Camera
 
     static let duo = ScreenLayout.make(canvas: CGSize(width: 952, height: 670), hasFold: true)

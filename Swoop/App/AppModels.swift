@@ -4,8 +4,9 @@ import Foundation
 
 /// The app's screens (inside the play pose; the pose cards sit above these).
 enum AppRoute: String, Equatable {
-    /// `daily` = the Daily card (today's flown or spent Daily, UX-A10).
-    case home, playing, results, goals, birds, settings, daily
+    /// `daily` = the Daily card (today's flown or spent Daily, UX-A10). R6: `route` (the Route page), `school` (Flight
+    /// School, first Fly and replays), `wingCheck` (the standalone Wing check from Settings or the Home card).
+    case home, playing, results, goals, birds, settings, daily, route, school, wingCheck
 }
 
 /// Where the tuck comes from this run.
@@ -61,6 +62,32 @@ struct HUDSplashMark: Equatable {
     }
 }
 
+/// R6 (UX §4.3): "Gull Point reached!" (with "New on your route" when the route grew).
+struct HUDReached: Equatable {
+    var index: Int
+    var name: String
+    var newOnRoute: Bool
+    var serial: Int
+}
+
+/// What Flight School shows this frame (published only when it changes).
+struct SchoolDisplay: Equatable {
+    var step: SchoolStep = .hold
+    var overline = ""
+    var prompt = ""
+    var subline: String?
+    var praise: String?
+    var dotIndex = 0
+    var stepCount = 8
+    var canSkip = false
+    var offersTouch = false
+    var touch = false
+    var wingPhase: WingCheckFlow.Phase = .explain
+    var wingNeedsFlatHelp = false
+    /// The Studio steps (title bird + diagram) vs the Sea steps (the practice sea).
+    var isSea: Bool { step.isSea }
+}
+
 /// HUD values, published at ≤ 15 Hz (toasts at once). Separate from GameController so only the HUD redraws.
 @MainActor
 final class HUDState: ObservableObject {
@@ -105,12 +132,33 @@ final class HUDState: ObservableObject {
     @Published var splashMark: HUDSplashMark?
     /// R4 P1-7: the first run's one-time "Storm ←→ you" label under the meter.
     @Published var meterLabel = false
+    /// D4: the chain pill reads "✦ ×2 in a row" on the run that first chains.
+    @Published var chainTeach = false
+    /// SC3 (App-drawn): step 3's "Faster!" fill (0…1) and step 6's rhythm bar; nil = hidden.
+    @Published var schoolFaster: Double?
+    @Published var schoolRhythm: SchoolRhythm?
+    /// Step 7, 1.6 s after the storm starts rolling in (Scene SC1): the meter and the goal chip fade in.
+    @Published var schoolStormHUD = false
     /// R4 P0-6: the countdown holds with "Open a little wider" (the open angle sits on the floor).
     @Published var openNudge = false
     /// R5 P1-8: the nudge can't be met (a rest under 119°): "Fly with touch" is offered.
     @Published var nudgeOffer = false
     /// The sun's centre in DESIGN canvas points (y up, 8 pt steps), so text can keep off it (R4 P0-3).
     @Published var sunPoint: CGPoint?
+    /// SC4: the lighthouse lamp's centre (DESIGN canvas, y up, 8 pt steps) while a tower shows; the reached card dodges it.
+    @Published var lampPoint: CGPoint?
+    /// R6 (UX §4.2): the goal chip: the next lighthouse's index and the metres left (10 m steps); hidden in the
+    /// countdown, in Flight School's early steps and once caught (it freezes).
+    @Published var goalIndex = 0
+    @Published var goalMetersLeft: Double = 0
+    @Published var goalVisible = false
+    /// "YOUR GOAL" over the chip on the first real run (5 s).
+    @Published var goalOverline = false
+    @Published var reached: HUDReached?
+    /// The one-time lines on the bird page: the storm line, the Tailwind teach, the flat tip.
+    @Published var tipLine: String?
+    /// Flight School is flying the practice sea: only the pause shows.
+    @Published var schoolSea = false
 
     func setMeters(_ v: Int) { if meters != v { meters = v } }
     func setLead(_ v: Double) { if lead != v { lead = v } }
@@ -138,9 +186,23 @@ final class HUDState: ObservableObject {
     func setFoldArmed(_ v: Bool) { if foldArmed != v { foldArmed = v } }
     func setSplashMark(_ v: HUDSplashMark?) { if splashMark != v { splashMark = v } }
     func setMeterLabel(_ v: Bool) { if meterLabel != v { meterLabel = v } }
+    func setChainTeach(_ v: Bool) { if chainTeach != v { chainTeach = v } }
+    func setSchoolFaster(_ v: Double?) { if schoolFaster != v { schoolFaster = v } }
+    func setSchoolRhythm(_ v: SchoolRhythm?) { if schoolRhythm != v { schoolRhythm = v } }
+    func setSchoolStormHUD(_ v: Bool) { if schoolStormHUD != v { schoolStormHUD = v } }
     func setOpenNudge(_ v: Bool) { if openNudge != v { openNudge = v } }
     func setNudgeOffer(_ v: Bool) { if nudgeOffer != v { nudgeOffer = v } }
     func setSunPoint(_ v: CGPoint?) { if sunPoint != v { sunPoint = v } }
+    func setLampPoint(_ v: CGPoint?) { if lampPoint != v { lampPoint = v } }
+    func setGoal(index: Int, metersLeft: Double, visible: Bool) {
+        if goalIndex != index { goalIndex = index }
+        if goalMetersLeft != metersLeft { goalMetersLeft = metersLeft }
+        if goalVisible != visible { goalVisible = visible }
+    }
+    func setGoalOverline(_ v: Bool) { if goalOverline != v { goalOverline = v } }
+    func setReached(_ v: HUDReached?) { if reached != v { reached = v } }
+    func setTipLine(_ v: String?) { if tipLine != v { tipLine = v } }
+    func setSchoolSea(_ v: Bool) { if schoolSea != v { schoolSea = v } }
 
     func reset() {
         if holdFrame { holdFrame = false }
@@ -170,6 +232,10 @@ final class HUDState: ObservableObject {
         setMeterLabel(false)
         setOpenNudge(false)
         setNudgeOffer(false)
+        setGoal(index: 0, metersLeft: 0, visible: false)
+        setGoalOverline(false)
+        setReached(nil)
+        setTipLine(nil)
     }
 }
 
@@ -193,6 +259,10 @@ struct ResultSummary: Equatable {
     var hingeRun = false
     /// R4 P1-13: this Daily is the best of every Daily flown (celebrated when it isn't also a new overall best).
     var dailyBest = false
+    /// R6: the first real run after Flight School (its "Next time" tip is the storm one).
+    var firstRealRun = false
+    /// D4: the Daily row's one-time sub-line is due (captured when the card is built).
+    var explainsDaily = false
 }
 
 /// A run paused mid-flight (the cover display's Paused state, UX-D1), built at the pause.
@@ -205,6 +275,9 @@ struct PausedRun: Equatable {
     var bestMeters: Double
     var isScoredDaily: Bool
     var day: Int?
+    /// R6: "Gull Point in 1.9 km" (the cover), and whether this is Flight School (the cover's "Flight School paused").
+    var goalLine: String = ""
+    var inSchool = false
 }
 
 // MARK: - The hint coach (UX-A5): pure, tested
@@ -533,6 +606,8 @@ enum AppRules {
 
     /// The milestone hit-stop: Feel's `FeelSoundBook.hitStop` (60 ms), so the pop and the tap land on its release.
     static let milestoneHitStop: Double = Double(FeelSoundBook.hitStop)
+    /// D4 one-time explanations (`ProgressData.learnedHints`).
+    static let dailyRowHint = "dailyRow"
 
     /// R4 P1-13: the Daily is numbered from launch day (#1), so day one never reads "#298". The seed is unchanged.
     static var launchDay: Int { DailySeed.launchDay }
@@ -821,4 +896,12 @@ enum Contrast {
     static func overSun(text: UInt32, scrimAlpha: Double = Contrast.scrimAlpha) -> Double {
         ratio(rgb(text), blend(scrim, alpha: scrimAlpha, over: brightestSky))
     }
+}
+
+/// Step 6's rhythm bar (SC3): which of the 3 practice waves the bird is over, how far along it (0 = the trough before,
+/// 0.5 = the crest, 1 = the wave's trough), and the eased tuck for the cursor's colour.
+struct SchoolRhythm: Equatable {
+    var wave: Int
+    var fraction: Double
+    var tuck: Double
 }
