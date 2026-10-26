@@ -50,3 +50,16 @@
   (metadata, review notes, privacy, accessibility, achievements, screenshots, press kit, social launch, featuring
   nomination, decisions) and the website `docs/site/` with forwarding pages in `docs/` for GitHub Pages. Proposed
   launch **Tue 24 Nov 2026** (Brim is Tue 17 Nov), manual release, featuring nomination by Tue 3 Nov.
+
+### 26 Oct, afternoon: rounds 1–3, the design push
+
+| Time | What happened |
+|---|---|
+| ~11:50 | **Round 1 build pushed.** The app compiled on the first CI try. One test error followed: `#expect` can't call a mutating method. The next push (run 40318086958) was green, with 99 tests, and balance matched the Node sim. |
+| ~12:20 | **Duo sim run 40318165524.** The hinge drives the bird. But a 146.7° rest read as 31 % tucked, because the slow calibration took about 20 s. **Fix:** the ready pose (countdown or resume) snaps "wings open". Re-run 40321586583: READY-CALIB, HINGE-FLIGHT and CLOSE-PAUSE all PASS. |
+| — | **REVIEW-1: 6/10.** Satisfaction wasn't there yet: rare, invisible Perfects, a tiny bird, flat trails. **QA-1:** 0 P0, 6 P1. |
+| ~13:15 | **Round 2 green on the first compile, 128 tests.** Casual 162 s, 12.4 Perfects and 3.8 splashes per minute. **QA-2:** 0 P0, 0 P1. |
+| — | **Founder:** "spend time on design and UX"; "optimise in all ways for iPhone Duo, with a fallback". Added an Art Director (`design/ART-DIRECTION.md`) and a UX Lead (`design/UX-SPEC.md`), plus a Duo-first section and an iPhone-fallback section in both. |
+| ~15:30 | **Round 3** (built to the specs) compiled first time, 165 tests after 3 test fixes. **Duo checks:** all PASS. |
+| — | **Critic panel on R3:** juror 6.5, UX 7.0, first-time player 7.0, Duo specialist 7.5. All four said "not yet". |
+| — | **Round 4 dispatched** (`design/ROUND-4.md`). The store copy was corrected to the real stroke rate (about 40 × 30–36° per minute in active play). A store-frame pipeline is being built. |
