@@ -98,7 +98,7 @@ if [[ " $PASSES " == *" hinge "* ]]; then
   # asked for), the rhythm runs with no shots in it, and the frames are taken in holds afterwards.
   hinge_set 147
   launch hinge-flight "mode=attract;seed=7;hints=fresh"
-  shoot duo-01-countdown inner
+  # (The countdown frame is captured frozen in its own launch below: a live shot takes ~15 s and missed it.)
   for i in 1 2 3 4 5 6 7 8 9 10; do
     hinge_sweep 122 0.7; sleep 0.6
     hinge_sweep 150 0.6; sleep 0.5
@@ -125,7 +125,9 @@ if [[ " $PASSES " == *" hinge "* ]]; then
   fi
 
   # Closing pauses (never a crash, never a lost run): close to the cover display, reopen, keep flying.
-  hinge_sweep 60 1.0; sleep 1; shoot duo-06-closing inner
+  # Closing: 60° is past the pause threshold and iOS may already show the cover, so no inner shot here (the
+  # closing card is store-35, frozen); go straight on to shut.
+  hinge_sweep 60 1.0; sleep 1
   hinge_sweep 10 0.6; hinge_set 0; sleep 3; shoot duo-07-closed cover
   hinge_sweep 150 2.0; sleep 3; shoot duo-08-reopened inner
   if grep -q "SWOOP-T paused closing" "$HL" && grep -q "SWOOP-T resumed" "$HL"; then
@@ -133,6 +135,11 @@ if [[ " $PASSES " == *" hinge "* ]]; then
   else
     log "CLOSE-PAUSE FAIL: paused=$(grep -c 'SWOOP-T paused' "$HL") resumed=$(grep -c 'SWOOP-T resumed' "$HL")"
   fi
+
+  # The countdown at a real 147° rest (READY-CALIB's pose), frozen so the capture is the countdown.
+  hinge_set 147
+  launch countdown-147 "mode=flight;seed=7;freezeOn=countdown"
+  freeze_wait countdown-147 countdown 20; shoot duo-01-countdown inner
 fi
 
 # ---- pass: autopilot frames on the Duo canvas (store set) --------------------------------------------------
