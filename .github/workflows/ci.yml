@@ -28,6 +28,8 @@ jobs:
     timeout-minutes: 60
     env:
       DEVICE: "iPhone 18 Pro"
+      # Balance harness seeds per skill (BalanceTests); xcodebuild passes TEST_RUNNER_* to the test process.
+      TEST_RUNNER_SWOOP_BAL_SEEDS: "8"
     steps:
       - uses: actions/checkout@v4
 

@@ -1,0 +1,31 @@
+# CI screenshot scenarios (ci/screenshots.sh, iPhone 18 Pro simulator, no hinge: the UI turns landscape by itself).
+# name|demo args (Swoop/App/DemoMode.swift)|seconds before capture
+# With WAIT_FREEZE=1 a scenario with freezeOn=<x> waits for "SWOOP-T freeze <x>" instead of the fixed wait.
+home|screen=home;seed=7|5
+home-duo-layout|screen=home;duo;progress=mid|5
+home-mirror|screen=home;mirror;progress=mid|5
+countdown|mode=flight;seed=7;hints=fresh|1
+hint-fold|mode=flight;seed=7;hints=fresh;autopilot=casual;freezeAt=1.2|7
+hint-open|mode=flight;seed=7;hints=fresh;autopilot=casual;freezeAt=5|10
+skim|mode=flight;seed=7;autopilot=perfect;skipCountdown;freezeAt=7|11
+soar|mode=flight;seed=7;autopilot=perfect;skipCountdown;freezeOn=flying;freezeAfter=5|16
+perfect|mode=flight;seed=7;autopilot=perfect;skipCountdown;freezeOn=perfect|14
+chain|mode=flight;seed=7;autopilot=perfect;chain=5;freezeOn=perfect;freezeAfter=0|20
+tailwind|mode=flight;seed=7;autopilot=perfect;skipCountdown;freezeOn=tailwind;freezeAfter=2|24
+splash|mode=flight;seed=7;autopilot=novice;skipCountdown;freezeOn=splash;freezeAfter=2|16
+lighthouse|mode=flight;seed=7;autopilot=perfect;skipTo=3850;freezeOn=lighthouse;freezeAfter=0|30
+storm-close|mode=flight;seed=7;autopilot=casual;lead=0.1;freezeOn=stormclose;freezeAfter=0|16
+caught|mode=flight;seed=7;autopilot=novice;lead=0.03;freezeOn=caught;freezeAfter=0|20
+mirror-flight|mode=flight;seed=7;autopilot=perfect;skipCountdown;mirror;freezeAt=6|11
+results|screen=results;seed=7;progress=mid;autopilot=casual|8
+results-fresh|screen=results;seed=7;progress=fresh;autopilot=novice|8
+goals|screen=goals;progress=mid|5
+goals-late|screen=goals;progress=late|5
+birds|screen=birds;progress=late|5
+birds-fresh|screen=birds;progress=fresh|5
+settings|screen=settings|4
+pose|screen=pose|4
+daily|mode=daily;seed=7;progress=mid;autopilot=expert;skipCountdown;freezeAt=8|13
+daily-results|screen=results;mode=daily;progress=mid;autopilot=expert|10
+icon|screen=icon|6
+badges|screen=badges|10

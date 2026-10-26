@@ -1,0 +1,17 @@
+# iPhone Duo store frames (ci/duo.sh "store" pass; the Duo simulator starts in book pose with a real fold, held at
+# 150°). The autopilot flies, so closing never pauses these. name|demo args (Swoop/App/DemoMode.swift)|seconds
+# before capture (a freezeOn=<x> scenario waits for "SWOOP-T freeze <x>", at least 20 s).
+01-title|screen=home;progress=mid|5
+02-dive|mode=flight;seed=7;autopilot=perfect;skipCountdown;freezeAt=5|10
+03-soar|mode=flight;seed=7;autopilot=perfect;skipCountdown;freezeOn=flying;freezeAfter=6|20
+04-perfect-chain|mode=flight;seed=7;autopilot=perfect;chain=4;freezeOn=perfect;freezeAfter=0|20
+05-tailwind|mode=flight;seed=7;autopilot=perfect;skipCountdown;freezeOn=tailwind;freezeAfter=2|24
+06-lighthouse|mode=flight;seed=7;autopilot=perfect;skipTo=3850;freezeOn=lighthouse;freezeAfter=0|30
+07-storm|mode=flight;seed=7;autopilot=casual;lead=0.1;freezeOn=stormclose;freezeAfter=0|20
+08-results|screen=results;seed=7;progress=mid;autopilot=casual|8
+09-flocks|screen=goals;progress=mid|5
+10-birds|screen=birds;progress=late;bird=albatross|5
+11-daily|mode=daily;seed=7;progress=mid;autopilot=expert;skipCountdown;freezeAt=8|14
+12-mirror|mode=flight;seed=7;autopilot=perfect;skipCountdown;mirror;freezeAt=6|11
+13-moonrise|mode=flight;seed=11;autopilot=perfect;skipCountdown;sky=moonrise;bird=heron;freezeAt=7|12
+14-caught|mode=flight;seed=7;autopilot=novice;lead=0.03;freezeOn=caught;freezeAfter=0|20
