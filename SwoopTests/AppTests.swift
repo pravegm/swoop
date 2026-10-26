@@ -1779,8 +1779,9 @@ struct RoundSixSceneWiringTests {
         #expect(last?.wave == 2)
         #expect(FlightSchool.rhythmPosition(x: 10_300) == nil)
         let page = CGRect(x: 476, y: 0, width: 475, height: 669)
-        #expect(SchoolBirdHUD.anchorX(birdX: 300, page: page) == 476 + 72)
+        let leftEdge: CGFloat = 476 + 72, rightEdge: CGFloat = 951 - 72
+        #expect(abs(SchoolBirdHUD.anchorX(birdX: 300, page: page) - leftEdge) < 0.01)
         #expect(SchoolBirdHUD.anchorX(birdX: 700, page: page) == 700)
-        #expect(SchoolBirdHUD.anchorX(birdX: 940, page: page) == 951 - 72)
+        #expect(abs(SchoolBirdHUD.anchorX(birdX: 940, page: page) - rightEdge) < 0.01)
     }
 }

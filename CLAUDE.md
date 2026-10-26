@@ -58,3 +58,10 @@ demo keys are listed in `design/ROUND-1.md`.
   smooth with One-Euro.
 - Re-enable `onHingeChange` on each activation to get a fresh reading.
 - The inner display ignores orientation locks. Book pose = landscape 951 × 669 pt with a vertical fold.
+
+## Swift Testing gotchas (found on CI)
+- `#expect(x.mutatingMethod())` doesn't compile, because the macro captures `x` immutably. Call it first:
+  `let r = x.mutatingMethod(); #expect(r)`.
+- `#expect(cgFloatValue == 476 + 72)` can be **false** even when both sides print 548. The literal arithmetic is
+  typed apart from `CGFloat`. Compare with a typed constant and a tolerance:
+  `let e: CGFloat = 476 + 72; #expect(abs(v - e) < 0.01)`.
