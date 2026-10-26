@@ -124,6 +124,17 @@ if [[ " $PASSES " == *" hinge "* ]]; then
     log "HINGE-FLIGHT FAIL: input=$(grep -m1 'SWOOP-T input' "$HL") launches=$launches touchdowns=$touchdowns"
   fi
 
+  # R4 comfort rules (REVIEW-4-duo P2): a brief overshoot to 85° mid-dive must NOT pause (0.2 s dwell); holding 85°
+  # must pause; reopening resumes.
+  p0=$(grep -c "SWOOP-T paused closing" "$HL")
+  hinge_sweep 85 0.15; hinge_sweep 150 0.15; sleep 1.5
+  p1=$(grep -c "SWOOP-T paused closing" "$HL")
+  if (( p1 == p0 )); then log "OVERSHOOT PASS (no pause on a 0.3 s dip to 85°)"; else log "OVERSHOOT FAIL (paused on a brief dip)"; fi
+  hinge_sweep 85 0.4; sleep 1.5
+  p2=$(grep -c "SWOOP-T paused closing" "$HL")
+  if (( p2 > p1 )); then log "HOLD-85 PASS (holding 85° pauses)"; else log "HOLD-85 FAIL (no pause after 1.5 s at 85°)"; fi
+  hinge_sweep 150 1.0; sleep 4
+
   # Closing pauses (never a crash, never a lost run): close to the cover display, reopen, keep flying.
   # Closing: 60° is past the pause threshold and iOS may already show the cover, so no inner shot here (the
   # closing card is store-35, frozen); go straight on to shut.
@@ -140,6 +151,16 @@ if [[ " $PASSES " == *" hinge "* ]]; then
   hinge_set 147
   launch countdown-147 "mode=flight;seed=7;freezeOn=countdown"
   freeze_wait countdown-147 countdown 20; shoot duo-01-countdown inner
+
+  # A low rest (130°, REVIEW-3-duo P0: "flies permanently tucked") must read as wings spread after the countdown.
+  hinge_set 130
+  launch rest-130 "mode=flight;seed=7"
+  sleep 6
+  RL="$OUT_ABS/logs/rest-130.txt"
+  low=$(sed -n '/SWOOP-T event started/,$p' "$RL" | grep -m1 -oE "SWOOP-T tuck [0-9.]+" | awk '{print $3}')
+  if [[ -n "$low" ]] && awk "BEGIN{exit !($low < 0.1)}"; then log "LOW-REST PASS (tuck $low after the drop at 130°)"
+  else log "LOW-REST FAIL (tuck ${low:-none} after the drop at 130°; calib: $(grep -m2 'SWOOP-T calib' "$RL" | tr '\n' ' '))"; fi
+  hinge_set 150
 fi
 
 # ---- pass: autopilot frames on the Duo canvas (store set) --------------------------------------------------
