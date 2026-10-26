@@ -1,4 +1,4 @@
-# Critic panel brief (Round 3 build, commit on main 26 Oct ~15:30)
+# Critic panel brief (Round 4 build, 26 Oct ~18:00; R3 brief kept below for paths)
 
 Swoop: Tuck & Soar is a paid (£1.99) iPhone Duo-first game. Hold the Duo like a book: the two halves are the
 bird's wings. Fold to dive down ocean swells, open to soar off the crests, and outfly the storm. On other iPhones you
@@ -45,3 +45,27 @@ ready-pose calibration, hinge flight, and close/pause/reopen: all PASS.
     hex where it's visual).
   - End with "Top 8 for Round 4".
 - **Look at every relevant frame** with the Read tool. Don't edit code.
+
+## Round 4 update
+**Frames**
+- iPhone: `r8\screenshots\` (about 60 frames; `captures.tsv` lists them; logs in `r8\screenshots\logs\`).
+- Duo: `duo6\duo-screens\duo-screens\` (59 frames). It was built from the R4 code before the R4b balance retune;
+  the visuals are identical.
+- Compare against R3: `r5\screenshots` and `duo5\duo-screens\duo-screens`.
+
+**Balance (Swift CI, R4b)**
+
+| Player | Median run | Perfects/min | Splashes/min |
+|---|---|---|---|
+| Novice | 64 s | 2.6 | 2.6 |
+| Casual | 138 s | 9.9 | 3.3 |
+| Expert | 355 s | 17.8 | — |
+| Perfect | 506 s | — | — |
+
+**Other evidence**
+- **Tests:** 193 pass.
+- **Duo hinge checks:** all PASS.
+- **What changed:** `design/ROUND-4.md` and `design/notes/*-R4.md`.
+
+**Output:** `design/panel/REVIEW-4-<you>.md`, same format, at most 120 lines. Open by stating which of your R3 P0s
+and P1s are fixed, partly fixed, or not fixed.

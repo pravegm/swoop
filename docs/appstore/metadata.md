@@ -57,7 +57,7 @@ Hold your Duo open like a book, one hand on each half. Fold it in a little and y
 No ads. No in-app purchases. No accounts. No data collected. Pay once and it's yours.
 
 MADE FOR THE FOLD. PLAYS ON EVERY iPhone.
-On iPhone Duo, the hinge is the control: short, slow squeezes in a relaxed book pose, about one swell every two or three seconds. You never need to close the phone, lay it flat or fold fast. On any other iPhone, press and hold anywhere to tuck and let go to soar. Same sea, same leaderboards, but the fold is the best way to fly.
+On iPhone Duo, the hinge is the control: short, easy squeezes of about 30° in a relaxed book pose, roughly one per wave. You never need to close the phone, lay it flat or fold fast. On any other iPhone, press and hold anywhere to tuck and let go to soar. Same sea, same leaderboards, but the fold is the best way to fly.
 
 ONE MOVE, A LOT OF SKILL
 • Tuck on the way down: heavier is faster
@@ -100,7 +100,7 @@ Hold your Duo open like a book, one hand on each half. Fold it in a little and y
 No ads. No in-app purchases. No accounts. No data collected. Pay once and it's yours.
 
 MADE FOR THE FOLD. PLAYS ON EVERY iPhone.
-On iPhone Duo, the hinge is the control: short, slow squeezes in a relaxed book pose, about one swell every two or three seconds. You never need to close the phone, lay it flat or fold fast. On any other iPhone, press and hold anywhere to tuck and let go to soar. Same sea, same leaderboards, but the fold is the best way to fly.
+On iPhone Duo, the hinge is the control: short, easy squeezes of about 30° in a relaxed book pose, roughly one per wave. You never need to close the phone, lay it flat or fold fast. On any other iPhone, press and hold anywhere to tuck and let go to soar. Same sea, same leaderboards, but the fold is the best way to fly.
 
 ONE MOVE, A LOT OF SKILL
 • Tuck on the way down: heavier is faster

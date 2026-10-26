@@ -83,7 +83,7 @@ Optional. 2 leaderboards (Longest Flight, Daily Flight) and 12 achievements (625
 ## If rejected under 2.4.2 (hardware) or 1.4.5 (physical harm)
 
 Reply in the Resolution Center, calmly and specifically:
-> "Swoop never asks users to close the phone, lay it flat, or fold quickly or repeatedly at speed. Play uses short strokes of about 30 degrees at the pace of the waves (one every 2 to 3 seconds), in the middle of the hinge's range, from a relaxed book pose that calibrates itself to how the player holds the phone. No score, achievement or bonus rewards folding speed or fold count; folding at the wrong moment only causes a splash. Nothing is ever placed on the device. Any iPhone without a hinge, and any Duo player who prefers it, plays the full game by pressing and holding the screen. We're happy to add an on-screen line such as 'Small, slow folds fly best' to the first-run hints if that helps."
+> "Swoop never asks users to close the phone, lay it flat, or fold quickly or repeatedly at speed. Play uses short strokes of about 30 degrees at the pace of the waves (about one per wave, roughly 40 a minute in active play), in the middle of the hinge's range, from a relaxed book pose that calibrates itself to how the player holds the phone. No score, achievement or bonus rewards folding speed or fold count; folding at the wrong moment only causes a splash. Nothing is ever placed on the device. Any iPhone without a hinge, and any Duo player who prefers it, plays the full game by pressing and holding the screen. We're happy to add an on-screen line such as 'Small, slow folds fly best' to the first-run hints if that helps."
 
 ## If rejected under 2.1 (couldn't use the hinge)
 

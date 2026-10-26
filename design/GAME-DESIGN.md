@@ -31,7 +31,7 @@ crest. Keep skimming, keep launching, and **outfly the storm** that is chasing y
    must all rise and fall with speed.
 3. **Addictive.** The first run lasts about 60 s and is obviously improvable. "One more" restarts in under 1 s. A daily
    flight, goals and unlockable birds bring players back.
-4. **Gentle on the hinge.** Strokes are short (about 30°) and slow (one swell every 2–3 s). Play never asks for slams,
+4. **Gentle on the hinge.** Strokes are short (30–36°) and unhurried: about one per wave, roughly 36–40 a minute in active play (balance sim). Folding faster gains nothing (the tuck rise is capped). Play never asks for slams,
    full closes, or fully flat.
 
 ## 3. The input
