@@ -10,6 +10,10 @@ on:
         description: "Passes to run: hinge (real hinge flight + close test), store (autopilot frames, ci/duo-scenarios.txt), ui (menus, cover)"
         type: string
         default: "hinge store ui"
+      store_filter:
+        description: "Regex of store scenario names to capture (default: all)"
+        type: string
+        default: "."
 
 concurrency:
   group: duo-${{ github.ref }}
@@ -18,7 +22,7 @@ concurrency:
 jobs:
   duo:
     runs-on: xcode-27
-    timeout-minutes: 120
+    timeout-minutes: 220
     env:
       XCODE_APP: /Applications/Xcode_27.1.app
       RUNTIME_ID: com.apple.CoreSimulator.SimRuntime.iOS-27-1
@@ -96,10 +100,11 @@ jobs:
           gtimeout 30 xcrun simctl io "$UDID" enumerate || true
 
       - name: Capture
-        timeout-minutes: 50
+        timeout-minutes: 150
         env:
           UDID: ${{ steps.sim.outputs.udid }}
           PASSES: ${{ inputs.passes }}
+          STORE_FILTER: ${{ inputs.store_filter || '.' }}
           OUT: duo-screens
         run: bash ci/duo.sh
 
