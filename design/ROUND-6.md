@@ -143,3 +143,7 @@ Precise enough to build without questions.
 - **The storm:** two critics still read it as "rows of river stones". This round, try a different technique: a
   noise-based SKShader (fbm billows with soft edges, lit from the sun side), or a pre-rendered soft texture, in place
   of stacked vector lobes. It must still follow `SceneStormMap`.
+- **Correction to D1.2 (default sharp half):** don't assume an orientation. The default sharp half is the half on
+  **screen-right in whatever interface orientation the app first runs in on a Duo**. Record that orientation as the
+  physical reference, and track the physical half from then on. That's exactly the founder's request ("default the
+  bird to the right side"), whichever way they hold the phone. The Wing check refines it.
