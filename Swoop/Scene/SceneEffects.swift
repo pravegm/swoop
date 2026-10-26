@@ -38,6 +38,12 @@ final class SceneEffects {
     private let goldColor = ScenePaint.ui(ScenePaint.gold)
     private let paleGoldColor = ScenePaint.ui(ScenePaint.paleGold)
     private let whiteColor = UIColor.white
+    /// Ring tiers (ROUND-4 P1-8): foam #F2F7FA, gold #F7C75B, reward gold #FFD45E.
+    private let ringFoam = ScenePaint.ui(RGBA(hex: 0xF2F7FA))
+    private let ringGold = ScenePaint.ui(RGBA(hex: 0xF7C75B))
+    private let ringReward = ScenePaint.ui(ScenePalette.rewardGold)
+    /// The last Perfect's ring colour tier: 0 foam, 1 gold, 2 reward gold (tests).
+    private(set) var lastRingTier = -1
 
     init() {
         waterRoot = SKNode()
@@ -180,7 +186,7 @@ final class SceneEffects {
             p.drag = 2
             p.spin = rng.range(-4, 4)
             let c = rng.unit() < 0.7 ? goldColor : paleGoldColor
-            glow.spawn(p, size: rng.range(10, 18) / z, color: c, texture: sparkTexture)
+            glow.spawn(p, size: rng.range(6, 11) / z, color: c, texture: softTexture)
         }
     }
 
@@ -207,22 +213,32 @@ final class SceneEffects {
         foamRing(at: point, count: 6, spread: 30, zoom: z, color: color)
     }
 
-    /// A Perfect (ART §5, ART-S12): a gold ring that rides with the bird for 0.38 s, growing 40 → 170 px (ease-out
-    /// cubic) as a 1 : 0.32 ellipse on the water; a paler one 0.08 s later on chains ≥ 2; a faint ripple that stays at
-    /// the touchdown; a gold bloom and golden sparkles. Visible from the first frame. Reduce Motion: the ring appears at
-    /// 120 px and fades over 0.3 s.
+    /// The ring tier for a chain (ROUND-4 P1-8): 0 foam (×1–4), 1 gold (×5–9), 2 reward gold with a second ring (×10+).
+    nonisolated static func ringTier(chain: Int) -> Int {
+        if chain >= SceneLook.ringTierReward { return 2 }
+        if chain >= SceneLook.ringTierGold { return 1 }
+        return 0
+    }
+
+    /// A Perfect (ART §5, ART-S12; R4 calmer): a ring that rides with the bird for 0.38 s, growing 40 → 170 px (ease-out
+    /// cubic) as a 1 : 0.32 ellipse on the water, in the chain's tier colour (a second ring from ×10); a faint ripple
+    /// that stays at the touchdown; a soft bloom; hard pale-gold drops at 60 % size and one mist puff (no white spiky
+    /// burst); gold 4-point stars only from ×5 (≤ 6). Reduce Motion: the ring appears at 120 px and fades over 0.3 s.
     func perfect(at point: CGPoint, chain: Int, zoom z: CGFloat, foamColor: UIColor) {
+        let tier = SceneEffects.ringTier(chain: chain)
+        lastRingTier = tier
+        let ringColor = tier == 2 ? ringReward : (tier == 1 ? ringGold : ringFoam)
         // The ring node is 200 pt wide at scale 1.
         let from = SceneLook.perfectRingFrom / 200 / z
         let to = SceneLook.perfectRingTo / 200 / z
         if reduceMotion {
             let still = SceneLook.ringStill / 200 / z
-            ring(at: followPoint, color: goldColor, start: still, end: still, duration: 0.3, delay: 0, alpha: 1,
+            ring(at: followPoint, color: ringColor, start: still, end: still, duration: 0.3, delay: 0, alpha: 1,
                  rides: true)
         } else {
-            ring(at: followPoint, color: goldColor, start: from, end: to, duration: SceneLook.perfectRingTime, delay: 0,
+            ring(at: followPoint, color: ringColor, start: from, end: to, duration: SceneLook.perfectRingTime, delay: 0,
                  alpha: 1, rides: true)
-            if chain >= 2 {
+            if tier == 2 {
                 ring(at: followPoint, color: paleGoldColor, start: from, end: to * 1.15,
                      duration: SceneLook.perfectRingTime + 0.08, delay: SceneLook.perfectRing2Delay, alpha: 0.85,
                      rides: true)
@@ -231,29 +247,37 @@ final class SceneEffects {
         // The physical ripple stays where the bird touched down.
         ring(at: point, color: foamColor, start: from, end: to * 0.9, duration: 0.8, delay: 0.02, alpha: 0.35,
              rides: false)
-        bloomSize = 200 / z
+        bloomSize = 150 / z
         bloom.size = CGSize(width: bloomSize, height: bloomSize * 0.4)
         bloom.position = CGPoint(x: point.x, y: point.y + 4 / z)
         bloom.setScale(0.6)
-        bloom.alpha = 0.7
+        bloom.alpha = tier == 0 ? 0.25 : 0.4
         bloom.isHidden = false
         bloomAge = 0
-        let c = min(max(chain, 1), 8)
-        let n = Int(CGFloat((reduceMotion ? 8 : 14) + 2 * c) * max(particleScale, 0.5))
-        let colors: [UIColor] = [goldColor, paleGoldColor, whiteColor]
-        for i in 0..<n {
-            let a = CGFloat(i) / CGFloat(max(n, 1)) * CGFloat.pi + rng.range(-0.15, 0.15)
-            let s = rng.range(160, 340)
+        let stars = tier == 2 ? SceneLook.perfectStarsMax : (tier == 1 ? SceneLook.perfectStarsMid : 0)
+        for i in 0..<stars {
+            let a = CGFloat(i + 1) / CGFloat(stars + 1) * CGFloat.pi + rng.range(-0.12, 0.12)
+            let sp = rng.range(140, 260)
             var p = SceneParticle()
-            p.position = CGPoint(x: point.x + cos(a) * 20 / z, y: point.y + 4 / z)
-            p.velocity = CGVector(dx: cos(a) * s, dy: sin(a) * s * 0.9 + 90)
-            p.life = rng.range(0.6, 1.0)
-            p.drag = 2.4
+            p.position = CGPoint(x: point.x + cos(a) * 24 / z, y: point.y + 8 / z)
+            p.velocity = CGVector(dx: cos(a) * sp, dy: sin(a) * sp * 0.9 + 80)
+            p.life = rng.range(0.55, 0.8)
+            p.drag = 2.6
             p.gravity = 120
-            p.spin = rng.range(-5, 5)
-            glow.spawn(p, size: rng.range(16, 28) / z, color: colors[i % colors.count], texture: sparkTexture)
+            p.spin = rng.range(-4, 4)
+            glow.spawn(p, size: rng.range(14, 20) / z, color: goldColor, texture: sparkTexture)
         }
-        splashDroplets(at: point, count: reduceMotion ? 5 : 9, speed: 260, zoom: z, color: foamColor)
+        // Hard drops tinted pale gold at 60 % size, and one soft mist puff.
+        splashDroplets(at: point, count: reduceMotion ? 5 : 9, speed: 240, zoom: z, color: paleGoldColor, sizeScale: 0.6)
+        var mist = SceneParticle()
+        mist.position = CGPoint(x: point.x, y: point.y + 8 / z)
+        mist.velocity = CGVector(dx: 0, dy: 60)
+        mist.life = 0.5
+        mist.drag = 1.5
+        mist.shrink = false
+        mist.growth = 0.3
+        mist.alphaScale = 0.5
+        spray.spawn(mist, size: 90 / 1.3 / z, color: foamColor, texture: softTexture)
     }
 
     /// A Good landing: a modest splash.
@@ -262,33 +286,38 @@ final class SceneEffects {
         foamRing(at: point, count: 6, spread: 26, zoom: z, color: color)
     }
 
-    /// The mistake (ART §5): wet and heavy, not light: 18–26 hard drops, one mist puff ≤ 90 px at α ≤ 0.5, and foam.
+    /// The mistake (ROUND-4 P1-9: it must read heavier and wetter than a Perfect): 36–48 hard drops thrown high, a
+    /// 1.3× mist puff at α 0.5, a foam crater ring left on the water, and foam. The scene adds the camera dip and the
+    /// bird's dunk.
     func splash(at point: CGPoint, k: CGFloat, zoom z: CGFloat, color: UIColor) {
         let span = CGFloat(SceneLook.splashDropsMax - SceneLook.splashDropsMin)
-        let n = Int((CGFloat(SceneLook.splashDropsMin) + span * k) * (reduceMotion ? 0.7 : 1) * max(particleScale, 0.6))
+        let n = Int((CGFloat(SceneLook.splashDropsMin) + span * k) * (reduceMotion ? 0.6 : 1) * max(particleScale, 0.6))
         for _ in 0..<n {
-            let a = CGFloat.pi / 2 + rng.range(-1.05, 1.05)
-            let s = rng.range(250, 560 + 260 * k)
+            let a = CGFloat.pi / 2 + rng.range(-1.1, 1.1)
+            let sp = rng.range(260, 620 + 260 * k)
             var p = SceneParticle()
-            p.position = CGPoint(x: point.x + rng.range(-16, 16) / z, y: point.y + 2 / z)
-            p.velocity = CGVector(dx: cos(a) * s * 0.75, dy: sin(a) * s)
+            p.position = CGPoint(x: point.x + rng.range(-18, 18) / z, y: point.y + 2 / z)
+            p.velocity = CGVector(dx: cos(a) * sp * 0.75, dy: sin(a) * sp)
             p.life = rng.range(0.6, 1.0)
             p.gravity = 1500
             p.floorY = point.y - 20
             p.stretch = true
-            spray.spawn(p, size: rng.range(2.5, 5) / z, color: color, texture: dotTexture)
+            spray.spawn(p, size: rng.range(2.5, 5.5) / z, color: color, texture: dotTexture)
         }
         var mist = SceneParticle()
-        mist.position = CGPoint(x: point.x, y: point.y + 10 / z)
-        mist.velocity = CGVector(dx: 0, dy: 90)
-        mist.life = 0.7
+        mist.position = CGPoint(x: point.x, y: point.y + 12 / z)
+        mist.velocity = CGVector(dx: 0, dy: 110)
+        mist.life = 0.8
         mist.gravity = 60
         mist.drag = 1.5
         mist.shrink = false
-        mist.growth = 0.4
+        mist.growth = 0.45
         mist.alphaScale = 0.5
-        spray.spawn(mist, size: SceneLook.splashMist / 1.4 / z, color: color, texture: softTexture)
-        foamRing(at: point, count: 10, spread: 50, zoom: z, color: color)
+        spray.spawn(mist, size: SceneLook.splashMist / 1.45 / z, color: color, texture: softTexture)
+        // The crater: a quick white ring that stays on the water.
+        let from = 60 / 200 / z
+        ring(at: point, color: color, start: from, end: 150 / 200 / z, duration: 0.45, delay: 0, alpha: 0.7, rides: false)
+        foamRing(at: point, count: 14, spread: 60, zoom: z, color: color)
     }
 
     /// Reaching cloud height: soft white puffs around the bird.
@@ -337,7 +366,8 @@ final class SceneEffects {
 
     // MARK: Pieces
 
-    private func splashDroplets(at point: CGPoint, count: Int, speed: CGFloat, zoom z: CGFloat, color: UIColor) {
+    private func splashDroplets(at point: CGPoint, count: Int, speed: CGFloat, zoom z: CGFloat, color: UIColor,
+                                sizeScale: CGFloat = 1) {
         for _ in 0..<count {
             let a = CGFloat.pi / 2 + rng.range(-0.9, 0.9)
             let s = rng.range(speed * 0.5, speed)
@@ -348,7 +378,7 @@ final class SceneEffects {
             p.gravity = 1500
             p.floorY = point.y - 20
             p.stretch = true
-            spray.spawn(p, size: rng.range(3, 6) / z, color: color, texture: dotTexture)
+            spray.spawn(p, size: rng.range(3, 6) * sizeScale / z, color: color, texture: dotTexture)
         }
     }
 

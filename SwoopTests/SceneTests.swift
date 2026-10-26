@@ -136,6 +136,103 @@ struct SceneTests {
         }
     }
 
+    /// ROUND-4 P0-5: the tucked title bird is one clean dart, not sticks with feet.
+    @Test func tuckedTitleIsADartWithoutFeet() {
+        let w: CGFloat = 952
+        for h in [CGFloat(254), CGFloat(420), CGFloat(670)] {
+            for b in SceneTests.allBirds() {
+                let shut = BirdArt.titlePath(for: b, tuck: 1, width: w, height: h)
+                let detail = BirdArt.titleDetail(for: b, tuck: 1, width: w, height: h)
+                #expect(detail.leftMirrors.isEmpty && detail.rightMirrors.isEmpty)
+                let wing = shut.leftWing.boundingBoxOfPath
+                let body = shut.body.boundingBoxOfPath
+                // The wing fills the space beside the body: its box is at least ~30 % as wide as it is tall.
+                #expect(wing.width >= wing.height * 0.3)
+                // It stays within ±0.17 w of the fold, and the tips reach behind the tail.
+                #expect(wing.minX >= w * 0.5 - w * 0.17)
+                #expect(wing.maxY > body.maxY)
+                #expect(!detail.beakLower.isEmpty && !detail.headContour.isEmpty)
+            }
+        }
+    }
+
+    /// The one bird mark (REVIEW-3 juror #16): an "M" glyph inside its box.
+    @Test func birdMarkFitsItsBox() {
+        let p = BirdArt.markPath(width: 48, height: 24)
+        let r = p.boundingBoxOfPath
+        #expect(!p.isEmpty)
+        #expect(r.minX >= 0 && r.maxX <= 48 && r.minY >= 0 && r.maxY <= 24)
+        #expect(r.width > 40)
+        #expect(abs(BirdArt.markLineWidth(forHeight: 24) - 2) < 0.001)
+    }
+
+    // MARK: Storm map (ROUND-4 P0-2)
+
+    @Test func stormEdgeFollowsTheLeadMeter() {
+        let birdPage: CGFloat = 456
+        let anchor: CGFloat = 952 * 0.30
+        // The meter and the picture use one formula.
+        #expect(abs(SceneStormMap.meterFill(gap: 2400) - 0.4) < 0.001)
+        #expect(SceneStormMap.meterFill(gap: 1e9) == 1)
+        #expect(SceneStormMap.meterFill(gap: -50) == 0)
+        // A hint at a full lead, 40 % of the bird page at storm-close, right behind the bird at contact.
+        #expect(abs(SceneStormMap.edgeU(meterFill: 1, birdPageWidth: birdPage, anchorU: anchor)
+                    - SceneLook.stormHintEdge) < 0.01)
+        let close = SceneStormMap.edgeU(meterFill: SceneStormMap.closeFill, birdPageWidth: birdPage, anchorU: anchor)
+        #expect(abs(close - 0.40 * birdPage) < 0.5)
+        let contact = SceneStormMap.edgeU(meterFill: 0, birdPageWidth: birdPage, anchorU: anchor)
+        #expect(contact <= anchor && contact > close)
+        // Monotonic: a smaller gap always means a closer wall.
+        var last: CGFloat = -1
+        var gap: Double = 20_000
+        while gap >= 0 {
+            let e = SceneStormMap.edgeU(meterFill: SceneStormMap.meterFill(gap: gap), birdPageWidth: birdPage,
+                                        anchorU: anchor)
+            #expect(e >= last)
+            last = e
+            gap -= 250
+        }
+        // At a 77 % and a 9 % lead (the frames the panel compared) the wall stands visibly apart.
+        let far = SceneStormMap.edgeU(meterFill: SceneStormMap.meterFill(gap: 0.77 * 15_000), birdPageWidth: birdPage,
+                                      anchorU: anchor)
+        let near = SceneStormMap.edgeU(meterFill: SceneStormMap.meterFill(gap: 0.09 * 15_000), birdPageWidth: birdPage,
+                                       anchorU: anchor)
+        #expect(near - far > 80)
+    }
+
+    @Test @MainActor func stormOnScreenChasesAsTheGapCloses() {
+        let scene = FlightScene(layout: SceneTests.duo)
+        let driver = SceneTestsDriver()
+        scene.driver = driver
+        scene.reset()
+        driver.snap.phase = .flying
+        driver.snap.stormX = -9000
+        driver.stormSpeed = 520 + 1500
+        var now: TimeInterval = 40
+        var edges: [CGFloat] = []
+        for i in 0..<600 {
+            scene.update(now)
+            now += 1.0 / 120.0
+            if i % 60 == 59 { edges.append(scene.stormEdgeU) }
+        }
+        #expect(edges.count == 10)
+        if let first = edges.first, let last = edges.last {
+            #expect(last - first > 60)
+        }
+        for i in 1..<edges.count { #expect(edges[i] >= edges[i - 1] - 0.5) }
+    }
+
+    @Test func perfectRingsEscalateWithTheChain() {
+        #expect(SceneEffects.ringTier(chain: 1) == 0)
+        #expect(SceneEffects.ringTier(chain: 4) == 0)
+        #expect(SceneEffects.ringTier(chain: 5) == 1)
+        #expect(SceneEffects.ringTier(chain: 9) == 1)
+        #expect(SceneEffects.ringTier(chain: 10) == 2)
+        #expect(SceneEffects.ringTier(chain: 23) == 2)
+        #expect(FlightScene.isChainMilestone(3) && FlightScene.isChainMilestone(5) && FlightScene.isChainMilestone(20))
+        #expect(!FlightScene.isChainMilestone(1) && !FlightScene.isChainMilestone(4) && !FlightScene.isChainMilestone(12))
+    }
+
     // MARK: Camera
 
     static let duo = ScreenLayout.make(canvas: CGSize(width: 952, height: 670), hasFold: true)
@@ -398,7 +495,7 @@ struct SceneTests {
             scene.update(now)
             now += 1.0 / 120.0
         }
-        driver.pending = [.touchdown(.perfect, speed: 1400, chain: 2)]
+        driver.pending = [.touchdown(.perfect, speed: 1400, chain: 3)]
         driver.hold = true
         var peak: CGFloat = 1
         for _ in 0..<6 {

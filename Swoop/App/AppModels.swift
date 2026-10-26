@@ -44,6 +44,19 @@ struct HUDChainLost: Equatable {
     var serial: Int
 }
 
+/// "Splash" (and "×4 lost" when a chain of 3+ broke) at the bird (R4 P1-9): the mistake is said where the eye is.
+struct HUDSplashMark: Equatable {
+    var lostChain: Int?
+    var point: CGPoint
+    var serial: Int
+
+    /// "Splash" or "Splash · ×4 lost". Pure; tested.
+    var text: String {
+        if let lostChain, lostChain >= 3 { return "Splash · ×\(lostChain) lost" }
+        return "Splash"
+    }
+}
+
 /// HUD values, published at ≤ 15 Hz (toasts at once). Separate from GameController so only the HUD redraws.
 @MainActor
 final class HUDState: ObservableObject {
@@ -81,8 +94,17 @@ final class HUDState: ObservableObject {
     /// The bird's point in the play view (y down) and radius (≤ 15 Hz), for anchoring.
     @Published var birdPoint: CGPoint?
     @Published var birdRadius: CGFloat = 40
-    /// Results: Fly again fills with the fold (UX-A3), 0…1.
+    /// Results: Fly again fills with the fold (UX-A3), 0…1, and fold-to-fly is armed (the helper pulses).
     @Published var foldFill = 0.0
+    @Published var foldArmed = false
+    /// R4 P1-9: the splash word at the bird.
+    @Published var splashMark: HUDSplashMark?
+    /// R4 P1-7: the first run's one-time "Storm ←→ you" label under the meter.
+    @Published var meterLabel = false
+    /// R4 P0-6: the countdown holds with "Open a little wider" (the open angle sits on the floor).
+    @Published var openNudge = false
+    /// The sun's centre in the play view (y down, 8 pt steps), so text can keep off it (R4 P0-3).
+    @Published var sunPoint: CGPoint?
 
     func setMeters(_ v: Int) { if meters != v { meters = v } }
     func setLead(_ v: Double) { if lead != v { lead = v } }
@@ -107,6 +129,11 @@ final class HUDState: ObservableObject {
     func setBirdPoint(_ v: CGPoint?) { if birdPoint != v { birdPoint = v } }
     func setBirdRadius(_ v: CGFloat) { if birdRadius != v { birdRadius = v } }
     func setFoldFill(_ v: Double) { if foldFill != v { foldFill = v } }
+    func setFoldArmed(_ v: Bool) { if foldArmed != v { foldArmed = v } }
+    func setSplashMark(_ v: HUDSplashMark?) { if splashMark != v { splashMark = v } }
+    func setMeterLabel(_ v: Bool) { if meterLabel != v { meterLabel = v } }
+    func setOpenNudge(_ v: Bool) { if openNudge != v { openNudge = v } }
+    func setSunPoint(_ v: CGPoint?) { if sunPoint != v { sunPoint = v } }
 
     func reset() {
         if holdFrame { holdFrame = false }
@@ -131,6 +158,10 @@ final class HUDState: ObservableObject {
         setBestIn(nil)
         setReady(nil)
         setFoldFill(0)
+        setFoldArmed(false)
+        setSplashMark(nil)
+        setMeterLabel(false)
+        setOpenNudge(false)
     }
 }
 
@@ -152,6 +183,8 @@ struct ResultSummary: Equatable {
     var showsRestLine = false
     /// The run was flown by hinge (fold-to-fly again is live).
     var hingeRun = false
+    /// R4 P1-13: this Daily is the best of every Daily flown (celebrated when it isn't also a new overall best).
+    var dailyBest = false
 }
 
 /// A run paused mid-flight (the cover display's Paused state, UX-D1), built at the pause.
@@ -211,9 +244,10 @@ struct HintCoach: Equatable {
         return true
     }
 
-    /// One frame. Returns the hints learned in it (raw values).
+    /// One frame. Returns the hints learned in it (raw values). `mayOffer` false (the fold-blur guard, Duo R3 P2-8)
+    /// shows no new hint.
     mutating func step(time t: Double, flying: Bool, slope: Double, skimming: Bool, tuck: Double,
-                       events: [FlightEvent]) -> [String] {
+                       events: [FlightEvent], mayOffer: Bool = true) -> [String] {
         var newly: [String] = []
         // Events first.
         for event in events {
@@ -272,7 +306,7 @@ struct HintCoach: Equatable {
             return newly
         }
         // Nothing on screen: offer the next lesson.
-        guard flying else { return newly }
+        guard flying && mayOffer else { return newly }
         if !has(.fold) && foldTries < Self.maxTries {
             if slope < Self.downslope {
                 current = .fold
@@ -452,11 +486,92 @@ enum AppRules {
     /// The lead meter's headroom: the gap is drawn against this many full leads (Core's `Tuning.leadMeterScale`).
     static var meterHeadroom: Double { Tuning.leadMeterScale }
 
-    /// The lead meter's fill, 0…1: gap / (headroom × fullLead). Tested.
-    static func meterLead(gap: Double, fullLead: Double = Tuning.fullLead, headroom: Double = Tuning.leadMeterScale)
-        -> Double {
-        guard gap.isFinite, fullLead > 0, headroom > 0 else { return 0 }
-        return min(max(gap / (headroom * fullLead), 0), 1)
+    /// The lead meter's fill, 0…1 (R4 P1-7): Scene's `SceneStormMap.meterFill`, sqrt(gap / (leadMeterScale ×
+    /// fullLead)), the SAME value that places the storm wall, so the meter and the picture agree. The start (2400 pt)
+    /// reads 40 %, storm-close 17 %. UI only: `snapshot.lead` still drives the logic. Tested.
+    static func meterLead(gap: Double) -> Double {
+        guard gap.isFinite else { return 0 }
+        return Double(SceneStormMap.meterFill(gap: gap))
+    }
+
+    /// The coral danger zone at the behind end of the meter: Scene's storm-close fill (≈ 0.17).
+    static var meterDangerZone: Double { Double(SceneStormMap.closeFill) }
+
+    /// R4 P0-3: the countdown / Ready stage moves to 28 % of the height when the sun's centre is within 160 pt of its
+    /// usual place (it already sits on a navy disc; this keeps it off the glare altogether). Pure; tested.
+    static let sunClearance: CGFloat = 160
+    static func stageCenter(usual: CGPoint, sun: CGPoint?, height: CGFloat) -> CGPoint {
+        guard let sun, sun.x.isFinite, sun.y.isFinite else { return usual }
+        let dx = sun.x - usual.x
+        let dy = sun.y - usual.y
+        guard dx * dx + dy * dy < sunClearance * sunClearance else { return usual }
+        let high = CGPoint(x: usual.x, y: height * 0.28)
+        let low = CGPoint(x: usual.x, y: height * 0.62)
+        let dHigh = abs(sun.y - high.y)
+        let dLow = abs(sun.y - low.y)
+        return dHigh >= dLow ? high : low
+    }
+
+    /// R4 P1-8: Perfect's text callout and hit-stop only at chain milestones: 3 (the Tailwind), 5, 10, 15, 20… Tested.
+    static func isChainMilestone(_ chain: Int) -> Bool {
+        FeedbackDirector.isPerfectMilestone(chain: chain)
+    }
+
+    /// Whether a Perfect gets the text callout, the hit-stop and the announcement: a milestone (or the Tailwind that
+    /// starts at one), so the picture agrees with Feel's big chime and Scene's punch-in. Tested.
+    static func showsPerfectCallout(chain: Int, tailwind: Bool) -> Bool {
+        tailwind || isChainMilestone(chain)
+    }
+
+    /// The milestone hit-stop: Feel's `FeelSoundBook.hitStop` (60 ms), so the pop and the tap land on its release.
+    static let milestoneHitStop: Double = Double(FeelSoundBook.hitStop)
+
+    /// R4 P1-13: the Daily is numbered from launch day (#1), so day one never reads "#298". The seed is unchanged.
+    static var launchDay: Int { DailySeed.launchDay }
+
+    /// The Daily's display number: day − launch day + 1, at least 1. Tested.
+    static func dailyNumber(day: Int, launchDay: Int = AppRules.launchDay) -> Int {
+        let n = day.subtractingReportingOverflow(launchDay)
+        if n.overflow { return 1 }
+        return max(n.partialValue + 1, 1)
+    }
+
+    /// R4 P0-6: after the Duo was shut (the cover took over), the Ready hold is 2.5 s and starts 0.3 s after the inner
+    /// display is back (iOS's handover blur lasts 1–2.5 s). A user pause keeps 1.5 s. Tested.
+    static let coverReopenHold: Double = 2.5
+    static let coverReopenDelay: Double = 0.3
+    static func readyHold(afterCover: Bool, normal: Double) -> Double {
+        afterCover ? coverReopenHold + coverReopenDelay : normal
+    }
+
+    /// R4 P0-1 (contradicting numbers): the line under each goal row says its scope and, after a run, where this flight
+    /// stands, so "Pass 4 lighthouses ✓" never sits unexplained next to "2 lighthouses". Tested.
+    static func goalCaption(_ goal: Goal, before: Double, run: RunResult?, lifetime: Double) -> String {
+        if run != nil && before >= 1 { return "Done in an earlier flight" }
+        switch goal.kind {
+        case .totalMeters:
+            return "In total · \(ShareText.distance(lifetime)) of \(ShareText.target(goal.target))"
+        case .dailyPlayed:
+            return GoalCatalog.dailyRunGoalIDs.contains(goal.id) ? "Fly one while this goal is open" : "Any Daily counts"
+        case .speed:
+            return "In one flight"
+        default:
+            guard let run else { return "In one flight" }
+            let value: String
+            switch goal.kind {
+            case .reachMeters: value = ShareText.distance(run.meters)
+            case .cleanMeters: value = ShareText.distance(run.longestCleanMeters)
+            case .perfectsInRun: value = "\(run.perfects)"
+            case .chain: value = "\(run.bestChain)"
+            case .lighthouses: value = "\(run.lighthouses)"
+            case .cloudTouches: value = "\(run.cloudTouches)"
+            case .tailwinds: value = "\(run.tailwinds)"
+            default: value = ""
+            }
+            let target = (goal.kind == .reachMeters || goal.kind == .cleanMeters)
+                ? ShareText.target(goal.target) : "\(Int(goal.target.rounded()))"
+            return "This flight: \(value) of \(target)"
+        }
     }
 
     /// km toasts only every 5 km (UX §3: the 1/2/3 km toasts duplicated the HUD).
@@ -504,7 +619,7 @@ enum AppRules {
     static func hookLine(meters: Double, best: Double, previousBest: Double, lighthousesPassed: Int,
                          lastLighthouse: String, seed: UInt64, firstFlight: Bool) -> String? {
         guard meters.isFinite else { return nil }
-        let km: (Double) -> String = { ShareText.km($0 + 99.999) }
+        let km: (Double) -> String = { ShareText.distance($0, roundUp: true) }
         if !firstFlight && previousBest > 0 && meters < previousBest && previousBest - meters <= previousBest * 0.10 {
             return "\(km(previousBest - meters)) short of your best"
         }
@@ -550,8 +665,9 @@ enum AppRules {
     }
 
     /// The countdown's line (UX-A4).
-    static func countdownLine(touch: Bool, flat: Bool) -> String {
+    static func countdownLine(touch: Bool, flat: Bool, nudge: Bool = false) -> String {
         if touch { return "Hold to dive · let go to soar" }
+        if nudge { return "Open a little wider" }
         return flat ? "Bend it a little, like a book" : "Wings open, hold steady"
     }
 
@@ -583,4 +699,49 @@ enum AppRules {
         }
     }
     #endif
+}
+
+// MARK: - Contrast over the live scene (R4 P0-3): pure, tested
+
+/// WCAG 2 contrast, used to pick the scrims behind text that sits over the sky and the sun.
+enum Contrast {
+    /// The brightest thing text can sit on: the sun's core (`#FFF3C4`).
+    static let brightestSky: UInt32 = 0xFFF3C4
+    /// The scrim behind the Ready ring, the countdown and their lines: navy `#0B2236` at 0.62 (4.5 : 1 for foam text
+    /// over the sun's core; the 0.55 asked for reads ~3.8 : 1).
+    static let scrim: UInt32 = 0x0B2236
+    static let scrimAlpha: Double = 0.62
+    /// Overlay surfaces (hint pill, toasts, the lighthouse card): solid navy at 0.8 (no backdrop tint).
+    static let surfaceAlpha: Double = 0.8
+
+    static func channel(_ v: Double) -> Double {
+        v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+    }
+
+    static func rgb(_ hex: UInt32) -> (Double, Double, Double) {
+        (Double((hex >> 16) & 0xFF) / 255, Double((hex >> 8) & 0xFF) / 255, Double(hex & 0xFF) / 255)
+    }
+
+    static func luminance(_ c: (Double, Double, Double)) -> Double {
+        0.2126 * channel(c.0) + 0.7152 * channel(c.1) + 0.0722 * channel(c.2)
+    }
+
+    /// `top` at `alpha` over `bottom` (sRGB blending, as the compositor does).
+    static func blend(_ top: UInt32, alpha: Double, over bottom: UInt32) -> (Double, Double, Double) {
+        let a = min(max(alpha, 0), 1)
+        let t = rgb(top)
+        let b = rgb(bottom)
+        return (t.0 * a + b.0 * (1 - a), t.1 * a + b.1 * (1 - a), t.2 * a + b.2 * (1 - a))
+    }
+
+    static func ratio(_ a: (Double, Double, Double), _ b: (Double, Double, Double)) -> Double {
+        let la = luminance(a)
+        let lb = luminance(b)
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+    }
+
+    /// Foam (or any `text`) on the scrim over the brightest sky.
+    static func overSun(text: UInt32, scrimAlpha: Double = Contrast.scrimAlpha) -> Double {
+        ratio(rgb(text), blend(scrim, alpha: scrimAlpha, over: brightestSky))
+    }
 }

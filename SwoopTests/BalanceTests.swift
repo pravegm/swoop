@@ -10,8 +10,8 @@ import Testing
 // The assertions are the Round 2 targets (design/ROUND-2.md, medians over the seeds):
 //   novice 45–80 s and ≥ 2 Perfects/min; casual 130–170 s, ≥ 7 Perfects/min, ≤ 4 splashes/min; expert 300–500 s;
 //   perfect always caught inside the 15-min cap.
-// tools/balance-sim.js predicts (Round 3, with the storm leash) novice ~65 s / 2.8 Perfects/min, casual ~142 s /
-// 12.9 / 3.3, expert ~341 s, perfect ~398 s. It also prints SWOOP-GAP: the gap / fullLead quartiles while flying
+// tools/balance-sim.js predicts (Round 4: leash + tuck rise limit) novice ~72 s / 3.7 Perfects/min, casual ~139 s /
+// 10.9 / 3.3, expert ~386 s, perfect ~462 s. It also prints SWOOP-GAP: the gap / fullLead quartiles while flying
 // (UX-C3; casual p50 ≈ 3.1, so Tuning.leadMeterScale 5 puts it at ~61 %). Overrides: SWOOP_BAL_SEEDS.
 // Each skill is simulated once (memoised per skill), so the comparison test reuses the per-skill runs.
 

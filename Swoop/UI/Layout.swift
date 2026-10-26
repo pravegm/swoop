@@ -38,7 +38,8 @@ enum AppPoseRule {
         let valid = canvas.width > 10 && canvas.height > 10
         let small = valid && max(canvas.width, canvas.height) < coverMaxSide
         if hingeSeen && small { return coverFlying && inRun ? .deck : .closed }
-        if hingeSeen && isShut { return .closed }
+        // Duo R3 P2-7: a lit inner display (long side ≥ 760) is never "shut", whatever a stale latch says.
+        if hingeSeen && isShut && !(valid && max(canvas.width, canvas.height) >= coverMaxSide) { return .closed }
         if valid && canvas.height > canvas.width {
             let duo = hingeSeen || looksLikeDuoInner(canvas)
             if duo && (inRun || touchOverride) { return .deck }
@@ -382,6 +383,43 @@ enum CalloutPlacement {
     }
 }
 
+/// R4 P1-12 (UX R3 P1-8): a phone's hint pill rides 110 pt above the bird (flipping 110 pt below it when that would
+/// meet the HUD), centred on the bird page, so the bird and its trail never pass under the words. Pure; tested.
+enum HintPlacement {
+    static let offset: CGFloat = 110
+
+    static func center(bird: CGPoint, size: CGSize, canvas c: AppCanvas) -> CGPoint {
+        let hudBottom = c.top + CalloutPlacement.hudBand + 16
+        var y = bird.y - offset
+        if y - size.height / 2 < hudBottom { y = bird.y + offset }
+        let minY = hudBottom + size.height / 2
+        let maxY = max(c.bottom - size.height / 2, minY)
+        y = min(max(y, minY), maxY)
+        return CGPoint(x: c.birdPage.midX, y: y)
+    }
+
+    /// The pill's box at `center`.
+    static func box(center p: CGPoint, size: CGSize) -> CGRect {
+        CGRect(x: p.x - size.width / 2, y: p.y - size.height / 2, width: size.width, height: size.height)
+    }
+}
+
+/// R4 P1-9: "Splash" sits just behind and above the bird (where the eye is), clamped onto the screen. Pure; tested.
+enum SplashPlacement {
+    static let offset = CGPoint(x: -36, y: -58)
+    static let halfWidth: CGFloat = 110
+    static let halfHeight: CGFloat = 20
+
+    static func center(bird: CGPoint, canvas c: AppCanvas) -> CGPoint {
+        let dx = c.mirrored ? -offset.x : offset.x
+        var p = CGPoint(x: bird.x + dx, y: bird.y + offset.y)
+        let page = c.birdPage
+        p.x = min(max(p.x, page.minX + halfWidth), max(page.maxX - halfWidth, page.minX + halfWidth))
+        p.y = min(max(p.y, c.top + CalloutPlacement.hudBand + halfHeight), max(c.bottom - halfHeight, c.top))
+        return p
+    }
+}
+
 // MARK: - Results
 
 /// The results card: the far half, full height (the calm bird stays visible on the bird's half). Pure; tested.
@@ -392,6 +430,22 @@ enum ResultsLayout {
         let page = c.farPage
         let w = min(page.width, maxWidth)
         let x = c.mirrored ? page.minX : page.maxX - w
+        return CGRect(x: x, y: c.top, width: w, height: max(c.bottom - c.top, 0))
+    }
+
+    /// The far card: `card`, or on a one-page canvas (the split decks) the whole page less 12 pt top and bottom.
+    static func far(_ c: AppCanvas) -> CGRect {
+        if c.singlePage {
+            return CGRect(x: c.farPage.minX, y: 12, width: c.farPage.width, height: max(c.size.height - 24, 0))
+        }
+        return card(c)
+    }
+
+    /// R4 P0-1: the bird-page card (rank-up, goals, small lines, the Daily's share card), from its outer edge.
+    static func side(_ c: AppCanvas) -> CGRect {
+        let page = c.birdPage
+        let w = min(page.width, maxWidth)
+        let x = c.mirrored ? page.maxX - w : page.minX
         return CGRect(x: x, y: c.top, width: w, height: max(c.bottom - c.top, 0))
     }
 }
@@ -416,9 +470,10 @@ enum TitleTuck {
         return t * t * (3 - 2 * t)
     }
 
+    /// Play's own mapping (R4, Feel): stroke = clamp(open − 100, 30, 36), the open angle floored at 132°.
     static func fromHinge(angle: Double, openAngle: Double) -> Double {
         guard angle.isFinite, openAngle.isFinite else { return 0 }
-        return smoothstep((openAngle - angle) / stroke)
+        return HingeTuckTuning.tuck(forAngle: angle, open: max(openAngle, HingeTuckTuning.openMin))
     }
 
     static func idle(time: Double) -> Double {

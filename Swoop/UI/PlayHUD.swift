@@ -51,15 +51,17 @@ struct PlayLayer: View {
                     onPause: { controller.pause() })
             PerfectCalloutView(hud: hud, info: info, reduceMotion: reduceMotion)
                 .allowsHitTesting(false)
-            HintBubble(hint: hud.hint, done: hud.hintDone, touch: controller.hintTouchWording, info: info)
-                .frame(width: l.hint.width, height: l.hint.height)
-                .position(x: l.hint.midX, y: l.hint.midY)
+            SplashMarkView(hud: hud, info: info, reduceMotion: reduceMotion)
+                .allowsHitTesting(false)
+            HintStage(hud: hud, touch: controller.hintTouchWording, info: info, fixed: l.hint)
                 .allowsHitTesting(false)
                 .opacity(hud.caught ? 0 : 1)
             CenterStage(hud: hud, touch: controller.hintTouchWording, compact: c, reduceMotion: reduceMotion,
-                        dailyTitle: controller.dailyBannerTitle)
+                        dailyTitle: controller.dailyBannerTitle, readyTotal: controller.readyTotal)
                 .frame(width: l.center.width, height: l.center.height)
-                .position(x: l.center.midX, y: l.center.midY)
+                .position(AppRules.stageCenter(usual: CGPoint(x: l.center.midX, y: l.center.midY), sun: hud.sunPoint,
+                                               height: info.size.height))
+                .animation(.easeInOut(duration: 0.4), value: hud.sunPoint)
                 .allowsHitTesting(false)
             ToastStage(hud: hud, compact: c, reduceMotion: reduceMotion)
                 .frame(width: l.toast.width, height: l.toast.height, alignment: .top)
@@ -190,7 +192,8 @@ struct DeckPlayView: View {
                     .frame(height: PlayLayout.meterHeight)
                     .allowsHitTesting(false)
                 HUDDistance(meters: hud.meters, compact: true, alignTrailing: true)
-                ChainPill(chain: hud.chain, tailwind: hud.tailwind > 0, lost: hud.chainLost, compact: true)
+                    .opacity(hud.countdown == nil && hud.countdownWord == nil ? 1 : 0)
+                ChainPill(chain: hud.chain, tailwind: hud.tailwind > 0, lost: nil, compact: true)
             }
             .frame(width: page.width, height: rowH)
             .position(x: page.midX, y: rowH / 2 + 8)
@@ -205,13 +208,14 @@ struct DeckPlayView: View {
                     if let n = hud.countdown {
                         Text("\(n)").font(SwoopType.countdown(true)).foregroundStyle(SwoopTheme.foam)
                     } else if let word = hud.countdownWord {
-                        Text(word).font(SwoopType.title(true)).foregroundStyle(SwoopTheme.foam)
+                        Text(word).font(SwoopType.countdown(true)).foregroundStyle(SwoopTheme.foam)
+                            .scaleEffect(CenterStage.wordScale)
                     } else if let ready = hud.ready {
-                        ReadyRing(remaining: ready, total: GameController.readyHold, compact: true)
+                        ReadyRing(remaining: ready, total: controller.readyTotal, compact: true)
                     } else {
-                        BirdGlyph()
-                            .fill(SwoopTheme.foam.opacity(touching ? 1 : 0.7))
-                            .frame(width: 72, height: touching ? 22 : 34)
+                        DartGlyph(tuck: touching ? 1 : 0)
+                            .fill(touching ? SwoopTheme.gold : SwoopTheme.foam.opacity(0.7))
+                            .frame(width: 72, height: 40)
                             .animation(.easeOut(duration: 0.12), value: touching)
                         Text("Hold to dive · let go to soar")
                             .font(SwoopType.headline(true))
@@ -292,7 +296,6 @@ struct HUDView: View {
                 LeadMeter(lead: hud.lead, stormClose: hud.stormClose, mirrored: mirrored)
                     .frame(width: layout.meter.width, height: layout.meter.height)
                     .position(x: layout.meter.midX, y: layout.meter.midY)
-                    .opacity(hud.countdown == nil && hud.countdownWord == nil ? 1 : 0.5)
                     .allowsHitTesting(false)
                 tagLine
                     .frame(width: layout.tagLine.width, height: layout.tagLine.height,
@@ -302,11 +305,15 @@ struct HUDView: View {
             }
             .opacity(hud.caught ? 0 : 1)
             VStack(alignment: mirrored ? .leading : .trailing, spacing: 6) {
+                // UX R3 P2-3: no "0 m" during the countdown; the distance fades in at Go.
                 HUDDistance(meters: hud.meters, compact: c, alignTrailing: !mirrored)
+                    .opacity(hud.countdown == nil && hud.countdownWord == nil ? 1 : 0)
+                    .animation(.easeOut(duration: 0.3), value: hud.countdownWord)
                 Group {
-                    ChainPill(chain: hud.chain, tailwind: hud.tailwind > 0, lost: hud.chainLost, compact: c)
+                    // R4 P1-9: "×N lost" is said at the bird now (`SplashMarkView`), not in this corner.
+                    ChainPill(chain: hud.chain, tailwind: hud.tailwind > 0, lost: nil, compact: c)
                     if let left = hud.bestIn {
-                        Text("Best in \(ShareText.km(left))")
+                        Text("Best in \(ShareText.distance(left, roundUp: true))")
                             .font(SwoopType.caption(c))
                             .foregroundStyle(SwoopTheme.mist)
                             .swoopLegible()
@@ -326,7 +333,15 @@ struct HUDView: View {
 
     @ViewBuilder
     private var tagLine: some View {
-        if let teach = hud.teachLine {
+        if hud.meterLabel {
+            // R4 P1-7: the first run says what the bar is.
+            Text("Storm ←→ you")
+                .font(SwoopType.caption(info.isCompact).weight(.semibold))
+                .foregroundStyle(SwoopTheme.foam)
+                .lineLimit(1)
+                .swoopLegible()
+                .transition(.opacity)
+        } else if let teach = hud.teachLine {
             Text(teach)
                 .font(SwoopType.caption(info.isCompact))
                 .foregroundStyle(SwoopTheme.foam)
@@ -374,8 +389,9 @@ struct HUDDistance: View {
 }
 
 /// The lead meter: a storm cloud at the behind end, a thin bar slate (the storm) → gold (the clear sky), and the bird
-/// riding the knob at the lead, with headroom (Core's `leadMeterScale`). Pulses coral only while the storm is close,
-/// also when it is close as the meter appears (QA-2 P2-5).
+/// riding the knob at the lead (R4 P1-7: the sqrt curve, `AppRules.meterLead`). A fixed coral danger zone covers the
+/// first 17 % (the knob entering it is the warning: positional, never colour alone); a 3 pt coral outline pulses while
+/// the storm is close, also when it is close as the meter appears (QA-2 P2-5).
 struct LeadMeter: View {
     let lead: Double
     let stormClose: Bool
@@ -397,6 +413,14 @@ struct LeadMeter: View {
                         .fill(SwoopTheme.abyss.opacity(0.55))
                     HStack(spacing: 0) {
                         if mirrored { Spacer(minLength: 0) }
+                        Rectangle()
+                            .fill(SwoopTheme.coral.opacity(0.25))
+                            .frame(width: w * CGFloat(AppRules.meterDangerZone))
+                        if !mirrored { Spacer(minLength: 0) }
+                    }
+                    .clipShape(Capsule())
+                    HStack(spacing: 0) {
+                        if mirrored { Spacer(minLength: 0) }
                         Capsule()
                             .fill(LinearGradient(colors: mirrored ? [SwoopTheme.gold, SwoopTheme.slate]
                                                                   : [SwoopTheme.slate, SwoopTheme.gold],
@@ -413,7 +437,7 @@ struct LeadMeter: View {
                 .frame(width: w, height: h)
                 .overlay(
                     Capsule()
-                        .stroke(SwoopTheme.coral.opacity(stormClose ? (pulse ? 0.95 : 0.35) : 0), lineWidth: 2)
+                        .stroke(SwoopTheme.coral.opacity(stormClose ? (pulse ? 0.95 : 0.35) : 0), lineWidth: 3)
                 )
                 if mirrored { stormIcon.frame(width: iconW) }
             }
@@ -510,8 +534,9 @@ struct PerfectCalloutView: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             if let callout = hud.callout {
-                // Scene R3 `onBirdPoint`: already the play view's own points (y down).
-                let p = CalloutPlacement.center(bird: callout.point, birdRadius: callout.radius,
+                // Scene R3 `onBirdPoint` (the play view's own points, y down). It follows the bird for its 0.7 s life
+                // (juror R3 #12), easing over 0.08 s.
+                let p = CalloutPlacement.center(bird: hud.birdPoint ?? callout.point, birdRadius: callout.radius,
                                                 size: Self.size, canvas: info)
                 Group {
                     if hud.holdFrame {
@@ -523,6 +548,7 @@ struct PerfectCalloutView: View {
                 }
                 .frame(width: Self.size.width, height: Self.size.height)
                 .position(p)
+                .animation(.linear(duration: 0.08), value: p)
             }
         }
         .frame(width: info.size.width, height: info.size.height, alignment: .topLeading)
@@ -617,7 +643,7 @@ struct HintBubble: View {
                 }
                 .padding(.horizontal, 18)
                 .padding(.vertical, 12)
-                .background(Capsule().fill(SwoopTheme.surface.opacity(0.62)))
+                .background(Capsule().fill(Color(swoopHex: Contrast.scrim).opacity(Contrast.surfaceAlpha)))
                 .swoopLegible()
                 .id(hint)
                 .transition(.scale(scale: 0.9).combined(with: .opacity))
@@ -628,68 +654,176 @@ struct HintBubble: View {
     }
 }
 
-/// The middle of the far half: 3-2-1 (or "Ready" / "Go"), the countdown line, and "Ready" after a resume.
+/// The middle of the far half: 3-2-1 (or "Ready" / "Go"), the countdown line, "Ready" after a resume, and the caught
+/// line. R4 P0-3: every word here sits on a navy `#0B2236` disc / pill at 0.62 (4.5 : 1 for foam over the sun's core,
+/// `Contrast`), in foam, with the legibility shadow.
 struct CenterStage: View {
     @ObservedObject var hud: HUDState
     let touch: Bool
     let compact: Bool
     let reduceMotion: Bool
-    /// A scored Daily's banner above the numeral: "Daily Flight #298" / "One scored try. Everyone flies this sea."
+    /// A scored Daily's banner above the numeral: "Daily Flight #1" / "One scored try. Everyone flies this sea."
     var dailyTitle: String? = nil
+    /// The Ready hold's length (2.8 s after a cover reopen).
+    var readyTotal: Double = GameController.readyHold
+
+    /// "Ready" / "Go" at 0.85 × the numeral (UX R3 P2-4, juror 13).
+    static let wordScale: CGFloat = 0.85
+    /// The disc behind the numeral / ring.
+    static func discSize(_ c: Bool) -> CGFloat { c ? 132 : 156 }
 
     var body: some View {
         ZStack {
             if let n = hud.countdown {
-                VStack(spacing: 4) {
-                    if let dailyTitle {
-                        VStack(spacing: 2) {
-                            Text(dailyTitle)
-                                .font(SwoopType.headline(compact))
-                                .foregroundStyle(SwoopTheme.foam)
-                            Text("One scored try. Everyone flies this sea.")
-                                .font(SwoopType.caption(compact))
-                                .foregroundStyle(SwoopTheme.mist)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: SwoopTheme.tileRadius(compact), style: .continuous)
-                            .fill(SwoopTheme.surface.opacity(0.8)))
-                        .padding(.bottom, 6)
-                    }
+                VStack(spacing: 8) {
+                    if let dailyTitle { dailyBanner(dailyTitle) }
                     Text("\(n)")
                         .font(SwoopType.countdown(compact))
                         .foregroundStyle(SwoopTheme.foam)
-                        .shadow(color: SwoopTheme.ink.opacity(0.6), radius: 8, y: 2)
+                        .shadow(color: SwoopTheme.shadowBase.opacity(0.45), radius: 6, y: 1)
                         .id(n)
-                        .transition(reduceMotion ? AnyTransition.opacity : AnyTransition.scale(scale: 1.3).combined(with: .opacity))
+                        .transition(reduceMotion ? AnyTransition.opacity
+                                    : AnyTransition.scale(scale: 1.3).combined(with: .opacity))
+                        .frame(width: Self.discSize(compact), height: Self.discSize(compact))
+                        .background(Circle().fill(Color(swoopHex: Contrast.scrim).opacity(Contrast.scrimAlpha)))
                     countdownLine
                 }
             } else if let word = hud.countdownWord {
-                VStack(spacing: 4) {
+                VStack(spacing: 8) {
                     Text(word)
-                        .font(SwoopType.title(compact))
+                        .font(SwoopType.countdown(compact))
+                        .scaleEffect(Self.wordScale)
                         .foregroundStyle(SwoopTheme.foam)
-                        .shadow(color: SwoopTheme.ink.opacity(0.6), radius: 8, y: 2)
+                        .shadow(color: SwoopTheme.shadowBase.opacity(0.45), radius: 6, y: 1)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
                         .id(word)
-                        .transition(.opacity)
-                    countdownLine
+                        .transition(reduceMotion ? AnyTransition.opacity
+                                    : AnyTransition.scale(scale: 0.6).combined(with: .opacity))
+                        .frame(width: Self.discSize(compact) * 1.5, height: Self.discSize(compact))
+                        .background(Capsule().fill(Color(swoopHex: Contrast.scrim).opacity(Contrast.scrimAlpha)))
+                    // "Go" says it alone: no "hold steady" under it.
+                    if word != "Go" { countdownLine }
                 }
             } else if let ready = hud.ready {
-                ReadyRing(remaining: ready, total: GameController.readyHold, compact: compact)
+                ReadyRing(remaining: ready, total: readyTotal, compact: compact)
+            } else if hud.caught {
+                // The player's R3 note: say what happened before the card.
+                linePill("The storm caught you")
+                    .transition(.opacity)
             }
         }
         .animation(SwoopTheme.pop(reduceMotion), value: hud.countdown)
         .animation(SwoopTheme.pop(reduceMotion), value: hud.countdownWord)
+        .animation(.easeOut(duration: 0.3), value: hud.caught)
+    }
+
+    private func dailyBanner(_ title: String) -> some View {
+        VStack(spacing: 2) {
+            Text(title)
+                .font(SwoopType.headline(compact))
+                .foregroundStyle(SwoopTheme.foam)
+                .lineLimit(1)
+            Text("One scored try. Everyone flies this sea.")
+                .font(SwoopType.caption(compact))
+                .foregroundStyle(SwoopTheme.foam)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: SwoopTheme.tileRadius(compact), style: .continuous)
+            .fill(Color(swoopHex: Contrast.scrim).opacity(Contrast.surfaceAlpha)))
     }
 
     private var countdownLine: some View {
-        Text(AppRules.countdownLine(touch: touch, flat: hud.flatHold))
+        linePill(AppRules.countdownLine(touch: touch, flat: hud.flatHold, nudge: hud.openNudge),
+                 highlight: hud.flatHold || hud.openNudge)
+    }
+
+    private func linePill(_ text: String, highlight: Bool = false) -> some View {
+        Text(text)
             .font(SwoopType.body(compact))
-            .foregroundStyle(hud.flatHold ? SwoopTheme.goldLight : SwoopTheme.foam)
+            .foregroundStyle(highlight ? SwoopTheme.goldLight : SwoopTheme.foam)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(Color(swoopHex: Contrast.scrim).opacity(Contrast.scrimAlpha)))
             .swoopLegible()
     }
 }
 
+/// The hint pill (UX-A5). On a fold the hint keeps its place at 62 % of the bird page; on a phone (R4 P1-12, UX R3
+/// P1-8) it rides 110 pt above the bird, flipping below it under the HUD, so the bird is never under the words.
+struct HintStage: View {
+    @ObservedObject var hud: HUDState
+    let touch: Bool
+    let info: AppCanvas
+    let fixed: CGRect
+
+    static let size = CGSize(width: 320, height: 56)
+
+    var body: some View {
+        let center: CGPoint = {
+            if info.hasFold { return CGPoint(x: fixed.midX, y: fixed.midY) }
+            guard let bird = hud.birdPoint else { return CGPoint(x: fixed.midX, y: fixed.midY) }
+            return HintPlacement.center(bird: bird, size: CGSize(width: min(Self.size.width, info.birdPage.width),
+                                                                height: Self.size.height), canvas: info)
+        }()
+        HintBubble(hint: hud.hint, done: hud.hintDone, touch: touch, info: info)
+            .frame(width: min(fixed.width, Self.size.width + 80), height: Self.size.height)
+            .position(center)
+            .animation(.easeOut(duration: 0.4), value: center)
+            .frame(width: info.size.width, height: info.size.height, alignment: .topLeading)
+    }
+}
+
+/// "Splash" (· "×4 lost") at the bird for 0.9 s (R4 P1-9): slate on a navy pill, drifting down and fading.
+struct SplashMarkView: View {
+    @ObservedObject var hud: HUDState
+    let info: AppCanvas
+    let reduceMotion: Bool
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if let mark = hud.splashMark {
+                let p = SplashPlacement.center(bird: mark.point, canvas: info)
+                SplashMarkText(text: mark.text, compact: info.isCompact, reduceMotion: reduceMotion,
+                               hold: hud.holdFrame)
+                    .id(mark.serial)
+                    .position(p)
+            }
+        }
+        .frame(width: info.size.width, height: info.size.height, alignment: .topLeading)
+    }
+}
+
+struct SplashMarkText: View {
+    let text: String
+    let compact: Bool
+    let reduceMotion: Bool
+    var hold: Bool = false
+
+    @State private var gone = false
+
+    var body: some View {
+        Text(text)
+            .font(SwoopType.headline(compact))
+            .foregroundStyle(Color(swoopHex: 0xC9D3DE))
+            .lineLimit(1)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(Color(swoopHex: Contrast.scrim).opacity(0.7)))
+            .offset(y: gone && !reduceMotion ? 14 : 0)
+            .opacity(gone ? 0 : 1)
+            .onAppear {
+                guard !hold else { return }
+                withAnimation(.easeIn(duration: 0.35).delay(0.5)) { gone = true }
+            }
+            .accessibilityHidden(true)
+    }
+}
 /// Toasts and the lighthouse card: the far page, top edge at 60 % height, over the sea (UX §3); on `surface` at 80 %.
 struct ToastStage: View {
     @ObservedObject var hud: HUDState
@@ -735,9 +869,15 @@ struct ReadyRing: View {
                     .foregroundStyle(SwoopTheme.foam)
             }
             .frame(width: 120, height: 120)
+            .background(Circle().fill(Color(swoopHex: Contrast.scrim).opacity(Contrast.scrimAlpha))
+                .frame(width: 152, height: 152))
             Text("Spread your wings")
                 .font(SwoopType.body(compact))
-                .foregroundStyle(SwoopTheme.mist)
+                .foregroundStyle(SwoopTheme.foam)
+                .lineLimit(1)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(Color(swoopHex: Contrast.scrim).opacity(Contrast.scrimAlpha)))
         }
         .swoopLegible()
     }
@@ -803,25 +943,34 @@ struct ToastPill: View {
     }
 }
 
-// MARK: - The iPhone wing (ART A13, UX §10)
+// MARK: - The iPhone wing (ART A13, UX §10; R4 P1-12)
 
-/// Touch feedback: a 44 pt wing glyph in the bird page's lower outer corner that folds with the tuck, and a soft
-/// wing-shaped vignette from both side edges (`#04121F` at 0.08 × tuck, 90 pt deep): the flat phone "closes" like a Duo.
+/// Touch feedback: the bird mark, 56 pt, bottom-centre of the bird page (off the left thumb), folding with the tuck and
+/// charging from foam at 0.35 α (spread) to gold `#F7C75B` at 0.9 α (full tuck), with a 1 pt `#10233A` outline so it
+/// reads over the foam line; plus the soft wing-shaped vignette from both side edges (`#04121F` at 0.08 × tuck).
 struct TouchWingFeedback: View {
     @ObservedObject var controller: GameController
     let info: AppCanvas
     let reduceMotion: Bool
 
-    static let glyphSize: CGFloat = 44
+    static let glyphSize: CGFloat = 56
     static let vignetteDepth: CGFloat = 90
     static let vignetteAlpha: Double = 0.08
+
+    /// Where the glyph sits: the bird page's bottom centre, 40 pt up. Pure; tested.
+    nonisolated static func glyphCenter(birdPage: CGRect, height: CGFloat) -> CGPoint {
+        CGPoint(x: birdPage.midX, y: height - 40)
+    }
+
+    /// The glyph's alpha with the tuck: 0.35 → 0.9. Pure; tested.
+    nonisolated static func glyphAlpha(tuck: Double) -> Double {
+        0.35 + 0.55 * min(max(tuck.isFinite ? tuck : 0, 0), 1)
+    }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { _ in
             let u = controller.touchTuck(now: CACurrentMediaTime())
-            let page = info.birdPage
-            let corner = CGPoint(x: info.mirrored ? page.maxX - Self.glyphSize / 2 : page.minX + Self.glyphSize / 2,
-                                 y: info.bottom - Self.glyphSize / 2)
+            let center = Self.glyphCenter(birdPage: info.birdPage, height: info.size.height)
             ZStack(alignment: .topLeading) {
                 HStack(spacing: 0) {
                     LinearGradient(colors: [SwoopTheme.shadowBase.opacity(Self.vignetteAlpha * u), .clear],
@@ -833,37 +982,38 @@ struct TouchWingFeedback: View {
                         .frame(width: Self.vignetteDepth)
                 }
                 .frame(width: info.size.width, height: info.size.height)
-                WingGlyph(tuck: u)
-                    .stroke(SwoopTheme.foam.opacity(0.7), style: StrokeStyle(lineWidth: 2, lineCap: .round,
-                                                                             lineJoin: .round))
-                    .frame(width: Self.glyphSize, height: Self.glyphSize * 0.6)
-                    .position(corner)
+                ZStack {
+                    DartGlyph(tuck: u)
+                        .stroke(Color(swoopHex: 0x10233A).opacity(0.4), lineWidth: 2)
+                    DartGlyph(tuck: u)
+                        .fill(u > 0.5 ? SwoopTheme.gold : SwoopTheme.foam)
+                        .opacity(Self.glyphAlpha(tuck: u))
+                }
+                .frame(width: Self.glyphSize, height: Self.glyphSize * 0.6)
+                .position(center)
             }
         }
         .accessibilityHidden(true)
     }
 }
 
-/// Two wings in a V that fold toward the body as `tuck` → 1 (2 pt rounded strokes, no fill).
-struct WingGlyph: Shape {
+/// The bird mark folding with `tuck`: the wings sweep in toward the body and the M deepens (0 spread … 1 a dart).
+struct DartGlyph: Shape {
     var tuck: Double
 
+    var animatableData: Double {
+        get { tuck }
+        set { tuck = newValue }
+    }
+
     func path(in rect: CGRect) -> Path {
-        var p = Path()
-        let u = CGFloat(min(max(tuck, 0), 1))
-        let cx = rect.midX
-        let body = CGPoint(x: cx, y: rect.minY + rect.height * 0.7)
-        let reach = rect.width * (0.5 - 0.3 * u)
-        let lift = rect.height * (0.65 - 0.55 * u)
-        let left = CGPoint(x: cx - reach, y: body.y - lift)
-        let right = CGPoint(x: cx + reach, y: body.y - lift)
-        p.move(to: left)
-        p.addQuadCurve(to: body, control: CGPoint(x: cx - reach * 0.4, y: body.y - lift * 0.2))
-        p.addQuadCurve(to: right, control: CGPoint(x: cx + reach * 0.4, y: body.y - lift * 0.2))
-        return p
+        let u = CGFloat(min(max(tuck.isFinite ? tuck : 0, 0), 1))
+        let w = rect.width * (1 - 0.45 * u)
+        let h = rect.height * (1 + 0.5 * u)
+        let box = CGRect(x: rect.midX - w / 2, y: rect.midY - h / 2, width: w, height: h)
+        return BirdGlyph().path(in: box)
     }
 }
-
 /// The soft 0.2 s ripple that marks a touch on the first 3 runs (56 pt, foam).
 struct RippleMark: View {
     let serial: Int
@@ -903,7 +1053,7 @@ struct PauseCard: View {
             Text("Paused")
                 .font(SwoopType.title(compact))
                 .foregroundStyle(SwoopTheme.foam)
-            Text(scoredDaily ? "Leaving ends today's try." : "\(ShareText.km(meters)) · the storm waits.")
+            Text(scoredDaily ? "Leaving ends today's try." : "\(ShareText.distance(meters)) · the storm waits.")
                 .font(SwoopType.body(compact))
                 .foregroundStyle(SwoopTheme.mist)
                 .multilineTextAlignment(.center)
@@ -960,7 +1110,7 @@ struct ClosingCard: View {
                 .foregroundStyle(SwoopTheme.foam)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Paused at \(ShareText.km(meters)).")
+            Text("Paused at \(ShareText.distance(meters)).")
                 .font(SwoopType.body(compact))
                 .foregroundStyle(SwoopTheme.mist)
                 .multilineTextAlignment(.center)

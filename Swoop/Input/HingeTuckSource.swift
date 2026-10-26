@@ -4,17 +4,29 @@ import QuartzCore
 /// Every number of the hinge → tuck mapping (GAME-DESIGN §3), in one place and outside the main actor, so pure code
 /// and tests can read it.
 enum HingeTuckTuning {
-    /// Degrees from "open" to "fully tucked" (θ_full = θ_open − 36°).
+    /// The longest stroke, in degrees from "open" to "fully tucked" (θ_full = θ_open − stroke).
     static let stroke = 36.0
+    /// Round 4 (REVIEW-3-duo P1-1): a low rest gets a shorter stroke, so full tuck never asks the hand to fold past
+    /// ~100° (the closing pause lives at 90°): stroke = clamp(open − 100, 30, 36).
+    static let strokeMin = 30.0
+    static let strokeFloor = 100.0
+
+    /// The stroke for an open angle: clamp(open − 100, 30, 36).
+    static func stroke(forOpen open: Double) -> Double {
+        guard open.isFinite else { return stroke }
+        return FeelMath.clamp(open - strokeFloor, strokeMin, stroke)
+    }
     /// Initial open angle before any calibration.
     static let initialOpen = 160.0
     /// The open angle is always kept inside this range.
-    static let openMin = 145.0
+    /// Round 4 (REVIEW-3-duo P1-1): 132° (was 145°), so a player who reads at 130–140° flies with spread wings.
+    static let openMin = 132.0
     static let openMax = 172.0
     /// At or above this the phone is (nearly) flat: wings fully spread.
     static let flatAngle = 175.0
     /// Only angles inside this band teach the calibration (flat and deep folds never do).
-    static let calibrationLow = 140.0
+    /// Round 4: 125° (was 140°), so a low rest is learned (and snapped) at all.
+    static let calibrationLow = 125.0
     static let calibrationHigh = 178.0
     /// Time constant (s) of the calibration average, downward (the player relaxing a little below "open").
     static let calibrationTau = 4.0
@@ -57,13 +69,19 @@ enum HingeTuckTuning {
     static let tuckLogInterval = 0.25
     /// `SWOOP-T calib` lines: when the open angle moved more than this since the last line.
     static let calibrationLogStep = 2.0
+    /// Round 4 (REVIEW-3-duo P1-5, hinge wear): the tuck may rise no faster than 0 → 1 in this long, so a slam above
+    /// ~240°/s gains nothing over a firm squeeze. Opening is never limited.
+    static let fullTuckMinTime = 0.15
+    /// Round 4 (P1-2): the end-stop detent fires when the tuck first reaches this, and re-arms below `endStopRearm`.
+    static let endStopTuck = 0.995
+    static let endStopRearm = 0.8
 
     /// Tuck for a hinge angle: smoothstep((open − θ) / 36°). 0 at and above `open` (and always at ≥ 175°, flat),
     /// 1 at and below open − 36°. NaN → 0.
     static func tuck(forAngle angle: Double, open: Double) -> Double {
         guard angle.isFinite, open.isFinite else { return 0 }
         if angle >= flatAngle { return 0 }
-        return FeelMath.smoothstep((open - angle) / stroke)
+        return FeelMath.smoothstep((open - angle) / stroke(forOpen: open))
     }
 }
 
@@ -92,13 +110,13 @@ final class HingeTuckSource: TuckSource {
     private var predictor = HingePredictor()
     private var smoother = OneEuroSmoother(minCutoff: 2.0, beta: 0.12, dCutoff: 1.5)
     private var stabiliser = HoldStabiliser()
-    private var latch = FeelClosingLatch()
+    private var gate = FeelClosingGate()
 
     /// True once any real hinge sample has arrived (never goes back to false).
     private(set) var hasHinge = false
     /// The display-rate filtered hinge angle (180 = flat); nil before any sample.
     private(set) var angle: Double?
-    /// The auto-calibrated "wings spread" angle (150…172).
+    /// The auto-calibrated "wings spread" angle (132…172).
     private(set) var openAngle: Double = HingeTuckTuning.initialOpen
     /// The last raw reading and when it arrived (diagnostics).
     private(set) var lastRawAngle: Double?
@@ -111,6 +129,8 @@ final class HingeTuckSource: TuckSource {
     private var flatSince: TimeInterval?
     private var leftFlatAt: TimeInterval?
     private var lastTuckLog: TimeInterval = -Double.infinity
+    private var endStopArmed = true
+    private var endStopAt: TimeInterval?
     private var loggedOpen: Double = HingeTuckTuning.initialOpen
     private let logs: Bool
 
@@ -119,9 +139,29 @@ final class HingeTuckSource: TuckSource {
         self.logs = logs
     }
 
-    /// True while the phone is closing: the filtered angle fell below 95° (pause), until it is back above 102°.
-    /// Updated on every report, so it works while the run is paused and nobody asks for the tuck.
-    var isClosing: Bool { hasHinge && latch.isClosing }
+    /// True while the phone is closing (Round 4, REVIEW-3-duo P1-2): the smoothed angle stayed under 90° for 0.2 s, or
+    /// went under 75° at all; it clears above 98°. An excited squeeze that overshoots a moment no longer pauses a dive.
+    /// While frames run it judges the One-Euro angle; while paused (no frames) the tracked reports, so reopening works.
+    /// As of the latest frame or report; `closing(at:)` judges the dwell at any time (use it while paused).
+    var isClosing: Bool {
+        let latest = max(lastQuery ?? -Double.infinity, lastSampleTime ?? -Double.infinity)
+        return hasHinge && gate.isClosing(at: latest)
+    }
+
+    /// `isClosing` judged at `time` (the 0.2 s dwell matures with time even when no frame or report arrives).
+    func closing(at time: TimeInterval) -> Bool {
+        hasHinge && gate.isClosing(at: time)
+    }
+
+    /// Round 4 (P1-2): true once each time the tuck reaches full in a stroke (re-armed below 0.8). The App plays the
+    /// end-stop detent on it: `if hinge.consumeEndStop() { feedback.cue(.endStop) }`. Reading it clears it, and a
+    /// stop older than 0.1 s (one that happened on Home or Results, where nobody asked) is dropped.
+    func consumeEndStop() -> Bool {
+        guard let at = endStopAt else { return false }
+        endStopAt = nil
+        let latest = lastQuery ?? at
+        return latest - at <= 0.1
+    }
 
     // MARK: Flat pose (UX-SPEC §9: "judged on the last reading plus a timer, never by waiting for an event")
 
@@ -171,12 +211,19 @@ final class HingeTuckSource: TuckSource {
         predictor.sample(raw, at: stamp)
         stabiliser.sample(raw, at: stamp)
         let tracked = predictor.estimate ?? raw
-        latch.update(angle: tracked)
         updateFlat(raw: raw, at: stamp)
         // Keep `angle` fresh while no frame asks (menus, the pause card); frames take over again at once.
         let lastFrame = lastQuery ?? -Double.infinity
-        if angle == nil || stamp - lastFrame > 0.1 {
+        let framesLive = stamp - lastFrame <= 0.1
+        if angle == nil || !framesLive {
             angle = tracked
+        }
+        // The closing gate: frames judge the smoothed angle; without frames the reports do. A slam under 75° always
+        // closes at once.
+        if framesLive {
+            gate.instant(angle: tracked, at: stamp)
+        } else {
+            gate.update(angle: tracked, at: stamp)
         }
     }
 
@@ -185,7 +232,11 @@ final class HingeTuckSource: TuckSource {
         // Asked twice for the same frame (or an older one): same answer, and the filters don't advance.
         if let previous = lastQuery, time <= previous { return lastTuck }
         var dt: Double = 0
-        if let previous = lastQuery { dt = FeelMath.clamp(time - previous, 0, 0.1) }
+        var limitRise = false
+        if let previous = lastQuery {
+            dt = FeelMath.clamp(time - previous, 0, 0.1)
+            limitRise = true
+        }
         lastQuery = time
 
         let predicted = predictor.angle(at: time)
@@ -195,9 +246,20 @@ final class HingeTuckSource: TuckSource {
         let restCutoff = T.nearOpenRestCutoff + (T.deepRestCutoff - T.nearOpenRestCutoff) * lighten
         let filtered = stabiliser.filter(smoothed, at: time, restCutoff: restCutoff)
         angle = filtered
+        gate.update(angle: smoothed, at: time)
 
-        let tuck = T.tuck(forAngle: filtered, open: openAngle)
-        calibrate(angle: filtered, tuck: tuck, time: time, dt: dt)
+        let geometric = T.tuck(forAngle: filtered, open: openAngle)
+        calibrate(angle: filtered, tuck: geometric, time: time, dt: dt)
+        var tuck = geometric
+        if limitRise { tuck = min(tuck, lastTuck + dt / T.fullTuckMinTime) }
+        if tuck >= T.endStopTuck {
+            if endStopArmed {
+                endStopArmed = false
+                endStopAt = time
+            }
+        } else if tuck < T.endStopRearm {
+            endStopArmed = true
+        }
         lastTuck = tuck
         log(tuck: tuck, angle: filtered, time: time)
         return tuck
@@ -247,6 +309,14 @@ final class HingeTuckSource: TuckSource {
     func isStill(at time: TimeInterval = CACurrentMediaTime()) -> Bool {
         guard hasHinge, time.isFinite else { return false }
         return stabiliser.spread(over: T.snapStillWindow, at: time) <= T.snapStillSpread
+    }
+
+    /// Round 4 (REVIEW-3-duo P1-1): the hand is at rest under the 132° floor (still, filtered angle < `openMin`). The
+    /// countdown shows "Open a little wider" and holds while this is true (App).
+    func restIsBelowFloor(at time: TimeInterval = CACurrentMediaTime()) -> Bool {
+        guard isStill(at: time) else { return false }
+        let rest = snapAngle(at: time)
+        return rest.isFinite && rest < T.openMin
     }
 
     /// The filtered angle for the snap: the display-rate angle while frames are asking for the tuck (the countdown),

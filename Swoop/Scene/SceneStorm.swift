@@ -1,20 +1,59 @@
 import SpriteKit
 import UIKit
 
+/// Where the storm stands on screen, from the gap: one pure mapping shared with the HUD so the lead meter and the
+/// picture tell the same story (ROUND-4 P0-2). Nonisolated, unit-tested.
+enum SceneStormMap {
+    /// The lead meter's fill (ROUND-4 P1-7): sqrt(gap / (leadMeterScale × fullLead)), 0…1. The App's meter should use
+    /// this same function.
+    static func meterFill(gap: Double) -> CGFloat {
+        let full = max(Tuning.leadMeterScale * Tuning.fullLead, 1)
+        return CGFloat(min(max(gap / full, 0), 1).squareRoot())
+    }
+
+    /// The meter fill at which `stormClose` fires (lead < 0.15 → ≈ 0.17).
+    static var closeFill: CGFloat {
+        meterFill(gap: Tuning.stormCloseLead * Tuning.fullLead)
+    }
+
+    /// The cloud wall's front edge (u-space px from the behind edge), monotonic in the fill:
+    /// - a hint at the left edge (`hintEdge`) at a full lead;
+    /// - 40 % of the bird page at the storm-close fill;
+    /// - right up behind the bird (`anchorU − 36`) as the gap closes.
+    static func edgeU(meterFill f: CGFloat, birdPageWidth: CGFloat, anchorU: CGFloat) -> CGFloat {
+        let fill = min(max(f, 0), 1)
+        let hint = SceneLook.stormHintEdge
+        let close = max(SceneLook.stormCloseCover * birdPageWidth, hint + 1)
+        let contact = max(anchorU - 36, close + 1)
+        let fc = max(closeFill, 0.01)
+        if fill >= fc {
+            return hint + (close - hint) * (1 - fill) / max(1 - fc, 0.01)
+        }
+        return close + (contact - close) * (1 - fill / fc)
+    }
+
+    /// Closeness 0 (far) … 1 (on the bird), from the same fill: it scales the wall's height, darkness and rain.
+    static func closeness(meterFill f: CGFloat) -> CGFloat {
+        min(max(1 - f / SceneLook.stormFarFill, 0), 1)
+    }
+}
+
 /// The storm front chasing the bird (GAME-DESIGN §6, ART-DIRECTION §3), in canvas u-space (u = 0 at the behind edge).
 ///
-/// R3 (ART-S6/S7):
-/// - **The wall** is a shelf cloud, not stacked tyres: an anvil whose front lobes vary in size (0.6–1.4×, never
-///   alternating). It is one static vector path, only moved and scaled.
-/// - **Its fill** has three value bands: a dark top shelf, the body, and a rain-curtain base that feathers into the
-///   far sea over 140 pt.
-/// - **A crisp 3 pt sunlit rim** runs along the anvil's upper edge.
-/// - **It sits behind the far sea**, so its base is never a hard rectangle.
-/// - **The sky darkens before the sea:** a sky shade in the storm-top colour reaches 0.45 w past the edge (α 0.10 + 0.40
-///   c, capped at 0.5 at the bird).
-/// - **Under the wall:** soft-ended rain sheets, slanting rain, and a grey wash over the sea.
-/// - **Lightning** comes more often and stronger as the gap closes; Reduce Motion gives a cloud glow only.
-/// - **Caught:** the world goes 30 % grey (the far page takes only 60 % of it), and the rain covers both pages.
+/// R4 (REVIEW-3: "a stack of pancakes under a flat disc"; ROUND-4 P0-2): a weather wall.
+/// - **The silhouette** is a shelf cloud built in three layers, all inside one node that is only moved and scaled:
+///   - a lobed core silhouette (one static path);
+///   - a back layer of lighter billows;
+///   - a front layer of soft-rimmed lobes (radii 0.6–1.4×, never alternating) that roll slowly, lit from the sun
+///     ahead and darker below.
+/// - **The anvil** overhangs about 1.4× the column's depth with a tapered lip (no disc). Its crisp 3 pt sunlit rim
+///   runs along the top only.
+/// - **Behind the far sea:** the core feathers into a rain-curtain base, so there is never a hard rectangle.
+/// - **It visibly chases:** the edge comes from `SceneStormMap.edgeU`, the same fill the lead meter shows.
+/// - **The sky darkens first:** a sky shade in the storm-top colour, capped at 0.5 at the bird.
+/// - **Under the wall:** soft rain sheets, slanting rain, and a grey wash over the sea.
+/// - **Lightning:** ≤ 120 ms, ≤ 2 a second; Reduce Motion gives a cloud glow only.
+/// - **Caught:** a 30 % grey wash (the far page takes 60 % of it), and rain over both pages.
 @MainActor
 final class SceneStorm {
     /// In the backdrop, between the sky and the far sea (the scene adds it at z −16).
@@ -27,15 +66,25 @@ final class SceneStorm {
     /// Thermal / Low Power: the share of the rain drops drawn (UX-D5).
     var rainScale: CGFloat = 1
 
-    /// The anvil path's nominal height (base y = 0 … top y = this); the node is scaled to the wanted height.
+    /// The wall's nominal height (base y = 0 … anvil top ≈ this); the node is scaled to the wanted height.
     static let anvilHeight: CGFloat = 640
-    /// The front lobes: (x, y) of each lobe's end and its bulge (× 38 pt), varied, never alternating.
-    static let lobes: [(CGFloat, CGFloat, CGFloat)] = [(64, 490, 1.0), (18, 430, 0.7), (58, 352, 1.3), (30, 300, 0.6),
-                                                       (70, 214, 1.4), (12, 150, 0.8), (46, 70, 1.1), (8, 0, 0.9)]
+    /// The lobes' nominal radius (pt) before their factors.
+    static let lobeRadius: CGFloat = 64
+    /// The front lobes: (centre x as a fraction of their radius, centre y, radius factor), top to bottom.
+    static let frontLobes: [(CGFloat, CGFloat, CGFloat)] = [(-0.25, 470, 1.3), (-0.15, 405, 0.7), (-0.25, 340, 1.1),
+                                                            (-0.10, 282, 0.6), (-0.30, 212, 1.4), (-0.15, 140, 0.9),
+                                                            (-0.20, 72, 1.0), (-0.10, 14, 0.8)]
+    /// The back billows (lighter, behind the front lobes): (centre x, centre y, radius factor).
+    static let backLobes: [(CGFloat, CGFloat, CGFloat)] = [(-95, 505, 1.2), (-120, 400, 1.35), (-85, 300, 1.1),
+                                                           (-130, 190, 1.4), (-90, 90, 1.15)]
 
-    private let skyShade: SKSpriteNode
-    private let wall: SKShapeNode
+    private let wallRoot: SKNode
+    private let core: SKShapeNode
+    private let anvil: SKShapeNode
     private let rim: SKShapeNode
+    private var front: [SKSpriteNode] = []
+    private var back: [SKSpriteNode] = []
+    private let skyShade: SKSpriteNode
     private let wallGlow: SKSpriteNode
     private let bolt: SKShapeNode
     private let boltHalo: SKShapeNode
@@ -68,9 +117,11 @@ final class SceneStorm {
         backRoot = SKNode()
         shadeRoot = SKNode()
         frontRoot = SKNode()
-        skyShade = SKSpriteNode(color: .clear, size: CGSize(width: 600, height: 670))
-        wall = SKShapeNode()
+        wallRoot = SKNode()
+        core = SKShapeNode()
+        anvil = SKShapeNode()
         rim = SKShapeNode()
+        skyShade = SKSpriteNode(color: .clear, size: CGSize(width: 600, height: 670))
         wallGlow = SKSpriteNode(texture: SceneTextures.glow)
         bolt = SKShapeNode()
         boltHalo = SKShapeNode()
@@ -80,17 +131,47 @@ final class SceneStorm {
 
         skyShade.anchorPoint = .zero
         skyShade.zPosition = 0.1
-        wall.path = SceneStorm.anvilPath()
-        wall.lineWidth = 0
-        wall.strokeColor = .clear
-        wall.fillColor = .white
-        wall.isAntialiased = true
-        wall.zPosition = 0.5
+        backRoot.addChild(skyShade)
+        wallRoot.zPosition = 0.5
+        backRoot.addChild(wallRoot)
+        core.path = SceneStorm.corePath()
+        anvil.path = SceneStorm.anvilPath()
         rim.path = SceneStorm.rimPath()
+        for (n, z) in [(core, CGFloat(0)), (anvil, CGFloat(0.3)), (rim, CGFloat(0.35))] {
+            n.zPosition = z
+            n.isAntialiased = true
+            wallRoot.addChild(n)
+        }
+        core.lineWidth = 0
+        core.strokeColor = .clear
+        core.fillColor = .white
+        anvil.lineWidth = 0
+        anvil.strokeColor = .clear
+        anvil.fillColor = .white
         rim.fillColor = .clear
         rim.lineCap = .round
         rim.lineJoin = .round
-        rim.zPosition = 0.6
+        let lobe = SceneTextures.stormLobe
+        for spec in SceneStorm.backLobes {
+            let s = SKSpriteNode(texture: lobe)
+            let d = SceneStorm.lobeRadius * spec.2 * 2
+            s.size = CGSize(width: d, height: d)
+            s.position = CGPoint(x: spec.0, y: spec.1)
+            s.colorBlendFactor = 1
+            s.zPosition = 0.1
+            wallRoot.addChild(s)
+            back.append(s)
+        }
+        for spec in SceneStorm.frontLobes {
+            let s = SKSpriteNode(texture: lobe)
+            let r = SceneStorm.lobeRadius * spec.2
+            s.size = CGSize(width: r * 2, height: r * 2)
+            s.position = CGPoint(x: spec.0 * r, y: spec.1)
+            s.colorBlendFactor = 1
+            s.zPosition = 0.2
+            wallRoot.addChild(s)
+            front.append(s)
+        }
         wallGlow.blendMode = .add
         wallGlow.colorBlendFactor = 1
         wallGlow.color = UIColor(red: 0.78, green: 0.84, blue: 1.0, alpha: 1)
@@ -108,7 +189,7 @@ final class SceneStorm {
         bolt.strokeColor = UIColor(white: 1, alpha: 0.95)
         bolt.lineWidth = 2.4
         bolt.zPosition = 1.5
-        for n in [skyShade, wall, rim, wallGlow, boltHalo, bolt] as [SKNode] { backRoot.addChild(n) }
+        for n in [wallGlow, boltHalo, bolt] as [SKNode] { backRoot.addChild(n) }
 
         shade.anchorPoint = CGPoint(x: 1, y: 0)
         shade.zPosition = 0
@@ -151,57 +232,72 @@ final class SceneStorm {
         }
     }
 
-    // MARK: The anvil
+    // MARK: The wall's shapes (nominal: front lobes near x = 0, base y = 0, anvil top ≈ 640)
 
-    /// The cloud wall (front edge near x = 0, base y = 0): solid far to the left, an anvil top overhanging ahead, and a
-    /// shelf of varied lobes down to (and below) the horizon.
-    static func anvilPath() -> CGPath {
+    /// The core silhouette: solid far to the left, its front running through the front lobes' centres (so the lobes
+    /// always cover its edge), down below the horizon (the far sea covers that).
+    static func corePath() -> CGPath {
         let p = CGMutablePath()
         p.move(to: CGPoint(x: -4000, y: -300))
-        p.addLine(to: CGPoint(x: -4000, y: 640))
-        p.addLine(to: CGPoint(x: -320, y: 640))
-        addAnvilTop(p)
-        var prev = CGPoint(x: 42, y: 546)
-        for lobe in lobes {
-            let q = CGPoint(x: lobe.0, y: lobe.1)
-            let control = CGPoint(x: max(prev.x, q.x) + 38 * lobe.2, y: (prev.y + q.y) * 0.5)
-            p.addQuadCurve(to: q, control: control)
+        p.addLine(to: CGPoint(x: -4000, y: 520))
+        p.addLine(to: CGPoint(x: -60, y: 520))
+        var prev = CGPoint(x: -60, y: 520)
+        for spec in frontLobes {
+            let r = lobeRadius * spec.2
+            let q = CGPoint(x: spec.0 * r, y: spec.1)
+            p.addQuadCurve(to: q, control: CGPoint(x: min(prev.x, q.x) - 8, y: (prev.y + q.y) * 0.5))
             prev = q
         }
-        p.addLine(to: CGPoint(x: 8, y: -300))
+        p.addLine(to: CGPoint(x: prev.x, y: -300))
         p.closeSubpath()
         return p
     }
 
-    /// The sunlit rim: the anvil's upper edge only (the top shelf and its tip).
-    static func rimPath() -> CGPath {
+    /// The anvil: a broad shelf over the column whose lip tapers to a point about 1.4× the column's depth ahead.
+    static func anvilPath() -> CGPath {
         let p = CGMutablePath()
-        p.move(to: CGPoint(x: -320, y: 640))
-        p.addQuadCurve(to: CGPoint(x: 140, y: 612), control: CGPoint(x: -60, y: 664))
-        p.addQuadCurve(to: CGPoint(x: 172, y: 586), control: CGPoint(x: 178, y: 602))
+        p.move(to: CGPoint(x: -4000, y: 500))
+        p.addLine(to: CGPoint(x: -4000, y: 604))
+        p.addLine(to: CGPoint(x: -320, y: 616))
+        p.addQuadCurve(to: CGPoint(x: 250, y: 550), control: CGPoint(x: 40, y: 640))
+        p.addQuadCurve(to: CGPoint(x: -30, y: 498), control: CGPoint(x: 110, y: 518))
+        p.closeSubpath()
         return p
     }
 
-    private static func addAnvilTop(_ p: CGMutablePath) {
-        p.addQuadCurve(to: CGPoint(x: 140, y: 612), control: CGPoint(x: -60, y: 664))
-        p.addQuadCurve(to: CGPoint(x: 172, y: 586), control: CGPoint(x: 178, y: 602))
-        p.addQuadCurve(to: CGPoint(x: 42, y: 546), control: CGPoint(x: 112, y: 560))
+    /// The sunlit rim: the anvil's top edge only.
+    static func rimPath() -> CGPath {
+        let p = CGMutablePath()
+        p.move(to: CGPoint(x: -320, y: 616))
+        p.addQuadCurve(to: CGPoint(x: 250, y: 550), control: CGPoint(x: 40, y: 640))
+        return p
     }
 
     // MARK: Cosmetics
 
     func apply(palette p: ScenePalette, sky id: SkyID) {
-        // Over the path's box (y 664 … −300): the top shelf, the body, the rain-curtain base fading out over the last
-        // 140 pt above the horizon (y = 0 sits at 0.69).
         let top = ScenePaint.ui(p.stormTop)
         let body = ScenePaint.ui(p.stormBody)
         let rain = ScenePaint.ui(p.rain)
-        wall.fillTexture = SceneTextures.verticalGradient(
-            key: "anvil3-\(id.rawValue)",
-            colors: [top, top, body, body, rain.withAlphaComponent(0.35), rain.withAlphaComponent(0.2),
-                     rain.withAlphaComponent(0), rain.withAlphaComponent(0)],
-            locations: [0, 0.12, 0.30, 0.52, 0.62, 0.69, 0.76, 1])
+        let lit = p.stormBody.mixed(with: p.stormRim, 0.12)
+        // The core over its box (y 520 … −300): the body, darker underneath, a rain-curtain base fading out over the
+        // last 140 pt above the horizon (y = 0 sits at 0.63).
+        core.fillTexture = SceneTextures.verticalGradient(
+            key: "stormcore4-\(id.rawValue)",
+            colors: [body, top, top, rain.withAlphaComponent(0.35), rain.withAlphaComponent(0),
+                     rain.withAlphaComponent(0)],
+            locations: [0, 0.35, 0.46, 0.63, 0.72, 1])
+        // The anvil: lit on top, the body below.
+        anvil.fillTexture = SceneTextures.verticalGradient(
+            key: "stormanvil4-\(id.rawValue)", colors: [ScenePaint.ui(lit), body, top], locations: [0, 0.55, 1])
         rim.strokeColor = ScenePaint.ui(p.stormRim, alpha: 0.95)
+        // The lobes: lighter (sun-catching) near the top, the storm-top colour near the base.
+        let n = SceneStorm.frontLobes.count
+        for (i, s) in front.enumerated() {
+            let k = Double(i) / Double(max(n - 1, 1))
+            s.color = ScenePaint.ui(lit.mixed(with: p.stormTop, k))
+        }
+        for s in back { s.color = ScenePaint.ui(p.stormBody.mixed(with: p.stormRim, 0.06)) }
         skyShade.texture = SceneTextures.horizontalGradient(
             key: "skyshade-\(id.rawValue)", colors: [top, top.withAlphaComponent(0.7), top.withAlphaComponent(0)],
             locations: [0, 0.5, 1])
@@ -214,8 +310,6 @@ final class SceneStorm {
         shade.color = .white
         shade.colorBlendFactor = 0
         for s in sheets { s.color = rain }
-        // A neutral grey of the horizon's brightness; over the world at 30 % it reads as desaturated. The far page
-        // takes 60 % of it.
         let lum = ScenePaint.luminance(p.low)
         let grey = UIColor(white: CGFloat(lum), alpha: 1)
         calm.texture = SceneTextures.horizontalGradient(
@@ -241,7 +335,7 @@ final class SceneStorm {
 
     /// `edgeU`: the cloud edge (u-space). `closeness` 0 (far) … 1 (on the bird) scales the wall's height, darkness and
     /// rain. `lead` 0…1 (Core's lead meter). `caughtness` 0…1 eases in the caught ending. `birdU`: the bird's u, for
-    /// the sky shade's cap. `visibleTop`: the top of the visible rect (iPhones crop the canvas).
+    /// the sky shade's cap.
     func update(edgeU e: CGFloat, closeness: CGFloat, lead: CGFloat, caughtness: CGFloat, size: CGSize, minY: CGFloat,
                 maxY: CGFloat, horizonY: CGFloat, birdU: CGFloat, dt: CGFloat) {
         clock += Double(dt)
@@ -252,22 +346,37 @@ final class SceneStorm {
         canvas = size
         horizon = horizonY
 
-        // The wall: its base at the horizon (the far sea covers it), its height a fraction of the *visible* sky.
+        // The wall: its base at the horizon (the far sea covers it), its height a fraction of the *visible* sky, its
+        // front lobes' edge (≈ +0.6 lobe radius) at `e`.
         let baseY = horizonY - 10
         let heightFraction = SceneLook.stormHeightFar + (SceneLook.stormHeightNear - SceneLook.stormHeightFar) * c
         let wallH = max(heightFraction * (maxY - baseY), 80)
         let s = wallH / SceneStorm.anvilHeight
-        wall.position = CGPoint(x: e, y: baseY)
-        wall.setScale(s)
-        rim.position = wall.position
-        rim.setScale(s)
+        wallRoot.position = CGPoint(x: e - SceneStorm.lobeRadius * 0.6 * s, y: baseY)
+        wallRoot.setScale(s)
+        wallRoot.alpha = SceneLook.stormAlphaFar + (SceneLook.stormAlphaNear - SceneLook.stormAlphaFar) * c
         if rimScale <= 0 || abs(s / rimScale - 1) > 0.05 {
             rimScale = s
             rim.lineWidth = SceneLook.stormRimWidth / max(s, 0.05)
         }
-        wall.alpha = SceneLook.stormAlphaFar + (SceneLook.stormAlphaNear - SceneLook.stormAlphaFar) * c
         rim.alpha = 0.5 + 0.5 * c
         wallTop = baseY + wallH
+        // A slow roll on the lobes (≈ 4 pt/s): they churn in place rather than sit still like tyres.
+        if dt > 0 && !reduceMotion {
+            let ph = CGFloat(clock)
+            for (i, lobe) in front.enumerated() {
+                let spec = SceneStorm.frontLobes[i]
+                let r = SceneStorm.lobeRadius * spec.2
+                let fi = CGFloat(i)
+                lobe.position = CGPoint(x: spec.0 * r + 6 * sin(ph * 0.55 + fi * 1.7),
+                                        y: spec.1 + 6 * cos(ph * 0.45 + fi * 1.1))
+            }
+            for (i, lobe) in back.enumerated() {
+                let spec = SceneStorm.backLobes[i]
+                let fi = CGFloat(i)
+                lobe.position = CGPoint(x: spec.0 + 8 * sin(ph * 0.35 + fi * 2.1), y: spec.1 + 5 * cos(ph * 0.3 + fi))
+            }
+        }
 
         // The sky shade: the sky darkens before the sea does; never more than 0.5 at the bird.
         let reach = max(e + SceneLook.skyShadeReach * size.width, 10)
@@ -284,23 +393,23 @@ final class SceneStorm {
         shade.size = CGSize(width: 1800, height: size.height)
         shade.alpha = SceneLook.stormShadeFar + (SceneLook.stormShadeNear - SceneLook.stormShadeFar) * c
 
-        // Rain sheets hanging from the cloud's lower half down past the bottom of the screen.
+        // Rain sheets hanging from the cloud's base down past the bottom of the screen: constant under the wall.
         let sheetTop = baseY + wallH * 0.45
         let sheetLength = max(sheetTop - minY + 40, 40)
-        let sheetAlpha = (0.14 + 0.36 * c) * (1 + 0.4 * caughtness)
+        let sheetAlpha = (0.20 + 0.30 * c) * (1 + 0.4 * caughtness)
         for (i, sheet) in sheets.enumerated() {
             let fi = CGFloat(i)
-            sheet.position = CGPoint(x: e - 30 - fi * 120 * max(s, 0.5), y: sheetTop)
+            sheet.position = CGPoint(x: e - 20 - fi * 110 * max(s, 0.5), y: sheetTop)
             sheet.size = CGSize(width: 70 + 50 * s, height: sheetLength)
             let flicker = CGFloat(0.85 + 0.15 * sin(clock * (1.3 + 0.4 * Double(i)) + Double(i)))
             sheet.alpha = sheetAlpha * flicker
         }
 
-        // Rain: under the cloud, onto the left half once the storm is close, everywhere when caught.
+        // Rain: always under the cloud, onto the left half once the storm is close, everywhere when caught.
         let closeK = min(max(1 - self.lead / 0.2, 0), 1)
         var rainEdge = max(e + 50, closeK * size.width * 0.5)
         rainEdge += (size.width + 80 - rainEdge) * caughtness
-        let rainAlpha = (0.18 + 0.2 * c + 0.25 * closeK) * (1 - 0.3 * caughtness)
+        let rainAlpha = (0.24 + 0.18 * c + 0.22 * closeK) * (1 - 0.3 * caughtness)
         let raining = rainAlpha > 0.01 && rainEdge > -40
         let spawnTop = caughtness > 0.3 ? maxY + 160 : min(wallTop, maxY + 60)
         let spawnLow = min(spawnTop - 10, baseY + wallH * 0.5)

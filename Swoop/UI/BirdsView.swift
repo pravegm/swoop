@@ -63,13 +63,15 @@ struct BirdsView: View {
                             .frame(width: 130, height: 6)
                             .offset(x: -70, y: 6)
                             .opacity(locked ? 0 : 1)
-                        // ART A8: 1.6 × the old preview, at tuck 0.3.
-                        BirdSideView(bird: bird, tuck: tuck, flap: flap, silhouette: locked, fill: 0.8)
+                        // ART A8 at tuck 0.3, capped so the spread wing never clips (juror R3 #19), with a pale key
+                        // halo so dark birds (the Storm Petrel) read on any sky.
+                        BirdSideView(bird: bird, tuck: tuck, flap: flap, silhouette: locked, fill: 0.68)
+                            .shadow(color: Color(swoopHex: 0xDDE6FF).opacity(locked ? 0 : 0.55), radius: 10)
                     }
                     .offset(y: reduceMotion ? 0 : CGFloat(5 * sin(t * 1.7)))
                 }
             }
-            .frame(height: min(c ? 110 : 150, Self.tileBirdHeight * Self.previewCap))
+            .frame(height: min(c ? 96 : 150, Self.tileBirdHeight * Self.previewCap))
             .clipShape(RoundedRectangle(cornerRadius: SwoopTheme.tileRadius(c), style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: SwoopTheme.tileRadius(c), style: .continuous)
                 .stroke(SwoopTheme.stroke, lineWidth: 1))
@@ -77,28 +79,30 @@ struct BirdsView: View {
                 Text(bird.name)
                     .font(SwoopType.title(c))
                     .foregroundStyle(SwoopTheme.foam)
+                    .lineLimit(1)
                 Text(locked ? "Reach rank \(bird.unlockRank + 1) · \(GoalCatalog.rankTitle(bird.unlockRank))" : bird.blurb)
                     .font(SwoopType.body(c))
                     .foregroundStyle(SwoopTheme.mist)
+                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("Every bird flies the same.")
                     .font(SwoopType.caption(c))
                     .foregroundStyle(SwoopTheme.haze)
             }
             .padding(.horizontal, 4)
+            // UX R3 P2-9: the skies row comes before "Fly as", so it shows without scrolling at 402 pt.
+            PageHeading(text: "Skies", compact: c)
+            HStack(spacing: 6) {
+                ForEach(SkyCatalog.all, id: \.id) { sky in
+                    skyTile(sky)
+                }
+            }
             if !locked {
                 SwoopButton(kind: .primary, height: AppCanvas.minTap, compact: c,
                             action: { controller.fly(as: bird.id) }) {
                     Label("Fly as \(bird.name)", systemImage: "play.fill")
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
-                }
-            }
-            PageHeading(text: "Skies", compact: c)
-            // UX-A11: the skies in one row, the chosen one visible without scrolling at 402 pt.
-            HStack(spacing: 6) {
-                ForEach(SkyCatalog.all, id: \.id) { sky in
-                    skyTile(sky)
                 }
             }
         }
@@ -251,9 +255,9 @@ struct SkySwatch: View {
                                startPoint: .top, endPoint: .bottom)
                 Circle()
                     .fill(Color(swoopRGBA: sky.sun))
-                    .frame(width: h * 0.34, height: h * 0.34)
+                    .frame(width: h * 0.24, height: h * 0.24)
                     .shadow(color: Color(swoopRGBA: sky.sun).opacity(0.8), radius: h * 0.12)
-                    .position(x: w * 0.72, y: h * 0.30)
+                    .position(x: w * 0.80, y: h * 0.22)
                 LinearGradient(colors: [Color(swoopRGBA: sky.seaFar), Color(swoopRGBA: sky.seaNear)],
                                startPoint: .top, endPoint: .bottom)
                     .frame(height: h * 0.3)

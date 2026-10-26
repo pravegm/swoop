@@ -51,10 +51,10 @@ final class SceneBackdrop {
     private(set) var sunBrightness: CGFloat = 1
 
     /// (u as a fraction of the width, lift above the horizon as a fraction of the visible height, width, thickness,
-    /// opacity): five thin streaks, 300–700 × 18–40 pt, α 0.30–0.45.
+    /// opacity): R4, at most four thin streaks, 300–700 × 18–40 pt, α 0.30, feathered ends.
     private static let cloudSpecs: [(CGFloat, CGFloat, CGFloat, CGFloat, CGFloat)] = [
-        (0.08, 0.40, 520, 26, 0.40), (0.36, 0.58, 680, 34, 0.32), (0.62, 0.30, 360, 18, 0.45),
-        (0.86, 0.50, 600, 30, 0.36), (1.12, 0.66, 440, 40, 0.30),
+        (0.10, 0.42, 520, 26, 0.30), (0.42, 0.60, 680, 34, 0.30), (0.74, 0.32, 380, 20, 0.30),
+        (1.06, 0.52, 600, 30, 0.30),
     ]
 
     init() {

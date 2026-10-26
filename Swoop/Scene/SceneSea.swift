@@ -28,6 +28,7 @@ final class SceneSeaView {
     private var crestSeaX: [Double] = []
     private var crestActive = 0
     private var twinkles: [SKSpriteNode] = []
+    private var lace: [SKSpriteNode] = []
     private var pts: [CGPoint] = []
     private var step: CGFloat = 1
     private var builtLo: Double = 1
@@ -80,6 +81,14 @@ final class SceneSeaView {
             root.addChild(s)
             twinkles.append(s)
         }
+        for _ in 0..<SceneLook.laceCount {
+            let s = SKSpriteNode(texture: SceneTextures.dash, size: CGSize(width: 80, height: 1.5))
+            s.colorBlendFactor = 1
+            s.zPosition = 0.8
+            s.isHidden = true
+            root.addChild(s)
+            lace.append(s)
+        }
         pts.reserveCapacity(400)
     }
 
@@ -93,12 +102,13 @@ final class SceneSeaView {
             key: "sea3-\(id.rawValue)",
             colors: [ScenePaint.ui(p.nearCrest), ScenePaint.ui(p.nearCrest), ScenePaint.ui(lit), ScenePaint.ui(p.nearMean),
                      ScenePaint.ui(mean85), ScenePaint.ui(p.nearDeep), ScenePaint.ui(deep70)],
-            locations: [0, 0.18, 0.26, 0.36, 0.48, 0.66, 1])
+            locations: [0, 0.18, 0.26, 0.33, 0.40, 0.48, 1])
         fill.strokeColor = ScenePaint.ui(p.foam, alpha: 0.95)
         band.strokeColor = ScenePaint.ui(p.nearCrest, alpha: SceneLook.bandAlpha)
         litWide.strokeColor = ScenePaint.ui(p.nearCrest, alpha: SceneLook.litFaceAlpha * 0.5)
         litNarrow.strokeColor = ScenePaint.ui(p.nearCrest, alpha: SceneLook.litFaceAlpha * 0.5)
         let glint = ScenePaint.ui(p.glitter)
+        for s in lace { s.color = ScenePaint.ui(p.foam) }
         for s in crests { s.color = glint }
         for s in twinkles { s.color = glint }
     }
@@ -145,7 +155,7 @@ final class SceneSeaView {
             var y = Double(p.y)
             let k = min(max(1 - (sx - stormX) / SceneLook.chopReach, 0), 1) * calm
             if k > 0 {
-                y += k * amp * (0.6 * sin(sx * 0.083) + 0.4 * sin(sx * 0.041 + 1.1))
+                y += k * amp * (0.6 * sin(sx * 0.045) + 0.4 * sin(sx * 0.024 + 1.1))
             }
             pts.append(CGPoint(x: CGFloat(sx - originX), y: CGFloat(y)))
         }
@@ -154,7 +164,7 @@ final class SceneSeaView {
 
         let fp = CGMutablePath()
         fp.move(to: CGPoint(x: first.x, y: SceneLook.seaFillBottom))
-        for p in pts { fp.addLine(to: p) }
+        SceneSeaView.addSmooth(fp, pts, dy: 0, moveFirst: false)
         fp.addLine(to: CGPoint(x: last.x, y: SceneLook.seaFillBottom))
         fp.closeSubpath()
         // An off-screen speck at the fixed top, so the gradient's box (and so its colours) never moves.
@@ -166,10 +176,7 @@ final class SceneSeaView {
 
         let d = SceneLook.bandDepth / z
         let bp = CGMutablePath()
-        bp.move(to: CGPoint(x: first.x, y: first.y - d))
-        for i in 1..<pts.count {
-            bp.addLine(to: CGPoint(x: pts[i].x, y: pts[i].y - d))
-        }
+        SceneSeaView.addSmooth(bp, pts, dy: -d, moveFirst: true)
         band.path = bp
 
         // Lit faces: each run of samples going down toward the sun (dh/dx < 0), as a strip just under the surface.
@@ -193,6 +200,27 @@ final class SceneSeaView {
         litNarrow.path = narrow
         setLineWidths(z)
         placeCrests()
+    }
+
+    /// A smooth curve through `points` (quads through the midpoints, the samples as controls): no polyline corners,
+    /// so a choppy stretch reads as rolling water, not a mountain ridge (REVIEW-3 juror #9).
+    static func addSmooth(_ path: CGMutablePath, _ points: [CGPoint], dy: CGFloat, moveFirst: Bool) {
+        guard let first = points.first else { return }
+        let p0 = CGPoint(x: first.x, y: first.y + dy)
+        if moveFirst { path.move(to: p0) } else { path.addLine(to: p0) }
+        let n = points.count
+        if n < 3 {
+            for i in 1..<n { path.addLine(to: CGPoint(x: points[i].x, y: points[i].y + dy)) }
+            return
+        }
+        for i in 1..<(n - 1) {
+            let c = points[i]
+            let next = points[i + 1]
+            let m = CGPoint(x: (c.x + next.x) * 0.5, y: (c.y + next.y) * 0.5 + dy)
+            path.addQuadCurve(to: m, control: CGPoint(x: c.x, y: c.y + dy))
+        }
+        let last = points[n - 1]
+        path.addLine(to: CGPoint(x: last.x, y: last.y + dy))
     }
 
     private func addStrip(_ path: CGMutablePath, from a: Int, to b: Int, depth: CGFloat) {
@@ -231,6 +259,40 @@ final class SceneSeaView {
         }
         updateTwinkles(zoom: z, time: t, visibleLo: visibleLo, visibleHi: visibleHi, originX: originX,
                        sunSeaX: sunSeaX, reach: reach * 1.5, fine: fine)
+        updateLace(zoom: z, visibleLo: visibleLo, visibleHi: visibleHi, originX: originX)
+    }
+
+    /// Lace (REVIEW-3 juror #8): foam streaks lying on the faces just under the surface, at stable spots (one per
+    /// 260-pt cell), each along the local slope: the sea reads as moving water, not a slab.
+    private func updateLace(zoom z: CGFloat, visibleLo: Double, visibleHi: Double, originX: Double) {
+        guard let first = pts.first else { return }
+        let cell = SceneLook.laceCell
+        var ci = Int((max(visibleLo, Double(first.x) + originX) / cell).rounded(.down))
+        var g = 0
+        while g < lace.count && Double(ci) * cell < visibleHi {
+            let h1 = SceneRNG.hash(ci, 31)
+            let h2 = SceneRNG.hash(ci, 47)
+            let seaX = (Double(ci) + Double(h1)) * cell
+            ci += 1
+            let lx = CGFloat(seaX - originX)
+            let idx = (lx - first.x) / step
+            if idx < 1 || idx >= CGFloat(pts.count - 2) { continue }
+            let i0 = Int(idx)
+            let f = idx - CGFloat(i0)
+            let y = pts[i0].y + (pts[i0 + 1].y - pts[i0].y) * f
+            let slope = (pts[i0 + 1].y - pts[i0].y) / max(pts[i0 + 1].x - pts[i0].x, 0.001)
+            let s = lace[g]
+            g += 1
+            s.isHidden = false
+            s.position = CGPoint(x: lx, y: y - (12 + 50 * h2) / z)
+            s.zRotation = atan(slope)
+            s.size = CGSize(width: (40 + 80 * h1) / z, height: 1.5 / z)
+            s.alpha = SceneLook.laceAlpha * (0.6 + 0.4 * h2)
+        }
+        while g < lace.count {
+            lace[g].isHidden = true
+            g += 1
+        }
     }
 
     private func setLineWidths(_ z: CGFloat) {

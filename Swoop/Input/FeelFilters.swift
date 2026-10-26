@@ -299,26 +299,56 @@ struct HingePredictor {
     var rate: Double { 1 / max(interval, 1e-3) }
 }
 
-/// The "phone is closing" latch (GAME-DESIGN §3): on below `closeBelow` (95°), off again only above `reopenAbove`
-/// (102°), so a hand hovering around 95–100° never chatters pause/resume.
-struct FeelClosingLatch {
-    static let closeBelow = 95.0
-    static let reopenAbove = 102.0
+/// The "phone is closing" gate (GAME-DESIGN §3; Round 4, REVIEW-3-duo P1-2). It closes when the angle stays under
+/// `closeBelow` (90°) for `dwell` (0.2 s), or at once under `instantBelow` (75°: a real close, not a squeeze), and it
+/// opens again only above `reopenAbove` (98°). The dwell means an excited squeeze that overshoots full tuck for a
+/// moment never freezes a dive. Pure, with explicit times; `isClosing(at:)` lets the dwell mature with time alone.
+struct FeelClosingGate {
+    static let closeBelow = 90.0
+    static let reopenAbove = 98.0
+    static let dwell = 0.2
+    static let instantBelow = 75.0
 
-    private(set) var isClosing = false
+    /// Latched closed (until above `reopenAbove`).
+    private(set) var latched = false
+    /// When the angle went under `closeBelow` (the dwell running), if it has.
+    private(set) var belowSince: Double?
 
     init() {}
 
-    /// Feed a (filtered) hinge angle. Returns the new state.
-    @discardableResult
-    mutating func update(angle: Double) -> Bool {
-        guard angle.isFinite else { return isClosing }
-        if angle < Self.closeBelow {
-            isClosing = true
-        } else if angle > Self.reopenAbove {
-            isClosing = false
+    /// Closed at `time`: latched, or under 90° for the whole dwell.
+    func isClosing(at time: Double) -> Bool {
+        if latched { return true }
+        guard let since = belowSince, time.isFinite else { return false }
+        return time - since >= Self.dwell
+    }
+
+    /// Feed an angle at `time`.
+    mutating func update(angle: Double, at time: Double) {
+        guard angle.isFinite, time.isFinite else { return }
+        if isClosing(at: time) {
+            latched = true
+            belowSince = nil
         }
-        return isClosing
+        if latched {
+            if angle > Self.reopenAbove { latched = false }
+            return
+        }
+        if angle < Self.instantBelow {
+            latched = true
+            belowSince = nil
+        } else if angle < Self.closeBelow {
+            if belowSince == nil { belowSince = time }
+        } else {
+            belowSince = nil
+        }
+    }
+
+    /// Only the instant rule (a report while frames judge the dwell): under 75° closes at once.
+    mutating func instant(angle: Double, at time: Double) {
+        guard angle.isFinite, time.isFinite, !latched, angle < Self.instantBelow else { return }
+        latched = true
+        belowSince = nil
     }
 }
 

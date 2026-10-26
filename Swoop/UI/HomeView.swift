@@ -171,8 +171,10 @@ struct HomeView: View {
     }
 
     private var caption: some View {
-        let text = Self.captionText(duo: isDuo, folded: controller.homeFolded, flat: controller.homeFlat)
-        let gold = controller.homeFolded && !(isDuo && controller.homeFlat)
+        // UX R3 P2-2: a returning player starts on the fold line (they already know the tuck).
+        let folded = controller.homeFolded || !fresh
+        let text = Self.captionText(duo: isDuo, folded: folded, flat: controller.homeFlat)
+        let gold = folded && !(isDuo && controller.homeFlat)
         return VStack(alignment: info.mirrored ? .trailing : .leading, spacing: 8) {
             Text(text)
                 .font(SwoopType.headline(info.isCompact))
@@ -205,7 +207,7 @@ struct HomeView: View {
                 dailyButton(l.daily)
                     .modifier(PopIn(shown: appeared, index: 0, reduceMotion: reduceMotion))
                     .accessibilitySortPriority(9)
-                menuTile(l.flocks, title: "Goals", icon: "flag.checkered", detail: goalsLine,
+                menuTile(l.flocks, title: goalsTitle, icon: "flag.checkered", detail: goalsLine,
                          dot: !store.data.seenDestinations.contains("goals")) { controller.show(.goals) }
                     .modifier(PopIn(shown: appeared, index: 1, reduceMotion: reduceMotion))
                     .accessibilitySortPriority(8)
@@ -218,17 +220,23 @@ struct HomeView: View {
         .frame(width: info.size.width, height: info.size.height, alignment: .topLeading)
     }
 
+    /// Compact (UX R3 P2-8: "1 of 3 · Crest…" truncated): the rank is the title, "1 of 3" the sub-line.
+    private var goalsTitle: String {
+        info.isCompact ? GoalCatalog.rankTitle(store.data.rank) : "Goals"
+    }
+
     private var goalsLine: String {
         let d = store.data
         let goals = d.currentGoals
         let done = goals.filter { ProgressRules.liveProgress($0, data: d) >= 1 }.count
+        if info.isCompact && d.rank < GoalCatalog.maxRank { return "\(done) of \(max(goals.count, 3)) goals" }
         return ProgressRules.goalsLine(rank: d.rank, done: done, total: max(goals.count, 3), starFlocks: d.starFlocks)
     }
 
     /// Fly's second line: "Outfly the storm", or "Best 6.4 km" once there is one (the caption no longer repeats it).
     /// Pure; tested.
     nonisolated static func flySubtitle(best: Double) -> String {
-        best > 0 ? "Best \(ShareText.km(best))" : "Outfly the storm"
+        best > 0 ? "Best \(ShareText.distance(best))" : "Outfly the storm"
     }
 
     private func flyButton(_ r: CGRect) -> some View {
@@ -279,7 +287,7 @@ struct HomeView: View {
                     .font(.system(size: 19, weight: .heavy))
                     .foregroundStyle(SwoopTheme.foam)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Daily Flight #\(today)")
+                    Text("Daily Flight #\(AppRules.dailyNumber(day: today))")
                         .font(SwoopType.headline(true))
                         .foregroundStyle(SwoopTheme.foam)
                         .lineLimit(1)
@@ -299,7 +307,7 @@ struct HomeView: View {
         .frame(width: r.width, height: r.height)
         .position(x: r.midX, y: r.midY)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Daily Flight number \(today). \(status)\(streak >= 2 ? ", \(streak)-day streak" : "")")
+        .accessibilityLabel("Daily Flight number \(AppRules.dailyNumber(day: today)). \(status)\(streak >= 2 ? ", \(streak)-day streak" : "")")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { if attempted { controller.openDailyCard() } else { controller.playDaily() } }
     }
@@ -307,7 +315,7 @@ struct HomeView: View {
     /// The Daily button's second line (UX §3). Pure; tested.
     /// QA-1 P1-2: a try that was started (even if the app died before anything was filed) is spent.
     nonisolated static func dailyStatus(record: DailyRecord?, attempted: Bool, nextIn: String) -> String {
-        if let record { return "Flown \(ShareText.km(record.meters)) · next in \(nextIn)" }
+        if let record { return "Flown \(ShareText.distance(record.meters)) · next in \(nextIn)" }
         if attempted { return "Tried · next in \(nextIn)" }
         return "Everyone's sea · one try"
     }

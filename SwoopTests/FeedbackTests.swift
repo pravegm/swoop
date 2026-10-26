@@ -106,7 +106,14 @@ struct FeedbackTests {
         #expect(tenRing != nil)
         #expect((tenRing?.brightness ?? 0) > (oneRing?.brightness ?? 1))
         #expect((tenRing?.partials ?? 0) >= (oneRing?.partials ?? 9))
-        #expect((tenRing?.gain ?? 1) <= (oneRing?.gain ?? 0))
+        // Among the big (milestone) chimes, brighter never means louder.
+        let early = FeelSoundBook.perfect(chain: 3, dice: &dice)
+        let late = FeelSoundBook.perfect(chain: 15, dice: &dice)
+        var earlyGain: Float = 0
+        var lateGain: Float = 1
+        if case .ring(let ring) = early[0] { earlyGain = ring.gain }
+        if case .ring(let ring) = late[0] { lateGain = ring.gain }
+        #expect(lateGain <= earlyGain)
         // The glassy glint joins from chain 3.
         let glints = { (commands: [FeelSynthCommand]) -> Int in
             var count = 0
@@ -124,7 +131,7 @@ struct FeedbackTests {
 
     @Test func perfectHasAWhooshPopOnTheHitStopAndItsHapticLandsThere() {
         var dice = FeelDice(seed: 5)
-        let cue = FeelSoundBook.perfect(chain: 4, dice: &dice)
+        let cue = FeelSoundBook.perfect(chain: 5, dice: &dice)
         var whoosh = false
         var popAtRelease = false
         for command in cue {
@@ -139,7 +146,8 @@ struct FeedbackTests {
         }
         #expect(whoosh)
         #expect(popAtRelease)
-        #expect(abs(FeelSoundBook.hitStop - 0.035) < 0.0001)
+        // Round 4: hit-stops only at milestones, 60 ms (REVIEW-3-ux P1-2).
+        #expect(abs(FeelSoundBook.hitStop - 0.06) < 0.0001)
         // The haptic: a firm tap the instant the Perfect lands, a lighter keen one as the hit-stop releases.
         let notes = FeelHapticBook.perfect.notes
         #expect(notes.count == 2)
@@ -584,7 +592,7 @@ struct FeedbackTests {
         let cues: [[FeelSynthCommand]] = [
             FeelSoundBook.homeFold(), FeelSoundBook.foldFired(), FeelSoundBook.closing(), FeelSoundBook.reopened(),
             FeelSoundBook.go(), FeelSoundBook.splitDeck(), FeelSoundBook.bookPrompt(),
-            FeelSoundBook.resultsTick(step: 0), FeelSoundBook.resultsTick(step: 99),
+            FeelSoundBook.resultsTick(step: 0), FeelSoundBook.resultsTick(step: 99), FeelSoundBook.endStop(),
         ]
         for recipe in cues {
             #expect(!recipe.isEmpty)
@@ -608,8 +616,6 @@ struct FeedbackTests {
         #expect(high > low)
         #expect(capped < 3000)
         // F4: the touch-down click only where there is no fold.
-        #expect(FeedbackDirector.touchDownPlays(deviceHasFold: false))
-        #expect(FeedbackDirector.touchDownPlays(deviceHasFold: true) == false)
         #expect(FeelHapticBook.touchDown.notes.count == 1)
         #expect((FeelHapticBook.touchDown.notes.first?.intensity ?? 1) < 0.5)
     }
@@ -630,11 +636,88 @@ struct FeedbackTests {
         director.soundOn = false
         director.hapticProfile = .off
         let cues: [FeelCue] = [.homeFold, .homeFold, .foldArmed, .foldFired, .closing, .reopened, .go, .splitDeck,
-                               .bookPrompt, .resultsTick(0), .resultsTick(1), .touchDown]
+                               .bookPrompt, .resultsTick(0), .resultsTick(1), .touchDown, .endStop, .endStop]
         for cue in cues { director.cue(cue) }
         director.deviceHasFold = true
         director.cue(.touchDown)
         #expect(director.hapticProfile == .off)
         #expect(director.hapticsOn == false)
+    }
+
+    // MARK: Round 4: Perfects special again (P1-8), the splash's thud (P1-9), the end-stop (P0-6)
+
+    @Test func onlyChainMilestonesGetTheBigPerfect() {
+        let milestones = (1...30).filter { FeelSoundBook.isChainMilestone($0) }
+        #expect(milestones == [3, 5, 10, 15, 20, 25, 30])
+        #expect(FeedbackDirector.isPerfectMilestone(chain: 3))
+        #expect(FeedbackDirector.isPerfectMilestone(chain: 4) == false)
+        #expect(FeedbackDirector.isPerfectMilestone(chain: 0) == false)
+        var dice = FeelDice(seed: 12)
+        let soft = FeelSoundBook.perfect(chain: 4, dice: &dice)
+        let big = FeelSoundBook.perfect(chain: 5, dice: &dice)
+        // Every Perfect still chimes on its pentatonic note.
+        var softRing: FeelRingSpec?
+        var bigRing: FeelRingSpec?
+        if case .ring(let ring) = soft[0] { softRing = ring }
+        if case .ring(let ring) = big[0] { bigRing = ring }
+        #expect(softRing != nil)
+        #expect(bigRing != nil)
+        let softPitch = Float(FeelSoundBook.chimeFrequency(chain: 4))
+        #expect(abs((softRing?.fundamental ?? 0) - softPitch) < 0.5)
+        // The soft one is quieter, shorter and plainer: no whoosh-pop (no drop), no glint.
+        #expect((softRing?.gain ?? 1) < (bigRing?.gain ?? 0))
+        #expect((softRing?.decay ?? 9) < (bigRing?.decay ?? 0))
+        var softDrops = 0
+        var softGlass = 0
+        for command in soft {
+            if case .drop = command { softDrops += 1 }
+            if case .ring(let ring) = command, ring.kind == .glass { softGlass += 1 }
+            #expect(command.gain <= 0.12)
+        }
+        #expect(softDrops == 0)
+        #expect(softGlass == 0)
+        #expect(big.count > soft.count)
+        // ×10 adds the sparkle.
+        let ten = FeelSoundBook.perfect(chain: 10, dice: &dice)
+        #expect(ten.count > big.count)
+        // Haptics: a light single tap for an ordinary Perfect, the double tap for a milestone.
+        #expect(FeelHapticBook.perfectSoft.notes.count == 1)
+        #expect((FeelHapticBook.perfectSoft.notes.first?.intensity ?? 1) < (FeelHapticBook.perfect.notes.first?.intensity ?? 0))
+        #expect(FeelHapticBook.perfectSoft(for: .strong).notes.first?.kind == .continuous)
+    }
+
+    @Test func splashHasAThudThePhoneSpeakerCanCarry() {
+        var dice = FeelDice(seed: 13)
+        let splash = FeelSoundBook.splash(speed: 1200, dice: &dice)
+        var body = false
+        for command in splash {
+            if case .tone(let tone) = command, tone.start >= 180, tone.start <= 400, tone.gain >= 0.15 { body = true }
+        }
+        #expect(body)
+        let good = FeelSoundBook.good(speed: 1200, dice: &dice)
+        let splashEnergy = splash.map { $0.gain }.reduce(0, +)
+        let goodEnergy = good.map { $0.gain }.reduce(0, +)
+        #expect(splashEnergy > goodEnergy * 5)
+        // The haptic thud lasts through the scene's 80 ms slow-down and sags after it.
+        #expect(FeelHapticBook.splash.length >= 0.25)
+        #expect((FeelHapticBook.splash.notes.map { $0.intensity }.max() ?? 0) >= 0.95)
+        // The synth survives the heavier splash on top of a fast bed.
+        let synth = FeelSynth(sampleRate: 48_000)
+        synth.send(.bed(FeelSoundBook.flightBed(telemetry: flying(speed: 2000, skimming: true),
+                                                master: FeelAudioEngine.masterGain)))
+        for command in splash { synth.send(command) }
+        let result = feelRender(synth, blocks: 40)
+        #expect(result.finite)
+        #expect(result.peak < 1)
+    }
+
+    @Test func endStopIsATinyTick() {
+        let notes = FeelHapticBook.endStop.notes
+        #expect(notes.count == 1)
+        #expect(abs((notes.first?.duration ?? 0) - 0.025) < 1e-9)
+        #expect(abs((notes.first?.intensity ?? 0) - 0.35) < 1e-6)
+        let sound = FeelSoundBook.endStop()
+        #expect(sound.count == 1)
+        #expect((sound.first?.gain ?? 1) <= 0.05)
     }
 }

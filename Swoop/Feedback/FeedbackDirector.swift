@@ -21,8 +21,11 @@ enum FeelCue: Sendable, Equatable {
     case bookPrompt
     /// The results distance count-up: one tick per 0.5 km (step = 0, 1, 2…).
     case resultsTick(Int)
-    /// A finger lands in touch play (iPhone only; ignored on a Duo).
+    /// A finger lands in touch play (Round 4: on every phone, a Duo's deck and cover runs too; the App calls it only
+    /// in touch input).
     case touchDown
+    /// Round 4 (REVIEW-3-duo P1-2): the hinge tuck hit full (`hinge.consumeEndStop()`): the end-stop detent.
+    case endStop
 }
 
 /// Audio + haptics for Swoop (GAME-DESIGN §7). The App calls `start()` once at launch, sets the three toggles from its
@@ -80,8 +83,7 @@ final class FeedbackDirector: FeedbackSink {
         }
     }
 
-    /// The App sets this once a hinge has been seen (a Duo). It moves an unchosen profile to Strong and turns on the
-    /// iPhone-only touch-down click only where there is no fold.
+    /// The App sets this once a hinge has been seen (a Duo). It moves an unchosen profile to Strong.
     var deviceHasFold: Bool = false {
         didSet {
             guard oldValue != deviceHasFold, !profileChosen, profile != .off else { return }
@@ -120,6 +122,7 @@ final class FeedbackDirector: FeedbackSink {
     private var lastHomeFold: CFTimeInterval = -Double.infinity
     private var lastClosing: CFTimeInterval = -Double.infinity
     private var lastResultsTick: CFTimeInterval = -Double.infinity
+    private var lastEndStop: CFTimeInterval = -Double.infinity
     /// Seconds around a lighthouse in which a milestone sparkle stays quiet (the bell and its card win).
     static let milestoneLighthouseQuiet: Double = 3
 
@@ -248,14 +251,19 @@ final class FeedbackDirector: FeedbackSink {
             audio.play(FeelSoundBook.resultsTick(step: step))
             playHaptic(FeelHapticBook.resultsTick)
         case .touchDown:
-            guard Self.touchDownPlays(deviceHasFold: deviceHasFold) else { return }
             playHaptic(FeelHapticBook.touchDown)
+        case .endStop:
+            guard now - lastEndStop >= 0.15 else { return }
+            lastEndStop = now
+            audio.play(FeelSoundBook.endStop())
+            playHaptic(FeelHapticBook.endStop)
         }
     }
 
-    /// F4: the touch-down click is for iPhones (no fold) only. Pure.
-    nonisolated static func touchDownPlays(deviceHasFold: Bool) -> Bool {
-        !deviceHasFold
+    /// Round 4 (P1-8): a Perfect at this chain is a milestone (big chime, double tap; the App's callout and
+    /// hit-stop). Pure; the App should use the same rule.
+    nonisolated static func isPerfectMilestone(chain: Int) -> Bool {
+        FeelSoundBook.isChainMilestone(chain)
     }
 
     private func playHaptic(_ cue: FeelHapticCue) {
@@ -331,9 +339,15 @@ final class FeedbackDirector: FeedbackSink {
             lastTouchdown = now
             switch quality {
             case .perfect:
-                // The haptic first: it must land on the App's hit-stop, which starts this very frame.
-                haptics.play(FeelHapticBook.perfect(for: profile))
-                audio.play(FeelSoundBook.perfect(chain: max(chain, 1), dice: &dice))
+                // Round 4: big only at chain milestones (where the App holds the hit-stop), soft otherwise. The haptic
+                // goes first: it must land on the hit-stop, which starts this very frame.
+                let link = max(chain, 1)
+                if Self.isPerfectMilestone(chain: link) {
+                    haptics.play(FeelHapticBook.perfect(for: profile))
+                } else {
+                    haptics.play(FeelHapticBook.perfectSoft(for: profile))
+                }
+                audio.play(FeelSoundBook.perfect(chain: link, dice: &dice))
             case .good:
                 audio.play(FeelSoundBook.good(speed: speed, dice: &dice))
                 playHaptic(FeelHapticBook.good)

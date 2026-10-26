@@ -93,6 +93,12 @@ final class FlightScene: SKScene {
     var sunBrightness: CGFloat { backdrop.sunBrightness }
     /// The morph's progress 0…1 (1 = done or not running).
     private(set) var morphProgress: CGFloat = 1
+    /// The sun's centre in canvas points (SpriteKit, y up), so the App can keep text off it (UX P1-3).
+    private(set) var sunCanvasPoint: CGPoint = .zero
+    /// The storm's lead-meter fill this frame (`SceneStormMap.meterFill`), for tests and the HUD.
+    private(set) var stormMeterFill: CGFloat = 1
+    /// False in store-capture mode: no book-gutter shade (REVIEW-3 juror #26).
+    var gutterEnabled: Bool = true
 
     #if DEBUG
     private static let demoLogging: Bool = ProcessInfo.processInfo.arguments.contains("-swoopDemo")
@@ -155,6 +161,9 @@ final class FlightScene: SKScene {
     private var morphAge: Double = 10
     private var morphStart = CGPoint.zero
     private var gutterLevel: CGFloat = -1
+    private var stormEdge: CGFloat = -1
+    private var dunkAge: CGFloat = 10
+    private let nearGlitter: SKSpriteNode
 
     init(layout: ScreenLayout) {
         self.layout = layout
@@ -182,6 +191,7 @@ final class FlightScene: SKScene {
             key: "gutter", colors: [UIColor(white: 1, alpha: 0), UIColor(white: 1, alpha: 1)], locations: [0, 1])
         gutterLeft = SKSpriteNode(texture: gutter)
         gutterRight = SKSpriteNode(texture: gutter)
+        nearGlitter = SKSpriteNode(texture: SceneTextures.glitter)
         super.init(size: layout.size)
         setUp()
     }
@@ -224,6 +234,12 @@ final class FlightScene: SKScene {
         shadeRoot.zPosition = 5
         addChild(shadeRoot)
         shadeRoot.addChild(storm.shadeRoot)
+        // The sun's glitter column continued down the near sea (REVIEW-3 juror #8), over the water, under the bird.
+        nearGlitter.anchorPoint = CGPoint(x: 0.5, y: 1)
+        nearGlitter.blendMode = .add
+        nearGlitter.colorBlendFactor = 1
+        nearGlitter.zPosition = 1
+        shadeRoot.addChild(nearGlitter)
 
         frontRoot.zPosition = 60
         addChild(frontRoot)
@@ -304,6 +320,8 @@ final class FlightScene: SKScene {
         flightTime = 0
         pointClock = 1
         lighthouseU = nil
+        stormEdge = -1
+        dunkAge = 10
     }
 
     /// The Home → play morph (ART §7, UX-S3): the dorsal title bird, as Home drew it across the top of the canvas,
@@ -481,14 +499,22 @@ final class FlightScene: SKScene {
         if let lx = lastBirdX { scrollPx = CGFloat(min(max(bx - lx, -2000), 2000)) * z }
         lastBirdX = bx
 
-        // The storm's geometry (u-space): always on screen, scaled to the gap; caught, it sweeps past the fold.
+        // The storm's geometry (u-space, ROUND-4 P0-2): its edge follows the lead meter's fill, monotonically and
+        // visibly (a hint at a full lead, 40 % of the bird page at storm-close, right behind the bird at contact),
+        // eased so a Tailwind or a lighthouse visibly shoves it back. Caught, it sweeps on past the fold.
         let anchorU = w * ScreenLayout.birdScreenFraction
-        let gapPx = CGFloat(bx - s.stormX) * z
-        let edgeRaw = anchorU - gapPx
-        let closeness = min(max(1 - (gapPx - anchorU) / max(SceneLook.stormRangeScreens * w, 1), 0), 1)
-        let hintEdge = SceneLook.stormEdgeFar + (SceneLook.stormEdgeNear - SceneLook.stormEdgeFar) * closeness
-        // In flight the wall stops just short of the fold band; once caught it sweeps on past it (ART-S15).
-        var edgeU = min(max(edgeRaw, hintEdge), anchorU + 160)
+        var gap = s.gap != 0 ? s.gap : bx - s.stormX
+        if driver == nil { gap = Tuning.gapStart }
+        let fill = SceneStormMap.meterFill(gap: gap)
+        stormMeterFill = fill
+        let closeness = SceneStormMap.closeness(meterFill: fill)
+        let target = SceneStormMap.edgeU(meterFill: fill, birdPageWidth: layout.creaseMinX, anchorU: anchorU)
+        if stormEdge < 0 {
+            stormEdge = target
+        } else if dt > 0 {
+            stormEdge += (target - stormEdge) * min(1, dt * 3.5)
+        }
+        var edgeU = stormEdge
         let caughtEdge = SceneLook.stormCaughtEdge * w
         edgeU += (max(edgeU, caughtEdge) - edgeU) * caughtEase
 
@@ -514,6 +540,12 @@ final class FlightScene: SKScene {
         backdrop.update(width: w, height: h, visibleTop: visMaxY, meanY: meanY, zoom: z, scroll: scrollPx, time: t,
                         dt: dt, sunDim: sunDim, drift: !reduceMotion)
 
+        let sunU = backdrop.sunPosition.x
+        sunCanvasPoint = CGPoint(x: layout.mirrored ? w - sunU : sunU, y: backdrop.sunPosition.y)
+        let sunWater = viewCam.screenPoint(CGPoint(x: sunSeaX, y: seaHeight(sunSeaX)))
+        nearGlitter.position = CGPoint(x: sunU, y: CGFloat(sunWater.y) + bumpY + 2)
+        nearGlitter.size = CGSize(width: w * SceneLook.glitterWidth, height: SceneLook.nearGlitterDepth)
+        nearGlitter.alpha = SceneLook.nearGlitterAlpha * backdrop.sunBrightness * CGFloat(0.85 + 0.15 * sin(t * 6.0))
         storm.update(edgeU: edgeU, closeness: closeness, lead: CGFloat(s.lead), caughtness: caughtEase,
                      size: layout.size, minY: visMinY, maxY: visMaxY, horizonY: backdrop.horizonY, birdU: anchorU, dt: dt)
 
@@ -541,6 +573,13 @@ final class FlightScene: SKScene {
         var angle = CGFloat(s.bodyAngle)
         if countdown { angle = CGFloat(0.06 * sin(t * SceneLook.hoverRate + 0.6)) }
         if caught { angle = CGFloat(0.04 * sin(t * 1.3)) }
+        // A splash dunks the bird (ROUND-4 P1-9): 6 pt down and nose-down for 0.3 s, then back.
+        dunkAge += dt
+        if dunkAge < SceneLook.splashDunkTime {
+            let k = sin(CGFloat.pi * dunkAge / SceneLook.splashDunkTime)
+            by -= Double(SceneLook.splashDunk * k)
+            angle -= 0.22 * k
+        }
         if !countdown && !caught && !s.skimming { angle += noseOffset(tuck: CGFloat(tuck)) }
         let birdScale = pow(z, -SceneLook.birdZoomResist)
         let birdLocal = CGPoint(x: CGFloat(bx - originX), y: CGFloat(by))
@@ -593,6 +632,11 @@ final class FlightScene: SKScene {
         updateFlare(dt: dt)
         updateFold(tuck: CGFloat(caught || countdown ? 0 : s.tuck), dt: dt)
         updateMorph(wallDt: wallDt)
+    }
+
+    /// Chain milestones (ROUND-4 P1-8): 3, 5, 10, 15, 20… get the callout, the hit-stop and the punch-in.
+    nonisolated static func isChainMilestone(_ chain: Int) -> Bool {
+        chain == 3 || chain == 5 || (chain >= 10 && chain % 5 == 0)
     }
 
     /// The nose while airborne (ART §4): +4° spread, −6° at half tuck, −10° tucked.
@@ -685,12 +729,16 @@ final class FlightScene: SKScene {
                 case .perfect:
                     fx.perfect(at: waterPoint, chain: chain, zoom: z, foamColor: foamColor)
                     goldTimer = SceneLook.perfectGoldTime
-                    punchAge = 0
+                    // The punch-in comes only at chain milestones (ROUND-4 P1-8: make Perfects special again).
+                    if FlightScene.isChainMilestone(chain) { punchAge = 0 }
                 case .good:
                     fx.good(at: waterPoint, zoom: z, color: foamColor)
                 case .splash:
                     fx.splash(at: waterPoint, k: k, zoom: z, color: foamColor)
-                    if !reduceMotion { bumpVelocity -= SceneLook.splashBump * (0.7 + 0.6 * k) }
+                    if !reduceMotion {
+                        bumpVelocity -= SceneLook.splashBump * (0.7 + 0.6 * k)
+                        dunkAge = 0
+                    }
                     dripTimer = 0.6
                 }
             case .tailwindStarted:
@@ -755,7 +803,7 @@ final class FlightScene: SKScene {
         let mid = (layout.creaseMinX + layout.creaseMaxX) * 0.5
         crease.position = CGPoint(x: mid, y: backdrop.horizonY)
         crease.alpha = SceneLook.creaseAlpha + (SceneLook.creasePulseAlpha - SceneLook.creaseAlpha) * creasePulse
-        let g = SceneLook.gutterAlpha * min(max(tuck, 0), 1)
+        let g = gutterEnabled ? SceneLook.gutterAlpha * min(max(tuck, 0), 1) : 0
         if abs(g - gutterLevel) > 0.002 {
             gutterLevel = g
             let on = g > 0.003

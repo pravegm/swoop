@@ -4,8 +4,8 @@ import Foundation
 //
 // Units: sea points (pt; 10 pt = 1 m), seconds, pt/s, pt/s², degrees where the name says so.
 // The numbers were tuned with the Node port of Core in `tools/balance-sim.js` (keep the two in sync!). Its predicted
-// run lengths (20 seeds, dt 1/120; the Round 2 targets in design/ROUND-2.md, kept in Round 3): novice ~65 s, casual
-// ~142 s, expert ~5.7 min, perfect ~6.6 min (always ends). `tools/storm-fit.js` fits the storm law to those targets.
+// run lengths (20 seeds, dt 1/120; the Round 2 targets in design/ROUND-2.md, kept since): Round 4 novice ~72 s,
+// casual ~139 s, expert ~6.4 min, perfect ~7.7 min (always ends). `tools/storm-fit.js` fits the storm law to those targets.
 // Feel numbers to try first on a held Duo are marked FEEL.
 
 public enum Tuning {
@@ -78,13 +78,14 @@ public enum Tuning {
     // MARK: The storm (GAME-DESIGN §6)
 
     /// Storm speed n(t) = stormBaseSpeed + stormAccel · t until stormCruiseSpeed (t ≈ 68 s), then it keeps
-    /// accelerating (stormLateAccel) up to stormMaxSpeed (reached at ~10 min), so even a flawless run ends.
+    /// accelerating (stormLateAccel) up to stormMaxSpeed (reached at ~14 min), so even a flawless run ends.
     /// Round 2: late accel 3.5 (ROUND-2). Round 3: base, accel and cruise refit by tools/storm-fit.js together with the
     /// leash below, for the same R2 run-length targets.
     public static let stormBaseSpeed: Double = 480
     public static let stormAccel: Double = 12
     public static let stormCruiseSpeed: Double = 1300
-    public static let stormLateAccel: Double = 3.5
+    /// Round 4: 3.5 → 2.5 (refit with the tuck rise limit below; the leash now keeps experts from running away).
+    public static let stormLateAccel: Double = 2.5
     /// Round 3 leash (UX-C3: the lead meter sat pinned because a casual bird banked a ~30 km lead). Beyond
     /// stormLeashGap the storm also closes the excess gap at stormLeashRate per second, so the storm stays a few
     /// screens behind and the meter moves all run (casual gap p25/p50/p75 ≈ 2.0/3.1/3.5 × fullLead). Not in attract.
@@ -136,6 +137,9 @@ public enum Tuning {
 
     /// The session's own tuck easing on top of the input (s): attack (folding in) and release (opening).
     public static let tuckAttack: Double = 0.06
+    /// Round 4 (REVIEW-3 Duo): the tuck input may rise at most this fast (1/s): a full tuck takes ≥ 0.15 s, so a slam
+    /// faster than ~240°/s of hinge gains nothing over a firm 0.15 s squeeze. Opening is not limited.
+    public static let tuckMaxRise: Double = 1.0 / 0.15
     public static let tuckRelease: Double = 0.08
     /// Body angle smoothing (s).
     public static let bodyAngleSmoothing: Double = 0.08

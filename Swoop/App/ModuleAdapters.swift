@@ -56,6 +56,20 @@ enum SceneAdapter {
     static func playTitleMorph(_ scene: FlightScene?, tuck: Double) {
         scene?.playTitleMorph(tuck: tuck)
     }
+
+    /// The sun's centre in the play view's points (y down), from Scene's `sunCanvasPoint` (canvas, y up), in 8 pt
+    /// steps so the HUD doesn't republish every frame.
+    static func sunScreenPoint(_ scene: FlightScene?, layout: ScreenLayout?) -> CGPoint? {
+        guard let scene, let layout else { return nil }
+        let p = scene.sunCanvasPoint
+        guard p != .zero, p.x.isFinite, p.y.isFinite else { return nil }
+        return CGPoint(x: (p.x / 8).rounded() * 8, y: ((layout.size.height - p.y) / 8).rounded() * 8)
+    }
+
+    /// Store captures (demo runs): no book-gutter shade (juror R3 #26).
+    static func storeCapture(_ scene: FlightScene) {
+        scene.gutterEnabled = false
+    }
 }
 
 /// Feel: the haptic profile (UX-F2) and the device flag.

@@ -147,21 +147,16 @@ struct BookPoseDrawing: View {
     }
 }
 
-/// A seabird seen from the front, wings in a shallow V (pose cards, badges).
+/// THE bird mark (R4 P0-5, juror R3 #16): Scene's `BirdArt.markPath`, the icon gull's dorsal "M", as a round-capped
+/// stroke outline, so `.fill` paints the glyph. Used everywhere outside gameplay (cover, cards, About, the meter knob,
+/// the pose card, the touch glyph).
 struct BirdGlyph: Shape {
     func path(in rect: CGRect) -> Path {
-        var p = Path()
-        let w = rect.width
-        let h = rect.height
-        let x = rect.minX
-        let y = rect.minY
-        p.move(to: CGPoint(x: x + w * 0.5, y: y + h * 0.78))
-        p.addQuadCurve(to: CGPoint(x: x, y: y + h * 0.05), control: CGPoint(x: x + w * 0.22, y: y + h * 0.15))
-        p.addQuadCurve(to: CGPoint(x: x + w * 0.5, y: y + h * 0.52), control: CGPoint(x: x + w * 0.26, y: y + h * 0.40))
-        p.addQuadCurve(to: CGPoint(x: x + w, y: y + h * 0.05), control: CGPoint(x: x + w * 0.74, y: y + h * 0.40))
-        p.addQuadCurve(to: CGPoint(x: x + w * 0.5, y: y + h * 0.78), control: CGPoint(x: x + w * 0.78, y: y + h * 0.15))
-        p.closeSubpath()
-        return p
+        guard rect.width > 0, rect.height > 0 else { return Path() }
+        let mark = Path(BirdArt.markPath(width: rect.width, height: rect.height))
+            .applying(CGAffineTransform(translationX: rect.minX, y: rect.minY))
+        return mark.strokedPath(StrokeStyle(lineWidth: BirdArt.markLineWidth(forHeight: rect.height),
+                                            lineCap: .round, lineJoin: .round))
     }
 }
 
@@ -194,12 +189,14 @@ struct ClosedCard: View {
         GeometryReader { geo in
             ZStack {
                 Color.black.ignoresSafeArea()
-                // The horizon: a thin warm strip low on the card, the only colour on black.
-                LinearGradient(colors: [SwoopTheme.abyss.opacity(0), SwoopTheme.rewardDeep.opacity(0.30),
-                                        SwoopTheme.abyss.opacity(0)],
+                // The horizon (juror R3 #17): `#F2A65A` added light at 0.18, 40 pt, at the foot of the card: warm,
+                // never the brown of gold at partial alpha over black.
+                LinearGradient(colors: [Color(swoopHex: 0xF2A65A).opacity(0), Color(swoopHex: 0xF2A65A).opacity(0.18),
+                                        Color(swoopHex: 0xF2A65A).opacity(0)],
                                startPoint: .top, endPoint: .bottom)
-                    .frame(height: 90)
-                    .position(x: geo.size.width / 2, y: geo.size.height * 0.80)
+                    .blendMode(.plusLighter)
+                    .frame(height: 40)
+                    .position(x: geo.size.width / 2, y: geo.size.height - max(insets.bottom, 8) - 20)
                     .allowsHitTesting(false)
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 14) {
@@ -245,16 +242,13 @@ struct ClosedCard: View {
                 .multilineTextAlignment(.center)
             VStack(spacing: 12) {
                 if store.data.bestMeters > 0 {
-                    row(icon: "flag.fill", title: "Best flight", value: ShareText.km(store.data.bestMeters))
+                    row(icon: "flag.fill", title: "Best flight", value: ShareText.distance(store.data.bestMeters))
                     divider
                 }
-                row(icon: "calendar", title: "Daily #\(today)", value: dailyValue)
+                row(icon: "calendar", title: "Daily #\(AppRules.dailyNumber(day: today))", value: dailyValue)
                 if store.data.dailyStreak(today: today) >= 2 {
                     divider
-                    HStack {
-                        StreakLabel(days: store.data.dailyStreak(today: today), compact: false)
-                        Spacer(minLength: 0)
-                    }
+                    row(icon: "flame.fill", title: "Daily streak", value: "\(store.data.dailyStreak(today: today))-day streak")
                 }
             }
             .swoopCard(padding: 18, radius: SwoopTheme.cardRadius(true))
@@ -264,7 +258,7 @@ struct ClosedCard: View {
 
     private var dailyValue: String {
         let next = ShareText.nextInShort(seconds: ShareText.secondsToNextDaily(now: Date()))
-        if let record = store.data.dailyRecord(day: today) { return "Flown \(ShareText.km(record.meters)) · next in \(next)" }
+        if let record = store.data.dailyRecord(day: today) { return "Flown \(ShareText.distance(record.meters)) · next in \(next)" }
         // QA-1 P1-2: a started try is spent even if nothing was filed.
         if store.hasDailyAttempt(day: today) { return "Tried · next in \(next)" }
         return "Ready"
@@ -290,16 +284,22 @@ struct ClosedCard: View {
             .accessibilityLabel("Paused at \(ShareText.hudDistance(run.meters).value) "
                                 + "\(run.meters < 1000 ? "metres" : "kilometres"). Open your Duo to keep flying.")
             VStack(alignment: .leading, spacing: 10) {
+                let storm = Self.stormLine(run.stormMeters)
                 HStack(spacing: 8) {
                     Image(systemName: "cloud.bolt.fill")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(SwoopTheme.mist)
-                    Text("Storm \(ShareText.km(run.stormMeters)) behind")
+                        .foregroundStyle(storm.close ? SwoopTheme.coral : SwoopTheme.mist)
+                    Text(storm.text)
                         .font(SwoopType.caption(false))
-                        .foregroundStyle(SwoopTheme.foam)
+                        .foregroundStyle(storm.close ? SwoopTheme.coral : SwoopTheme.foam)
                     Spacer(minLength: 0)
                 }
                 SwoopProgressBar(value: Self.stormFill(run.stormMeters), height: 6)
+                    .overlay(alignment: .leading) {
+                        if storm.close {
+                            Capsule().fill(SwoopTheme.coral).frame(width: 18, height: 6)
+                        }
+                    }
                 let stats = AppRules.statsLine(perfects: run.perfects, chain: run.chain, lighthouses: 0)
                 if !stats.isEmpty {
                     Text(stats)
@@ -310,7 +310,7 @@ struct ClosedCard: View {
                     .font(SwoopType.caption(false))
                     .foregroundStyle(SwoopTheme.mist)
                 if run.isScoredDaily, let day = run.day {
-                    Text("Daily #\(day) · your one try is paused")
+                    Text("Daily #\(AppRules.dailyNumber(day: day)) · your one try is paused")
                         .font(SwoopType.caption(false))
                         .foregroundStyle(SwoopTheme.mist)
                 }
@@ -330,14 +330,14 @@ struct ClosedCard: View {
         }
     }
 
-    /// "1.0 km to your best" within 10 % of it, else "Beat 19.6 km to set a best"; "Past your best" beyond it; "Your
-    /// first flight" without one (never "—", UX §9). Pure; tested.
+    /// "1.00 km to your best" within 10 % of it, else "Beat 19.60 km to set a best"; "Past your best" beyond it; "No best
+    /// yet: this flight sets it" without one (never "—", UX §9; Duo R3 P2-16). Pure; tested.
     nonisolated static func bestLine(meters: Double, best: Double) -> String {
-        guard best > 0, best.isFinite else { return "Your first flight" }
+        guard best > 0, best.isFinite else { return "No best yet: this flight sets it" }
         let m = meters.isFinite ? max(meters, 0) : 0
         if m >= best { return "Past your best" }
-        if best - m <= best * 0.10 { return "\(ShareText.km(best - m + 99.999)) to your best" }
-        return "Beat \(ShareText.km(best)) to set a best"
+        if best - m <= best * 0.10 { return "\(ShareText.distance(best - m, roundUp: true)) to your best" }
+        return "Beat \(ShareText.distance(best)) to set a best"
     }
 
     /// The paused hero: "18.57 km" (hundredths, like the HUD) or "842 m". Pure; tested.
@@ -346,10 +346,18 @@ struct ClosedCard: View {
         return "\(d.value) \(d.unit)"
     }
 
-    /// The cover's storm meter: 0 m empty, 3 km or more full. Pure; tested.
+    /// The cover's storm meter: the HUD's own fill (`AppRules.meterLead`), from the gap in metres. Pure; tested.
     nonisolated static func stormFill(_ meters: Double) -> Double {
         guard meters.isFinite else { return 0 }
-        return min(max(meters / 3000, 0), 1)
+        return AppRules.meterLead(gap: max(meters, 0) * Tuning.pointsPerMeter)
+    }
+
+    /// "Storm close" (coral) inside the meter's danger zone, else "Storm far · lead 78 %" (the player's R3 note: a
+    /// gap in km read as an alarm 75 m into a run). Pure; tested.
+    nonisolated static func stormLine(_ meters: Double) -> (text: String, close: Bool) {
+        let fill = stormFill(meters)
+        if fill < AppRules.meterDangerZone { return ("Storm close", true) }
+        return ("Storm far · lead \(Int((fill * 100).rounded())) %", false)
     }
 
     // MARK: Results
@@ -362,7 +370,7 @@ struct ClosedCard: View {
                                      seed: r.seed, firstFlight: summary.title == "First flight")
         return VStack(spacing: 12) {
             SwoopOverline(text: summary.dailyDay != nil ? "Daily" : "Flight")
-            Text(ShareText.km(r.meters))
+            Text(ShareText.distance(r.meters))
                 .font(.system(size: 56, weight: .heavy, design: .rounded).monospacedDigit())
                 .foregroundStyle(SwoopTheme.foam)
                 .lineLimit(1)

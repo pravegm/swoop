@@ -57,6 +57,8 @@ final class SceneBirdView {
     private var tintIndex = -1
     private let goldTint = ScenePaint.ui(ScenePaint.gold)
     private var glowGold = false
+    /// The head taper's length this frame (world units), so the ribbon narrows into the tail instead of ending square.
+    private var headTaper: CGFloat = 24
     private var wingCache: [Int: SceneWingPose] = [:]
     private var poseKey = -1
     private var bird: Bird = SceneDefaults.bird
@@ -326,7 +328,8 @@ final class SceneBirdView {
             for layer in coreLayers { layer.fillColor = trailTints[ti] }
         }
         let width = (SceneLook.trailWidth + SceneLook.trailWidthFast * speedK) / z
-        // Three nested ribbons: the combined alpha at the bird is `trailAlpha`, fading smoothly toward the tail.
+        headTaper = SceneLook.trailHeadTaper / max(z, 0.01)
+        // Nested ribbons: the combined alpha at the bird is `trailAlpha`, fading smoothly toward the tail.
         let layers = coreLayers.count
         let perLayer = 1 - pow(1 - SceneLook.trailAlpha, 1 / CGFloat(max(layers, 1)))
         let strength = min(1, 0.4 + 0.6 * speedK + 0.5 * goldK)
@@ -372,7 +375,7 @@ final class SceneBirdView {
         for i in a..<n {
             let p = pts[i]
             let nrm = normal(pts, i)
-            let w = width * 0.5 * pow(CGFloat(i - a) / span, 0.9)
+            let w = width * 0.5 * pow(CGFloat(i - a) / span, 0.9) * taper(p, pts[n - 1])
             let q = CGPoint(x: p.x + nrm.x * w, y: p.y + nrm.y * w)
             if i == a { path.move(to: q) } else { path.addLine(to: q) }
         }
@@ -381,12 +384,19 @@ final class SceneBirdView {
         while i >= a {
             let p = pts[i]
             let nrm = normal(pts, i)
-            let w = width * 0.5 * pow(CGFloat(i - a) / span, 0.9)
+            let w = width * 0.5 * pow(CGFloat(i - a) / span, 0.9) * taper(p, pts[n - 1])
             path.addLine(to: CGPoint(x: p.x - nrm.x * w, y: p.y - nrm.y * w))
             i -= 1
         }
         path.closeSubpath()
         return path
+    }
+
+    /// 0.3 at the bird, rising smoothly to 1 over `headTaper`: the ribbon leaves the tail as a point.
+    private func taper(_ p: CGPoint, _ head: CGPoint) -> CGFloat {
+        let d = hypot(p.x - head.x, p.y - head.y)
+        let k = min(d / max(headTaper, 0.001), 1)
+        return 0.3 + 0.7 * k * k * (3 - 2 * k)
     }
 
     private func normal(_ pts: [CGPoint], _ i: Int) -> CGPoint {

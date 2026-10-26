@@ -77,6 +77,23 @@ public enum DailySeed {
         return calendar.dateComponents([.day], from: a, to: b).day ?? 0
     }
 
+    /// Launch day, 2026-11-24 (UTC): Daily Flight #1 (REVIEW-3, ROUND-4 #13). Day 327 since 2026-01-01.
+    public static let launchDay: Int = {
+        var comps = DateComponents()
+        comps.year = 2026
+        comps.month = 11
+        comps.day = 24
+        comps.hour = 12
+        guard let d = utc.date(from: comps) else { return 327 }
+        return dayNumber(for: d, calendar: utc)
+    }()
+
+    /// The number players see ("Daily Flight #12"): 1 on launch day, counting up, never below 1. The sea's seed
+    /// still comes from `seed(day:)` with the raw day number, so nothing about today's sea changes.
+    public static func displayNumber(day: Int) -> Int {
+        return max(1, day - launchDay + 1)
+    }
+
     /// The sea seed for a day number.
     public static func seed(day: Int) -> UInt64 {
         var rng = SeededRandom(seed: 0xDA11_F1E5_5EED_0000 ^ UInt64(bitPattern: Int64(day)))

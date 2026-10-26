@@ -161,3 +161,76 @@ gutter, so ART-S15's `SceneDriver.hasFold` isn't needed. Please wire these `Flig
 - **Feel:** `deviceHasFold` set from the hinge; only an explicit haptic level is written; cues `.homeFold`,
   `.closing`, `.reopened`, `.go`, `.splitDeck`, `.bookPrompt`, `.resultsTick(n)`, `.touchDown` are called;
   `hinge.tuck(at:)` every Home frame; `CombinedTuckSource` + `tapToggles` for VoiceOver / Switch Control.
+## Core → App (Round 4)
+- **Daily number:** `DailySeed.displayNumber(day:)` counts launch day (2026-11-24 UTC, `DailySeed.launchDay` = 327)
+  as #1, with a minimum of 1. Keep passing the raw `day` to the session and `DailySeed.seed(day:)`; seeds are unchanged.
+- **Goal scope:** every goal's text now ends in "in one flight" or "in total". `GoalCatalog.scope(of:) -> GoalScope`
+  (`.oneFlight` / `.total`) lets the results show, e.g., "best 2 of 4 in one flight" instead of a tick that
+  contradicts this run's "2 lighthouses".
+- **Lead meter (REVIEW-3 juror #15, player "starts almost empty"):** Core's number is still `Tuning.leadMeterScale` = 5.0
+  (start 16 %, casual cruise ~60 %). Please check that the HUD reads it. If you want the start fuller, a saturating
+  curve gap / (gap + 2400) reads 50 % at the start, 16 % at storm-close and ~79 % at cruise. That is your call;
+  Core's gap is unchanged.
+- **Tuck rise limit:** the session now limits how fast the tuck can rise (full in ≥ 0.15 s), so slamming the hinge
+  gains nothing. `snapshot.tuck` is still the eased value the physics uses; no change needed for the UI.
+
+## Feel → App (Round 4: P0-6 hinge comfort, P1-8 Perfects, P1-9 splash)
+- **Closing pause (P1-2):** the gate is now 90° / 98°, with a 0.2 s dwell on the One-Euro angle, and instant under 75°.
+  `hinge.isClosing` still works, judged as of the latest frame or report. In `checkClosing()` please use
+  **`hinge.closing(at: now)`**, so the dwell matures on the frame clock while paused, when no tuck is asked and no
+  report arrives. Update the comment "Closing below 95° … 102°".
+- **End-stop detent:** after `activeSource.tuck(at: now)` in `advance`, add `if input == .hinge &&
+  hinge.consumeEndStop() { feedback.cue(.endStop) }`. A stop older than 0.1 s is dropped, so one that happened on
+  Home or Results never plays late.
+- **"Open a little wider" (countdown nudge):** `hinge.restIsBelowFloor(at: now)` is true while the hand rests,
+  still, under the 132° floor. Hold the countdown on it, as you do for the flat hold. The snap itself now accepts
+  125–132° and clamps them to 132.
+- **Perfect milestones (P1-8):** use `FeedbackDirector.isPerfectMilestone(chain:)` (3, 5, 10, 15, 20, 25…) for the
+  callout, the hit-stop and VoiceOver, so picture, sound and haptic agree. The director already plays the soft chime
+  and light tap on ordinary Perfects, and the big chime, whoosh-pop and double tap on milestones.
+- **Hit-stop length:** please make the milestone hit-stop **`FeelSoundBook.hitStop` (0.06 s)**. The pop and the
+  second Normal tap land on its release. If you keep 35 ms, tell me and I'll change the constant.
+- **Touch-down click (REVIEW-3-duo P2-14):** no longer gated on `deviceHasFold`. You call it only in touch input, so
+  Duo deck and cover runs get it too.
+- `HingeTuckTuning.openMin` is now 132 (was 145), `calibrationLow` 125, and the stroke is
+  `HingeTuckTuning.stroke(forOpen:)`. Layout's `TitleTuck.fromHinge` still assumes a 36° stroke: please map the
+  title bird through `HingeTuckSource.tuck(forAngle:open:)`, or simply use `hinge.tuck(at: now)`.
+
+## Scene → App (Round 4)
+- **Lead meter = storm picture (P0-2 / P1-7):** draw the meter's fill with `SceneStormMap.meterFill(gap:)`, which is
+  sqrt(gap / (leadMeterScale × fullLead)). The storm's on-screen edge is driven by that same value. Its coral zone is
+  `SceneStormMap.closeFill` (≈ 0.17). `scene.stormMeterFill` holds this frame's value.
+- **Milestones (P1-8):** `FlightScene.isChainMilestone(chain)` (3, 5, 10, 15, 20…) is what the scene uses for its
+  punch-in. Please use it for the callout and the hit-stop too.
+- **Ring tiers** are the scene's own: foam for ×1–4, gold for ×5–9, reward gold with a second ring from ×10.
+- **Sun (P0-3):** `scene.sunCanvasPoint` is the sun's centre in canvas points (y up, mirrored correctly). Use it to
+  keep the Ready ring, countdown and captions off the sun.
+- **Store captures (juror #26):** set `scene.gutterEnabled = false` in store-capture mode.
+- **Splash (P1-9):** the scene now dips the camera, dunks the bird, throws twice the drops and leaves a foam crater.
+  The "Splash" word and the "×N lost" pill go at `onBirdPoint`.
+- **One bird mark (P0-5 / juror #16):** use `BirdArt.markPath(width:height:)` everywhere outside gameplay, including
+  the cover, cards, badges, About and the iPhone touch glyph. Stroke it at `BirdArt.markLineWidth(forHeight:)` with
+  round caps and joins.
+- **Title bird:**
+  - Tucked, it is now a teardrop dart about 26 % wide, so `BirdDrawing.fit` keeps it at its real size.
+  - `titleDetail` adds `beakLower` (fill `#D8862A`) and `headContour` (stroke 1 pt, ink at 45 %).
+  - Its mirrors are empty past half tuck.
+
+## App status (Round 4, end)
+- **Feel:** wired `hinge.closing(at:)` (both call sites, and fold-to-fly's disarm), `consumeEndStop()` → `.endStop`,
+  `restIsBelowFloor(at:)` → the countdown holds on "Open a little wider" (shares the 4 s flat-hold budget), the
+  milestone hit-stop = `FeelSoundBook.hitStop`, and `TitleTuck.fromHinge` now maps through
+  `HingeTuckTuning.tuck(forAngle:open:)` with the open angle floored at `openMin`.
+- **Milestones:** one rule. The App calls `FeedbackDirector.isPerfectMilestone(chain:)` for the callout, the hit-stop and
+  VoiceOver (no extra "first Perfect" callout); AppTests asserts it equals `FlightScene.isChainMilestone` for 0…80.
+- **Scene:** the lead meter draws `SceneStormMap.meterFill(gap:)` and its coral zone is `SceneStormMap.closeFill`;
+  `sunCanvasPoint` moves the countdown / Ready stage to 28 % (or 62 %) height when the sun is within 160 pt (it also
+  sits on a navy disc at 0.62, 4.5 : 1 over the sun's core); `gutterEnabled = false` on every demo (store) run; the
+  splash word and "×N lost" sit at `onBirdPoint`; `BirdGlyph` is now `BirdArt.markPath` stroked at
+  `markLineWidth` (cover, cards, About, pose card, meter knob, the touch glyph, badges); the title draws
+  `beakLower` and `headContour`. The app icon keeps the dorsal gull (it is the mark's source) with R4's 60/40 px fixes.
+- **Core:** the Daily shows `DailySeed.displayNumber(day:)` everywhere (HUD tag, banner, Home, cover, results, share
+  line, share card); Flocks shows a scope line only for `GoalCatalog.scope(of:) == .total` goals.
+- **Founder:** `UIRequiresFullScreen` ships in Release (project.yml, Duo R3 P2-15: drop it in Release as Brim does);
+  `screen=icon` now also writes Documents/AppIcon-180/60/40.png (`SWOOP-T icon sizes …`): please pull them into the
+  CI artifacts; duo-01 / duo-06 timing and `hinge_set 90` are duo.sh's.

@@ -1,3 +1,4 @@
+import QuartzCore
 import SpriteKit
 import SwiftUI
 
@@ -97,7 +98,8 @@ struct RootView: View {
             case .turn:
                 gameLayer(AppPoseRule.playRect(in: canvas), hidden: true)
                 if turnCardReady || isDuoLike(canvas) {
-                    TurnCard(insets: safe, isDuo: isDuoLike(canvas) || controller.forcedPose != nil,
+                    TurnCard(insets: safe,
+                             isDuo: isDuoLike(canvas) || (controller.forcedPose != nil && !controller.demoPosePhone),
                              onPlayWithTouch: { controller.chooseTouchFromPoseCard() })
                         .transition(.opacity)
                 }
@@ -108,6 +110,13 @@ struct RootView: View {
             }
             if controller.showsIconExport {
                 iconLayer(canvas)
+            }
+            if settings.hingeReadout && BuildChannel.isTestBuild {
+                HingeReadoutOverlay(controller: controller)
+                    .padding(.top, max(safe.top, 0) + 76)
+                    .padding(.leading, max(safe.leading, 0) + 20)
+                    .frame(width: canvas.width, height: canvas.height, alignment: .topLeading)
+                    .allowsHitTesting(false)
             }
         }
         .frame(width: canvas.width, height: canvas.height)
@@ -327,5 +336,28 @@ struct RootView: View {
             IconExport.render()
             #endif
         }
+    }
+}
+
+/// The founder's hinge readout (R4 P1-15, TestFlight / Debug only): a small bird-page corner panel at 10 Hz.
+struct HingeReadoutOverlay: View {
+    let controller: GameController
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+            let r = controller.hingeReadout(now: CACurrentMediaTime())
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(r.lines.enumerated()), id: \.offset) { item in
+                    Text(item.element)
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(SwoopTheme.foam)
+                        .lineLimit(1)
+                }
+            }
+            .padding(8)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(SwoopTheme.surface.opacity(0.85)))
+        }
+        .accessibilityHidden(true)
     }
 }

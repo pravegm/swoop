@@ -81,10 +81,12 @@ struct TitleBirdView: View {
             context.fill(p(detail.leftMirrors), with: .color(Color.white))
             context.fill(p(detail.rightMirrors), with: .color(Color.white))
             context.fill(p(detail.beak), with: .color(Self.beak))
+            context.fill(p(detail.beakLower), with: .color(Self.beakSpot))
             context.fill(p(detail.beakSpot), with: .color(Self.beakSpot))
-            // A hairline rim light on the leading edges.
-            context.stroke(left, with: .color(Color.white.opacity(0.16)), lineWidth: 1)
-            context.stroke(right, with: .color(Color.white.opacity(0.16)), lineWidth: 1)
+            // Scene R4: a visible head contour (ink at 45 %), and a stronger lit leading edge (juror R3 #25).
+            context.stroke(p(detail.headContour), with: .color(SwoopTheme.ink.opacity(0.45)), lineWidth: 1)
+            context.stroke(left, with: .color(Color.white.opacity(0.3)), lineWidth: 1.2)
+            context.stroke(right, with: .color(Color.white.opacity(0.3)), lineWidth: 1.2)
         }
         .accessibilityHidden(true)
     }

@@ -99,6 +99,12 @@ enum FeelHapticBook {
     }
 
     /// The Perfect cue for a profile (Normal: `perfect`, the two taps on the hit-stop).
+    /// The ordinary-Perfect cue for a profile.
+    static func perfectSoft(for profile: HapticProfile) -> FeelHapticCue {
+        adapt(perfectSoft, to: profile)
+    }
+
+    /// The milestone Perfect cue for a profile.
     static func perfect(for profile: HapticProfile) -> FeelHapticCue {
         guard profile == .strong else { return perfect }
         return FeelHapticCue(notes: [.buzz(1.0, strongBurstSharpness, duration: strongPerfectBurst),
@@ -184,10 +190,15 @@ enum FeelHapticBook {
         return FeelHapticCue(notes: [.tap(0.5 + 0.45 * s, 0.55), .buzz(0.2 + 0.15 * s, 0.4, at: 0.01, duration: 0.05)])
     }
 
-    /// Perfect: a crisp double tap that lands exactly on the App's 35 ms hit-stop. The firm tap fires the instant
+    /// Perfect (Round 4: milestones only): a crisp double tap that lands exactly on the App's hit-stop. The firm tap fires the instant
     /// the Perfect lands (the frame the world freezes); the lighter, keener one fires as it lets go (the punch-in's
     /// "pop"). It is prebuilt (`FeelHaptics`), so there is no pattern-building latency in front of it.
     static let perfect = FeelHapticCue(notes: [.tap(0.9, 0.85), .tap(0.55, 1.0, at: Double(FeelSoundBook.hitStop))])
+    /// Round 4 (P1-8): an ordinary Perfect is one light, crisp tap; the double tap above is for the milestones
+    /// (3, 5, 10, 15…), where the App holds the hit-stop.
+    static let perfectSoft = FeelHapticCue(notes: [.tap(0.55, 0.9)])
+    /// Round 4 (REVIEW-3-duo P1-2): the end-stop detent when the tuck first hits full: a 25 ms tick at 0.35.
+    static let endStop = FeelHapticCue(notes: [.buzz(0.35, 0.5, duration: 0.025)])
     /// Good landing: a soft single tap.
     static let good = FeelHapticCue(notes: [.tap(0.4, 0.5)])
     /// Tailwind: a rising ramp that lands on a firm tap.
@@ -196,11 +207,12 @@ enum FeelHapticBook {
         curve: [FeelHapticPoint(time: 0, value: 0.1), FeelHapticPoint(time: 0.25, value: 0.4),
                 FeelHapticPoint(time: 0.5, value: 1.0), FeelHapticPoint(time: 0.6, value: 1.0)]
     )
-    /// Splash: a heavy thud and a short wet rumble.
+    /// Splash: a heavy thud and a short wet rumble. Round 4 (P1-9): heavier and longer, the 80 ms of 0.85× time the
+    /// scene slows for (ART §5), then a sag: the one moment that should feel like a mistake.
     static let splash = FeelHapticCue(
-        notes: [.tap(1.0, 0.2), .tap(0.55, 0.25, at: 0.1), .buzz(0.7, 0.1, duration: 0.2)],
-        curve: [FeelHapticPoint(time: 0, value: 1), FeelHapticPoint(time: 0.08, value: 0.6),
-                FeelHapticPoint(time: 0.2, value: 0)]
+        notes: [.tap(1.0, 0.12), .buzz(0.9, 0.06, duration: 0.26), .tap(0.6, 0.2, at: 0.1)],
+        curve: [FeelHapticPoint(time: 0, value: 1), FeelHapticPoint(time: 0.08, value: 0.85),
+                FeelHapticPoint(time: 0.16, value: 0.45), FeelHapticPoint(time: 0.26, value: 0)]
     )
     /// Lighthouse: a soft triple, in time with the bell.
     static let lighthouse = FeelHapticCue(notes: [.tap(0.3, 0.4), .tap(0.3, 0.4, at: 0.16), .tap(0.35, 0.45, at: 0.32)])

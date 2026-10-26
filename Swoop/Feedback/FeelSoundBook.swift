@@ -192,8 +192,20 @@ enum FeelSoundBook {
     static let chimeBrightnessBase = 0.3
     static let chimeBrightnessStep = 0.035
     static let chimeBrightnessMax = 0.62
-    /// The App's hit-stop (ROUND-2): the pop lands as the world starts moving again.
-    static let hitStop: Float = 0.035
+    /// The App's milestone hit-stop (Round 4: hit-stops only at chain milestones, 60 ms; REVIEW-3-ux P1-2). The pop
+    /// and the milestone haptic's second tap land as the world starts moving again. The App should read this value.
+    static let hitStop: Float = 0.06
+
+    /// Round 4 (P1-8, "make Perfects special again"): the chain milestones, 3 (Tailwind), then 5, 10, 15, 20…
+    /// Only these get the big chime, the whoosh-pop, the hit-stop haptic and (App) the callout and hit-stop. Every
+    /// other Perfect gets a soft chime and a light tap.
+    static func isChainMilestone(_ chain: Int) -> Bool {
+        chain == 3 || (chain >= 5 && chain % 5 == 0)
+    }
+
+    /// The soft chime's level against the big one's (about −5 dB), and its decay (s).
+    static let softChimeGain = 0.11
+    static let softChimeDecay: Float = 0.6
 
     /// How bright the n-th Perfect's chime rings (0.3 … 0.62).
     static func chimeBrightness(chain: Int) -> Double {
@@ -211,6 +223,29 @@ enum FeelSoundBook {
     /// it, the punch-in: a short soft whoosh through the 35 ms hit-stop and a round "pop" as it releases, and a light
     /// kiss of water.
     static func perfect(chain: Int, dice: inout FeelDice) -> [FeelSynthCommand] {
+        isChainMilestone(chain) ? perfectMilestone(chain: chain, dice: &dice) : perfectSoft(chain: chain, dice: &dice)
+    }
+
+    /// An ordinary Perfect (Round 4): the same rising pentatonic note, soft and short, with a faint octave and a kiss
+    /// of water. No whoosh-pop and no glint: those belong to the milestones.
+    static func perfectSoft(chain: Int, dice: inout FeelDice) -> [FeelSynthCommand] {
+        let frequency = chimeFrequency(chain: chain)
+        let gain = Float(softChimeGain * pow(chimeBaseHz / frequency, 0.3))
+        let f = Float(frequency)
+        let brightness = Float(chimeBrightness(chain: chain) * 0.85)
+        return [
+            .ring(FeelRingSpec(.chime, fundamental: f, partials: 4, decay: softChimeDecay, brightness: brightness,
+                               gain: gain, seed: dice.seed32())),
+            .ring(FeelRingSpec(.chime, fundamental: f * 2, partials: 2, decay: 0.25, brightness: 0.3, gain: 0.025,
+                               delay: 0.03, seed: dice.seed32())),
+            .noise(FeelNoiseSpec(.bandPass, cutoff: 2600, to: 1400, sweep: 0.08, q: 0.9, attack: 0.002, decay: 0.05,
+                                 gain: 0.04)),
+        ]
+    }
+
+    /// A milestone Perfect (3, 5, 10, 15…): the full chime, brighter with the chain, the whoosh-pop through the
+    /// hit-stop, a soft bell an octave under for weight, the glint, and from ×10 a three-note sparkle on top.
+    static func perfectMilestone(chain: Int, dice: inout FeelDice) -> [FeelSynthCommand] {
         let frequency = chimeFrequency(chain: chain)
         let glow = chimeGlow(chain: chain)
         // Higher notes sit in the ear's most sensitive band, and brighter partials add loudness: both a touch quieter.
@@ -233,6 +268,17 @@ enum FeelSoundBook {
             // A glassy glint an octave up, growing with the chain (short, so it sparkles rather than rings).
             commands.append(.ring(FeelRingSpec(.glass, fundamental: f * 2, partials: 2, decay: 0.16, brightness: 0.3,
                                                gain: Float(0.015 + 0.03 * glow), delay: 0.02, seed: dice.seed32())))
+        }
+        // Weight: a soft bell an octave under, so the milestone sounds bigger, not just brighter.
+        commands.append(.ring(FeelRingSpec(.chime, fundamental: f / 2, partials: 3, decay: 0.8, brightness: 0.3,
+                                           gain: 0.07, delay: 0.01, seed: dice.seed32())))
+        if chain >= 10 {
+            let sparkle: [Float] = [2093.0, 2637.0, 3136.0]
+            for index in 0..<sparkle.count {
+                commands.append(.ring(FeelRingSpec(.glass, fundamental: sparkle[index], partials: 2, decay: 0.2,
+                                                   brightness: 0.3, gain: 0.035,
+                                                   delay: hitStop + 0.05 + 0.06 * Float(index), seed: dice.seed32())))
+            }
         }
         return commands
     }
@@ -264,9 +310,16 @@ enum FeelSoundBook {
     }
 
     /// Splash: the mistake, wet and heavy. A broad falling burst, a low slap and thud, a fizz of spray, then drops.
+    /// Round 4 (P1-9, "splashes must read as mistakes"): a real thud a phone speaker can carry. The body sits in
+    /// 180–320 Hz (the old 150 → 55 Hz tone is below what the speaker plays), with a dull falling "plop" and a slap.
     static func splash(speed: Double, dice: inout FeelDice) -> [FeelSynthCommand] {
         let k = Float(0.6 + 0.4 * speedUnit(speed))
         var commands: [FeelSynthCommand] = [
+            .tone(FeelToneSpec(start: 300, end: 120, glide: 0.12, duration: 0.24, attack: 0.003, decay: 0.08,
+                               gain: 0.24 * k, harmonics: 5)),
+            .noise(FeelNoiseSpec(.lowPass, cutoff: 480, to: 220, sweep: 0.1, q: 1.1, attack: 0.002, decay: 0.06,
+                                 gain: 0.22 * k)),
+            .drop(FeelDropSpec(frequency: 420, chirp: 0.6, decay: 0.05, gain: 0.12 * k, delay: 0.01)),
             .noise(FeelNoiseSpec(.bandPass, cutoff: 1300, to: 380, sweep: 0.35, q: 0.7, attack: 0.004, decay: 0.22,
                                  gain: 0.34 * k)),
             .noise(FeelNoiseSpec(.lowPass, cutoff: 700, q: 0.8, attack: 0.002, decay: 0.07, gain: 0.26 * k)),
@@ -304,6 +357,12 @@ enum FeelSoundBook {
     static func tailwindEnded() -> [FeelSynthCommand] {
         [.noise(FeelNoiseSpec(.bandPass, cutoff: 2400, to: 700, sweep: 0.4, q: 0.8, attack: 0.05, decay: 0.15,
                               gain: 0.045))]
+    }
+
+    /// The end-stop detent (Round 4, REVIEW-3-duo P1-2): the wings are fully tucked, so squeezing further gains
+    /// nothing. A tiny dry wooden tick, felt more than heard.
+    static func endStop() -> [FeelSynthCommand] {
+        [.ring(FeelRingSpec(.wood, fundamental: 720, partials: 2, decay: 0.008, brightness: 0.3, gain: 0.045))]
     }
 
     /// Lighthouse bells (one per headland, cycling): C5, B4, D5.

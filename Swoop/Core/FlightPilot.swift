@@ -228,13 +228,16 @@ public struct FlightPilot {
     static func landTucked(_ from: CorePilotState, sea: SeaProfile, target: Double, delay: Double,
                            gScale: Double) -> (rank: Int, alpha: Double, steps: Int) {
         var b: CorePilotState = from
+        var limited: Double = from.u
         let k: Double = 1 - exp(-predictDt / Tuning.tuckAttack)
         var t: Double = 0
         var n: Int = 0
         while t < maxFlight {
             n += 1
-            let tu: Double = t >= delay ? target : b.u
-            b.u += (tu - b.u) * k
+            let tu: Double = t >= delay ? target : limited
+            // The session's rise limit (Tuning.tuckMaxRise), then its easing.
+            limited = tu > limited ? min(tu, limited + Tuning.tuckMaxRise * predictDt) : tu
+            b.u += (limited - b.u) * k
             let px: Double = b.x
             let d0: Double = b.y - sea.height(at: px)
             let uNow: Double = b.u

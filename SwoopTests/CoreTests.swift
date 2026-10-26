@@ -269,8 +269,9 @@ struct CoreTests {
         let tucked = flyingSession(seed: 11)
         open.testPlace(x: 400, altitude: 500, vx: 800, vy: 0)
         tucked.testPlace(x: 400, altitude: 500, vx: 800, vy: 0)
-        _ = run(open, seconds: 0.3, dt: 1.0 / 120.0, tuck: 0)
-        _ = run(tucked, seconds: 0.3, dt: 1.0 / 120.0, tuck: 1)
+        // 0.4 s: the tuck needs ≥ 0.15 s to rise (Tuning.tuckMaxRise) before the dive gets going.
+        _ = run(open, seconds: 0.4, dt: 1.0 / 120.0, tuck: 0)
+        _ = run(tucked, seconds: 0.4, dt: 1.0 / 120.0, tuck: 1)
         #expect(!open.snapshot.skimming)
         #expect(!tucked.snapshot.skimming)
         #expect(open.snapshot.position.y > tucked.snapshot.position.y + 60)
@@ -718,7 +719,7 @@ struct CoreTests {
         #expect(GoalCatalog.goals(forRank: -1).isEmpty)
         #expect(GoalCatalog.rankTitle(0) == "Fledgling")
         #expect(GoalCatalog.rankTitle(GoalCatalog.maxRank) == "Storm Rider")
-        #expect(GoalCatalog.goals(forRank: 0)[0].text == "Fly 1 km")
+        #expect(GoalCatalog.goals(forRank: 0)[0].text == "Fly 1 km in one flight")
         #expect(GoalCatalog.titles.count == GoalCatalog.maxRank + 1)
     }
 
@@ -1037,7 +1038,7 @@ struct CoreTests {
         let r2: Goal = GoalCatalog.goals(forRank: 2).first(where: { (g: Goal) -> Bool in g.kind == .dailyPlayed })
             ?? Goal(id: "", kind: .dailyPlayed, target: 1, text: "")
         #expect(r7.id == "r7-daily")
-        #expect(r7.text == "Fly a Daily Flight")
+        #expect(r7.text == "Fly 1 more Daily Flight in total")
         #expect(GoalEvaluator.progress(r7, run: result(), lifetimeMeters: 0, dailyPlayed: true) == 0)
         #expect(GoalEvaluator.progress(r7, run: result(mode: .daily(day: 40, scored: true)), lifetimeMeters: 0,
                                        dailyPlayed: true) == 1)
@@ -1070,5 +1071,85 @@ struct CoreTests {
         }
         #expect(ids.count == 36)
         #expect(GoalCatalog.starGoals(n: 3) == GoalCatalog.starGoals(n: 3))
+    }
+
+    // MARK: Round 4
+
+    @Test func everyGoalStatesItsScope() {
+        // REVIEW-3 P0-1: "Pass 4 lighthouses ✓" next to "2 lighthouses" read as a contradiction. Every goal says
+        // "in one flight" or "in total", and the text agrees with GoalCatalog.scope(of:).
+        var all: [Goal] = Array(GoalCatalog.ladder.joined())
+        var n: Int = 0
+        while n < 7 {
+            all.append(contentsOf: GoalCatalog.starGoals(n: n))
+            n += 1
+        }
+        #expect(all.count == 42 + 21)
+        for g in all {
+            let oneFlight: Bool = g.text.contains("in one flight")
+            let total: Bool = g.text.contains("in total")
+            #expect(oneFlight != total, "\(g.id): \(g.text)")
+            switch GoalCatalog.scope(of: g) {
+            case .oneFlight: #expect(oneFlight, "\(g.id): \(g.text)")
+            case .total: #expect(total, "\(g.id): \(g.text)")
+            }
+        }
+        let lh: Goal? = GoalCatalog.goals(forRank: 5).first(where: { (g: Goal) -> Bool in g.kind == .lighthouses })
+        #expect(lh?.text == "Pass 3 lighthouses in one flight")
+    }
+
+    /// Fly a skimming bird down the tutorial downslope for 1.2 s; the tuck input rises from 0 at 0.05 s by `tuckAt`.
+    private func squeezeRun(_ tuckAt: (Double) -> Double) -> ([FlightEvent], FlightSnapshot, Double) {
+        let s = flyingSession(seed: 21)
+        s.testPlace(x: 300, altitude: 0, vx: 700, vy: 0)
+        var events: [FlightEvent] = []
+        var t: Double = 0
+        var tuckAt100ms: Double = -1
+        var i: Int = 0
+        while i < 144 {
+            events.append(contentsOf: s.step(dt: 1.0 / 120.0, tuck: tuckAt(t)))
+            t += 1.0 / 120.0
+            if tuckAt100ms < 0 && t >= 0.15 - 1e-9 { tuckAt100ms = s.snapshot.tuck }
+            i += 1
+        }
+        return (events, s.snapshot, tuckAt100ms)
+    }
+
+    @Test func slammingTheHingeGainsNothing() {
+        // REVIEW-3 Duo: very fast squeezes must gain nothing. The rise limit (Tuning.tuckMaxRise) makes any squeeze
+        // faster than a full tuck in 1 / tuckMaxRise s produce exactly the same flight.
+        let slam = squeezeRun({ (t: Double) -> Double in t < 0.05 ? 0 : 1 })
+        let quick = squeezeRun({ (t: Double) -> Double in t < 0.05 ? 0 : min(1, (t - 0.05) / 0.05 + 0.1) })
+        #expect(slam.0 == quick.0)
+        #expect(slam.1 == quick.1)
+        // 0.1 s after the slam the eased tuck is still well short of full (a full tuck takes ≥ 0.15 s, then eases).
+        #expect(slam.2 < 0.7, "tuck 0.1 s after a slam: \(slam.2)")
+        // A slower, deliberate squeeze (0.4 s) is a different flight, and not a faster one.
+        let slow = squeezeRun({ (t: Double) -> Double in t < 0.05 ? 0 : min(1, (t - 0.05) / 0.4) })
+        #expect(slow.1 != slam.1)
+        #expect(Tuning.tuckMaxRise <= 1.0 / 0.15 + 1e-9)
+    }
+
+    @Test func dailyDisplayNumberCountsFromLaunch() {
+        #expect(DailySeed.launchDay == 327)
+        var comps = DateComponents()
+        comps.year = 2026
+        comps.month = 11
+        comps.day = 24
+        comps.hour = 0
+        comps.minute = 30
+        if let d = DailySeed.utc.date(from: comps) {
+            #expect(DailySeed.dayNumber(for: d) == DailySeed.launchDay)
+            #expect(DailySeed.displayNumber(day: DailySeed.dayNumber(for: d)) == 1)
+        } else {
+            Issue.record("no date")
+        }
+        #expect(DailySeed.displayNumber(day: 327) == 1)
+        #expect(DailySeed.displayNumber(day: 336) == 10)
+        #expect(DailySeed.displayNumber(day: 298) == 1)
+        #expect(DailySeed.displayNumber(day: -5) == 1)
+        // The seed is unchanged: it still uses the raw day.
+        var rng = SeededRandom(seed: 0xDA11_F1E5_5EED_0000 ^ UInt64(bitPattern: Int64(336)))
+        #expect(DailySeed.seed(day: 336) == rng.next())
     }
 }

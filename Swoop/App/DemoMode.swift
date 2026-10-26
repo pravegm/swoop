@@ -57,6 +57,10 @@ import UIKit
 // - `holdReady`                   1.5 s in, a resume's "Ready" ring is held (`SWOOP-T resumed`).
 // - `foldFill=<0…1>`              Results: Fly again shows that much fold fill (UX-A3).
 // - `orient=portrait`             ask the scene for portrait (the seated split deck with `mode=`).
+// - `freezeOn=flathold` (R4)      hold the frame 1 s into the countdown's flat (or nudge) hold.
+// - `paused` (R4)                 1.5 s into the run, the manual Pause card (`SWOOP-T paused user`).
+// - `nudge` (R4)                  the countdown holds on "Open a little wider" (the open angle on the floor).
+// - `pose=phone` (R4)             with `screen=pose`: the iPhone TurnCard ("Turn your iPhone sideways").
 // - `shortCountdown`              the run uses the 1.5 s "Ready · Go" restart countdown (with `freezeOn=countdown`
 //                                 the frame holds 1.3 s in: "Go").
 //
@@ -69,7 +73,9 @@ struct DemoConfig: Equatable {
     enum Screen: String, Equatable { case home, play, results, goals, birds, settings, pose, icon, badges, cover, daily }
     enum CoverState: String, Equatable { case home, midrun, results }
     enum ModeKey: String, Equatable { case flight, daily, attract }
-    enum Freeze: String, Equatable { case launch, perfect, splash, tailwind, lighthouse, stormclose, caught, finished, flying, countdown }
+    enum Freeze: String, Equatable {
+        case launch, perfect, splash, tailwind, lighthouse, stormclose, caught, finished, flying, countdown, flathold
+    }
     enum ProgressPreset: String, Equatable { case fresh, mid, late }
 
     static let defaultFreezeAfter: Double = 4
@@ -109,6 +115,11 @@ struct DemoConfig: Equatable {
     var foldFill: Double?
     var orientPortrait = false
     var shortCountdown = false
+    /// R4: `paused` (the manual Pause card 1.5 s in), `nudge` (the countdown's "Open a little wider" hold),
+    /// `pose=phone` (the iPhone TurnCard copy with `screen=pose`).
+    var paused = false
+    var nudge = false
+    var posePhone = false
 
     init(raw: String) { self.raw = raw }
 
@@ -186,6 +197,9 @@ struct DemoConfig: Equatable {
                 if let x = number(value) { config.foldFill = min(max(x, 0), 1) }
             case "orient": config.orientPortrait = value == "portrait"
             case "shortCountdown": config.shortCountdown = flag(value)
+            case "paused": config.paused = flag(value)
+            case "nudge": config.nudge = flag(value)
+            case "pose": config.posePhone = value == "phone"
             default: break
             }
         }
@@ -248,6 +262,8 @@ enum DemoPresets {
                 data.goalProgress[goal.id] = partial[i]
             }
             addDailies(&data, today: today, days: [1, 2], meters: [5_200, 3_900])
+            // Juror R3 #27: demo data must not contradict itself ("Logbook 0 of 40" at rank 13).
+            data.logbook = Set(Lighthouses.names.prefix(3))
         case .late:
             data.rank = min(12, GoalCatalog.maxRank)
             data.bestMeters = 18_240
@@ -270,6 +286,8 @@ enum DemoPresets {
                 data.goalProgress[goal.id] = partial[i]
             }
             addDailies(&data, today: today, days: [1, 2, 3, 4, 5], meters: [12_100, 9_800, 14_300, 8_700, 11_200])
+            data.logbook = Set(Lighthouses.names.prefix(14))
+            data.learnedHints = [AppHint.fold.rawValue, AppHint.open.rawValue, AppHint.land.rawValue]
             if let bird = BirdCatalog.all.filter({ $0.unlockRank <= data.rank }).last { data.bird = bird.id }
             if let sky = SkyCatalog.all.filter({ $0.unlockRank <= data.rank }).last { data.sky = sky.id }
         }
@@ -316,6 +334,21 @@ enum IconExport {
         } catch {
             AppTrace.t("SWOOP-T icon failed: \(error.localizedDescription)")
         }
+        // R4 P1-11: the small-size check. The 1024 master downsampled to each test size, as the Home screen shows it.
+        var written: [String] = []
+        for size in AppIconPainter.testSizes {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            format.opaque = true
+            let small = UIGraphicsImageRenderer(size: CGSize(width: size, height: size), format: format).image { _ in
+                UIImage(cgImage: cgImage).draw(in: CGRect(x: 0, y: 0, width: size, height: size))
+            }
+            if let png = small.pngData(),
+               (try? png.write(to: directory.appendingPathComponent("AppIcon-\(Int(size)).png"))) != nil {
+                written.append("\(Int(size))")
+            }
+        }
+        AppTrace.t("SWOOP-T icon sizes \(written.joined(separator: ","))")
     }
 
     /// Redraws into an opaque 1× context so the PNG carries no alpha channel (App Store requirement).

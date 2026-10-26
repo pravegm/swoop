@@ -75,9 +75,9 @@ function makeLaw(base, accel, cruise, late, max, gap, leashGap, leashRate) {
 const laws = [makeLaw(T.stormBaseSpeed, T.stormAccel, T.stormCruiseSpeed, T.stormLateAccel, T.stormMaxSpeed, T.gapStart,
   T.stormLeashGap, T.stormLeashRate)];
 if (args.grid) {
-  for (const base of [420, 480]) for (const accel of [9, 12]) for (const cruise of [1300, 1400, 1500])
-    for (const leashGap of [6000, 9000, 12000]) for (const leashRate of [0.15, 0.3, 0.5])
-      laws.push(makeLaw(base, accel, cruise, T.stormLateAccel, T.stormMaxSpeed, T.gapStart, leashGap, leashRate));
+  for (const base of [420, 480]) for (const accel of [10, 12]) for (const cruise of [1200, 1300]) for (const late of [2.5, 3, 3.5])
+    for (const leashGap of [9000, 12000]) for (const leashRate of [0.5])
+      laws.push(makeLaw(base, accel, cruise, late, T.stormMaxSpeed, T.gapStart, leashGap, leashRate));
 }
 const rows = [];
 for (const law of laws) {

@@ -281,28 +281,49 @@ enum SceneTextures {
         }
     }
 
-    /// A thin, flat-bottomed cloud streak lit from below (ART-S3; no puffballs, they make the mud).
+    /// A thin, flat-bottomed cloud streak lit from below (ART-S3; no puffballs, they make the mud). R4 (REVIEW-3 juror
+    /// #7): a 3-stop vertical profile and long alpha ramps at both ends, so a streak never ends in a hard rectangle.
     static var cloudStreak: SKTexture {
-        make("cloudstreak", width: 300, height: 36, scale: 1) { ctx, s in
+        make("cloudstreak2", width: 400, height: 36, scale: 1) { ctx, s in
             var rng = SceneRNG(seed: 0xC10_0D5)
             let base = s.height - 6
-            // A few long soft lumps sharing one flat underside.
+            ctx.saveGState()
+            ctx.clip(to: CGRect(x: 0, y: 0, width: s.width, height: base))
             for i in 0..<6 {
-                let cx = s.width * (0.12 + 0.76 * CGFloat(i) / 5) + rng.range(-12, 12)
-                let rx = rng.range(36, 70)
-                let ry = rng.range(9, 15)
+                let cx = s.width * (0.24 + 0.52 * CGFloat(i) / 5) + rng.range(-12, 12)
+                let rx = rng.range(40, 64)
+                let ry = rng.range(9, 14)
                 ctx.saveGState()
-                ctx.clip(to: CGRect(x: 0, y: 0, width: s.width, height: base))
                 ctx.translateBy(x: cx, y: base)
                 ctx.scaleBy(x: rx / ry, y: 1)
                 radial(ctx, [white(0.75), white(0.45), white(0)], [0, 0.6, 1], center: .zero, radius: ry * 1.6)
                 ctx.restoreGState()
             }
+            ctx.restoreGState()
             // The lit underside.
             ctx.saveGState()
             ctx.clip(to: CGRect(x: 0, y: base - 4, width: s.width, height: 4))
-            linear(ctx, [white(0), white(0.9), white(0.9), white(0)], [0, 0.15, 0.85, 1],
-                   from: CGPoint(x: 0, y: base), to: CGPoint(x: s.width, y: base))
+            linear(ctx, [white(0.9), white(0.9)], [0, 1], from: CGPoint(x: 0, y: base), to: CGPoint(x: s.width, y: base))
+            ctx.restoreGState()
+            // Feather both ends (≈ 120 pt on a 400-pt streak) and the top: multiply the alpha down.
+            ctx.saveGState()
+            ctx.setBlendMode(.destinationIn)
+            linear(ctx, [white(0), white(1), white(1), white(0)], [0, 0.3, 0.7, 1],
+                   from: CGPoint(x: 0, y: 0), to: CGPoint(x: s.width, y: 0))
+            ctx.restoreGState()
+        }
+    }
+
+    /// A storm lobe (REVIEW-3: billowing, not tyres): a nearly solid disc with a soft rim, lit from the upper right
+    /// (the sun ahead) and darker below, so overlapping lobes read as volume. Tinted by the sprite colour.
+    static var stormLobe: SKTexture {
+        make("stormlobe", width: 128, height: 128, scale: 2) { ctx, s in
+            let c = CGPoint(x: s.width / 2, y: s.height / 2)
+            radial(ctx, [white(1), white(1), white(0.85), white(0)], [0, 0.62, 0.8, 1], center: c, radius: s.width / 2)
+            ctx.saveGState()
+            ctx.setBlendMode(.sourceAtop)
+            linear(ctx, [UIColor(white: 1, alpha: 0), UIColor(white: 0, alpha: 0.28)], [0.35, 1],
+                   from: CGPoint(x: s.width * 0.7, y: 0), to: CGPoint(x: s.width * 0.3, y: s.height))
             ctx.restoreGState()
         }
     }

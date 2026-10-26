@@ -24,7 +24,7 @@
 18-home-flat|screen=home;progress=mid;flat|5
 19-home-fresh|screen=home|5
 20-countdown|mode=flight;seed=7;hints=fresh;freezeOn=countdown|6
-21-countdown-flat|mode=flight;seed=7;flat;freezeOn=countdown|6
+21-countdown-flat|mode=flight;seed=7;flat;freezeOn=flathold|6
 22-ready-go|mode=flight;seed=7;shortCountdown;freezeOn=countdown|6
 23-hint-fold|mode=flight;seed=7;hints=fresh;autopilot=casual;freezeAt=1.2|7
 24-chain-lost|mode=flight;seed=7;autopilot=novice;chain=3;freezeOn=splash;freezeAfter=0;freezeDelay=0.3|24
@@ -43,3 +43,11 @@
 37-settings|screen=settings|4
 38-goals-late|screen=goals;progress=late|5
 39-birds-fresh|screen=birds;progress=fresh|5
+# Round 4: store-21 now holds the flat countdown (freezeOn=flathold); the manual pause, the nudge, the splash word and
+# hint-open on the Duo set (UX-A13).
+40-hint-open|mode=flight;seed=7;hints=fresh;autopilot=casual;freezeAt=5|10
+41-pause|mode=flight;seed=7;paused;autopilot=perfect;skipCountdown|6
+42-countdown-nudge|mode=flight;seed=7;nudge;freezeOn=flathold|6
+43-splash|mode=flight;seed=7;autopilot=novice;skipCountdown;freezeOn=splash;freezeAfter=2;freezeDelay=0.2|16
+44-meter-label|mode=flight;seed=7;progress=fresh;autopilot=casual;skipCountdown;freezeAt=1.5|8
+45-pause-daily|mode=daily;seed=7;progress=mid;paused;autopilot=perfect;skipCountdown|6

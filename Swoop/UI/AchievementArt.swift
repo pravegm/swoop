@@ -130,23 +130,14 @@ enum BadgePainter {
 
     // MARK: Motifs
 
-    /// A seabird from the front, wings in a V (the app icon's bird, simplified).
+    /// The one bird mark (Scene's `BirdArt.markPath`, R4 P0-5), stroked round, centred on `c`, `span` wide.
     static func bird(_ ctx: inout GraphicsContext, at c: CGPoint, span: CGFloat, color: Color) {
-        let s = span / 400
-        var p = Path()
-        p.move(to: CGPoint(x: c.x, y: c.y + 40 * s))
-        p.addCurve(to: CGPoint(x: c.x + 200 * s, y: c.y - 110 * s), control1: CGPoint(x: c.x + 60 * s, y: c.y - 20 * s),
-                   control2: CGPoint(x: c.x + 150 * s, y: c.y - 40 * s))
-        p.addCurve(to: CGPoint(x: c.x, y: c.y + 70 * s), control1: CGPoint(x: c.x + 150 * s, y: c.y + 10 * s),
-                   control2: CGPoint(x: c.x + 60 * s, y: c.y + 30 * s))
-        p.addCurve(to: CGPoint(x: c.x - 200 * s, y: c.y - 110 * s), control1: CGPoint(x: c.x - 60 * s, y: c.y + 30 * s),
-                   control2: CGPoint(x: c.x - 150 * s, y: c.y + 10 * s))
-        p.addCurve(to: CGPoint(x: c.x, y: c.y + 40 * s), control1: CGPoint(x: c.x - 150 * s, y: c.y - 40 * s),
-                   control2: CGPoint(x: c.x - 60 * s, y: c.y - 20 * s))
-        p.closeSubpath()
-        ctx.fill(p, with: .color(color))
-        ctx.fill(Path(ellipseIn: CGRect(x: c.x - 26 * s, y: c.y - 6 * s, width: 52 * s, height: 96 * s)),
-                 with: .color(color))
+        let h = span * 0.5
+        let mark = Path(BirdArt.markPath(width: span, height: h))
+            .applying(CGAffineTransform(translationX: c.x - span / 2, y: c.y - h / 2))
+        ctx.stroke(mark, with: .color(color),
+                   style: StrokeStyle(lineWidth: BirdArt.markLineWidth(forHeight: h), lineCap: .round,
+                                      lineJoin: .round))
     }
 
     static func numeral(_ ctx: inout GraphicsContext, _ text: String, unit: Bool) {

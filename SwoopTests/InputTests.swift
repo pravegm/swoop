@@ -202,14 +202,14 @@ struct InputTests {
         hinge.run(1, snap: true) { _ in 146.7 }
         #expect(abs(source.openAngle - 146.7) < 0.05)
         #expect(source.lastTuck < 0.02)
-        // Never from a fold (a player already diving during the hold).
-        hinge.run(1) { t in 146.7 - 21.7 * min(t / 0.3, 1) }
-        hinge.run(1, snap: true) { _ in 125 }
+        // Never from a fold (a player already diving during the hold; under the 125° learning floor).
+        hinge.run(1) { t in 146.7 - 31.7 * min(t / 0.3, 1) }
+        hinge.run(1, snap: true) { _ in 115 }
         // (The fold itself nudges it a hair on the way through the near-open band.)
         #expect(abs(source.openAngle - 146.7) < 0.3)
         // Below the range it clamps to openMin, above to openMax.
         let low = HingeTuckSource(logs: false)
-        FakeHinge(source: low).run(1, snap: true) { _ in 141 }
+        FakeHinge(source: low).run(1, snap: true) { _ in 128 }
         #expect(low.openAngle == HingeTuckTuning.openMin)
         let high = HingeTuckSource(logs: false)
         FakeHinge(source: high).run(1, snap: true) { _ in 174 }
@@ -256,31 +256,172 @@ struct InputTests {
         #expect(low.openAngle < 147)
     }
 
-    // MARK: Closing
+    // MARK: Closing (Round 4: 90° / 98°, a 0.2 s dwell, instant under 75°)
 
-    @Test func closingLatchHasHysteresis() {
-        // `#expect(latch.update(…))` can't call a mutating method (the macro captures `latch` immutably), so the
-        // results are collected first.
-        var latch = FeelClosingLatch()
-        let angles: [Double] = [120, 96, 94, 98, 101.9, 102.5, 97, Double.nan]
-        var results: [Bool] = []
-        for angle in angles { results.append(latch.update(angle: angle)) }
-        #expect(results == [false, false, true, true, true, false, false, false])
+    @Test func closingGateDwellsInstantClosesAndHasHysteresis() {
+        var gate = FeelClosingGate()
+        gate.update(angle: 120, at: 0)
+        #expect(gate.isClosing(at: 0) == false)
+        // Under 90° for less than 0.2 s: still open.
+        gate.update(angle: 88, at: 1.0)
+        let early = gate.isClosing(at: 1.15)
+        gate.update(angle: 92, at: 1.15)
+        let afterBounce = gate.isClosing(at: 1.3)
+        #expect(early == false)
+        #expect(afterBounce == false)
+        // Under 90° for 0.2 s: closed, and the dwell matures with time alone.
+        gate.update(angle: 85, at: 2.0)
+        let matured = gate.isClosing(at: 2.21)
+        #expect(matured)
+        // Hysteresis: 95° keeps it closed, 98.5° opens it.
+        gate.update(angle: 95, at: 2.3)
+        let held = gate.isClosing(at: 2.3)
+        gate.update(angle: 98.5, at: 2.4)
+        let reopened = gate.isClosing(at: 2.4)
+        #expect(held)
+        #expect(reopened == false)
+        // Under 75°: closed at once.
+        gate.update(angle: 70, at: 3.0)
+        let slam = gate.isClosing(at: 3.0)
+        #expect(slam)
+        var instant = FeelClosingGate()
+        instant.instant(angle: 80, at: 0)
+        let notYet = instant.isClosing(at: 1)
+        instant.instant(angle: 74, at: 1)
+        let now = instant.isClosing(at: 1)
+        instant.update(angle: Double.nan, at: 2)
+        let stays = instant.isClosing(at: 2)
+        #expect(notYet == false)
+        #expect(now)
+        #expect(stays)
+        #expect(FeelClosingGate.closeBelow == 90)
+        #expect(FeelClosingGate.reopenAbove == 98)
     }
 
-    @Test func hingeSourceReportsClosingBelow95AndReopensAbove102() {
+    @Test func hingeSourceReportsClosingBelow90AndReopensAbove98() {
         let source = HingeTuckSource(logs: false)
         let hinge = FakeHinge(source: source)
         hinge.run(1.0) { _ in 160 }
         #expect(source.isClosing == false)
-        hinge.run(1.0) { t in 160 - 70 * min(t / 0.8, 1) }
+        hinge.run(1.0) { t in 160 - 80 * min(t / 0.8, 1) }
         #expect(source.isClosing)
-        hinge.run(1.0) { t in 90 + 9 * min(t / 0.6, 1) }
+        hinge.run(1.0) { t in 80 + 15 * min(t / 0.6, 1) }
         #expect(source.isClosing)
-        hinge.run(1.0) { t in 99 + 11 * min(t / 0.4, 1) }
+        hinge.run(1.0) { t in 95 + 15 * min(t / 0.4, 1) }
         #expect(source.isClosing == false)
         // The hinge is never forgotten.
         #expect(source.hasHinge)
+    }
+
+    /// REVIEW-3-duo P1-2: an excited squeeze that overshoots full tuck for a moment must not pause the dive.
+    @Test func aBriefOvershootDoesNotPauseButAHeldCloseAndASlamDo() {
+        let source = HingeTuckSource(logs: false)
+        let hinge = FakeHinge(source: source)
+        hinge.run(1, snap: true) { _ in 132 }
+        hinge.run(0.25) { t in 132 - 47 * t / 0.25 }
+        hinge.run(0.4) { t in 85 + 20 * min(t / 0.1, 1) }
+        #expect(source.isClosing == false)
+        // Held under 90°: paused once the dwell has passed.
+        hinge.run(0.15) { t in 105 - 20 * min(t / 0.1, 1) }
+        hinge.run(0.5) { _ in 85 }
+        #expect(source.isClosing)
+        #expect(source.closing(at: hinge.time + 1))
+        // A slam under 75° pauses at once.
+        let slam = HingeTuckSource(logs: false)
+        let fast = FakeHinge(source: slam)
+        fast.run(1) { _ in 150 }
+        fast.run(0.12) { t in max(150 - 1500 * t, 60) }
+        #expect(slam.isClosing)
+    }
+
+    // MARK: Round 4: hinge comfort (REVIEW-3-duo P1-1, P1-2, P1-5)
+
+    @Test func strokeShortensForLowRests() {
+        #expect(HingeTuckTuning.openMin == 132)
+        #expect(HingeTuckTuning.calibrationLow == 125)
+        #expect(HingeTuckTuning.stroke(forOpen: 160) == 36)
+        #expect(HingeTuckTuning.stroke(forOpen: 136) == 36)
+        #expect(HingeTuckTuning.stroke(forOpen: 134) == 34)
+        #expect(HingeTuckTuning.stroke(forOpen: 132) == 32)
+        #expect(HingeTuckTuning.stroke(forOpen: 120) == 30)
+        // Open 132: full tuck at 100° (never into the 90° closing zone), half at 116°.
+        #expect(abs(HingeTuckSource.tuck(forAngle: 100, open: 132) - 1) < 1e-12)
+        #expect(abs(HingeTuckSource.tuck(forAngle: 116, open: 132) - 0.5) < 1e-9)
+        #expect(HingeTuckSource.tuck(forAngle: 132, open: 132) == 0)
+    }
+
+    /// A player who reads at 134° used to fly permanently tucked (0.66 at 138°). Now the ready pose sets "open" there.
+    @Test func aLowRestFliesWithSpreadWings() {
+        let source = HingeTuckSource(logs: false)
+        let hinge = FakeHinge(source: source)
+        hinge.run(1, snap: true) { _ in 134 }
+        #expect(abs(source.openAngle - 134) < 0.05)
+        let rest = hinge.run(2) { _ in 134 }
+        #expect(rest < 0.02)
+        #expect(source.restIsBelowFloor(at: hinge.time) == false)
+        // Resting under the floor: the App's countdown nudge ("Open a little wider").
+        let under = HingeTuckSource(logs: false)
+        let underHinge = FakeHinge(source: under)
+        underHinge.run(1) { _ in 127 }
+        #expect(under.restIsBelowFloor(at: underHinge.time))
+        let full = hinge.run(1) { t in 134 - 34 * min(t / 0.4, 1) }
+        #expect(full > 0.97)
+        #expect(source.isClosing == false)
+        // The slow calibration learns a low rest from 125° too (it used to stop at 140°): from a 140° snap, a 130°
+        // rest pulls "open" down to the 132° floor.
+        let slow = HingeTuckSource(logs: false)
+        let slowHinge = FakeHinge(source: slow)
+        slowHinge.run(1, snap: true) { _ in 140 }
+        slowHinge.run(60) { _ in 130 }
+        #expect(slow.openAngle < 134)
+        #expect(slow.openAngle >= HingeTuckTuning.openMin)
+    }
+
+    /// P1-5 (hinge wear): a slam gains nothing over a firm squeeze: the tuck rises 0 → 1 in no less than 0.15 s.
+    @Test func aSlamCannotTuckFasterThanAFirmSqueeze() {
+        let source = HingeTuckSource(logs: false)
+        let hinge = FakeHinge(source: source)
+        hinge.run(1) { _ in 160 }
+        let early = hinge.run(0.075) { _ in 110 }
+        #expect(early <= 0.52)
+        let later = hinge.run(0.2) { _ in 110 }
+        #expect(later > 0.99)
+        // Opening is never held back.
+        let open = hinge.run(0.3) { _ in 160 }
+        #expect(open < 0.05)
+    }
+
+    /// P1-2: the end-stop detent fires once per stroke when the tuck first hits full, and re-arms on opening.
+    @Test func endStopFiresOncePerStroke() {
+        let source = HingeTuckSource(logs: false)
+        let hinge = FakeHinge(source: source)
+        hinge.run(1) { _ in 160 }
+        var stops = 0
+        var t0 = hinge.time
+        for _ in 0..<120 {
+            hinge.run(1.0 / 120) { _ in max(160 - 150 * (hinge.time - t0), 120) }
+            if source.consumeEndStop() { stops += 1 }
+        }
+        #expect(stops == 1)
+        // Half-open (tuck under 0.8) re-arms; the next full squeeze ticks again.
+        t0 = hinge.time
+        for _ in 0..<60 {
+            hinge.run(1.0 / 120) { _ in min(120 + 150 * (hinge.time - t0), 150) }
+            if source.consumeEndStop() { stops += 1 }
+        }
+        #expect(stops == 1)
+        t0 = hinge.time
+        for _ in 0..<60 {
+            hinge.run(1.0 / 120) { _ in max(150 - 150 * (hinge.time - t0), 120) }
+            if source.consumeEndStop() { stops += 1 }
+        }
+        #expect(stops == 2)
+        // A stop nobody consumed in time (Home, Results) is dropped, not played late.
+        let stale = HingeTuckSource(logs: false)
+        let other = FakeHinge(source: stale)
+        other.run(1) { _ in 160 }
+        other.run(1) { t in 160 - 40 * min(t / 0.3, 1) }
+        #expect(stale.consumeEndStop() == false)
     }
 
     @Test func samplesGoingBackInTimeAreHarmless() {

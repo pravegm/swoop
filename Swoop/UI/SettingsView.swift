@@ -46,18 +46,22 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             PageHeading(text: "Controls", compact: c)
             VStack(alignment: .leading, spacing: 4) {
-                toggleRow("Play with touch", icon: "hand.point.up.left.fill", isOn: $settings.playWithTouch,
-                          footnote: controller.hasHinge
-                            ? "Hold the screen to tuck instead of folding your Duo."
-                            : "On iPhones without a fold you always play with touch.")
-                divider
-                segmentRow("Tuck by", icon: "hand.tap.fill", options: ["Holding", "Tapping"],
-                           selected: settings.tuckByTapping ? 1 : 0,
-                           footnote: "Tapping: one tap tucks, the next opens. Made for Switch Control and VoiceOver.") { i in
-                    settings.tuckByTapping = i == 1
-                    settings.tapOfferAnswered = true
+                // UX R3 P2-10: a phone without a hinge always plays with touch, so the toggle only shows on a Duo;
+                // "Tuck by" shows wherever touch flies the bird.
+                if controller.hasHinge {
+                    toggleRow("Play with touch", icon: "hand.point.up.left.fill", isOn: $settings.playWithTouch,
+                              footnote: "Hold the screen to tuck instead of folding your Duo.")
+                    divider
                 }
-                divider
+                if Self.showsTuckBy(hasHinge: controller.hasHinge, playWithTouch: settings.playWithTouch) {
+                    segmentRow("Tuck by", icon: "hand.tap.fill", options: ["Holding", "Tapping"],
+                               selected: settings.tuckByTapping ? 1 : 0,
+                               footnote: "Tapping: one tap tucks, the next opens. Made for Switch Control and VoiceOver.") { i in
+                        settings.tuckByTapping = i == 1
+                        settings.tapOfferAnswered = true
+                    }
+                    divider
+                }
                 toggleRow("Bird on the other side", icon: "arrow.left.and.right", isOn: $settings.mirrored,
                           footnote: Self.mirroredFootnote)
                 divider
@@ -83,7 +87,22 @@ struct SettingsView: View {
                           footnote: "Off: Swoop plays sound even in Silent Mode.")
             }
             .swoopCard(padding: 14, radius: SwoopTheme.cardRadius(c))
+            if BuildChannel.isTestBuild {
+                // R4 P1-15: the founder's device test. Never in an App Store build.
+                PageHeading(text: "Device test", compact: c)
+                VStack(alignment: .leading, spacing: 4) {
+                    toggleRow("Hinge readout (TestFlight)", icon: "gauge.with.needle", isOn: $settings.hingeReadout,
+                              footnote: "Shows the live angle, open angle, tuck, report rate, pose and strokes.")
+                }
+                .swoopCard(padding: 14, radius: SwoopTheme.cardRadius(c))
+            }
         }
+    }
+
+    /// "Tuck by" shows where touch flies the bird: every phone without a hinge, and a Duo set to play with touch.
+    /// Pure; tested.
+    nonisolated static func showsTuckBy(hasHinge: Bool, playWithTouch: Bool) -> Bool {
+        !hasHinge || playWithTouch
     }
 
     private var rightPage: some View {
@@ -179,7 +198,7 @@ struct SettingsView: View {
     /// "No flights yet", else "Crest Hopper · best 6.4 km · 48.3 km flown". Pure; tested.
     nonisolated static func progressLine(runs: Int, rankTitle: String, best: Double, lifetime: Double) -> String {
         if runs <= 0 { return "No flights yet" }
-        return "\(rankTitle) · best \(ShareText.km(best)) · \(ShareText.km(lifetime)) flown"
+        return "\(rankTitle) · best \(ShareText.distance(best)) · \(ShareText.distance(lifetime)) flown"
     }
 
     /// The in-app privacy policy (no web link).

@@ -44,6 +44,23 @@ enum ShareText {
         return ("\(grouped(whole)).\(frac < 10 ? "0" : "")\(frac)", "km")
     }
 
+    /// THE distance formatter for every on-screen distance (R4 P0-4): "89 m" under 1 km, then "11.88 km", rounded
+    /// down, the same as the HUD and the cover. `roundUp` (distances still to go: "550 m short of…") rounds up to 10 m.
+    /// Share lines keep `km` (one decimal), the social format.
+    static func distance(_ meters: Double, roundUp: Bool = false) -> String {
+        var m = meters.isFinite ? max(meters, 0) : 0
+        if roundUp { m = (m / 10).rounded(.up) * 10 }
+        let d = hudDistance(m)
+        return "\(d.value) \(d.unit)"
+    }
+
+    /// A goal target: "500 m", "3 km", "2.50 km" (whole kilometres drop the decimals).
+    static func target(_ meters: Double) -> String {
+        let m = meters.isFinite ? max(meters, 0) : 0
+        if m >= 1000 && m.truncatingRemainder(dividingBy: 1000) == 0 { return "\(grouped(Int(m / 1000))) km" }
+        return distance(m)
+    }
+
     static func perfects(_ n: Int) -> String { n == 1 ? "1 Perfect" : "\(n) Perfects" }
 
     /// "6 h 12 m" / "12 m" (never "0 m": under a minute reads "1 m"), rounded up to the minute.
@@ -77,6 +94,7 @@ enum ShareText {
     }
 
     /// The Daily share line; `streak` ≥ 2 adds " 🔥N".
+    /// `day` is the DISPLAY number (`AppRules.dailyNumber`), never the seed day.
     static func daily(day: Int, meters: Double, perfects: Int, lastLighthouse: String, streak: Int = 0) -> String {
         let flame = streak >= 2 ? " \(fire)\(streak)" : ""
         return "Swoop Daily #\(day) \(body(meters: meters, perfects: perfects, lastLighthouse: lastLighthouse))\(flame)"
@@ -85,7 +103,7 @@ enum ShareText {
     /// The line for a finished run.
     static func line(for result: RunResult, streak: Int) -> String {
         if case let .daily(day, _) = result.mode {
-            return daily(day: day, meters: result.meters, perfects: result.perfects,
+            return daily(day: AppRules.dailyNumber(day: day), meters: result.meters, perfects: result.perfects,
                          lastLighthouse: result.lastLighthouseName, streak: streak)
         }
         return flight(meters: result.meters, perfects: result.perfects, lastLighthouse: result.lastLighthouseName)

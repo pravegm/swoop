@@ -36,6 +36,8 @@ struct SettingsData: Codable, Equatable {
     var mirrored = false
     /// The one-time "Tap to tuck instead of holding?" offer (Switch Control / VoiceOver) was answered.
     var tapOfferAnswered = false
+    /// R4 P1-15: the founder's hinge readout overlay (TestFlight / Debug builds only).
+    var hingeReadout = false
 
     init() {}
 
@@ -51,6 +53,7 @@ struct SettingsData: Codable, Equatable {
         tuckByTapping = (try? c.decodeIfPresent(Bool.self, forKey: .tuckByTapping)) ?? false
         mirrored = (try? c.decodeIfPresent(Bool.self, forKey: .mirrored)) ?? false
         tapOfferAnswered = (try? c.decodeIfPresent(Bool.self, forKey: .tapOfferAnswered)) ?? false
+        hingeReadout = (try? c.decodeIfPresent(Bool.self, forKey: .hingeReadout)) ?? false
     }
 }
 
@@ -68,6 +71,7 @@ final class SettingsStore: ObservableObject {
     @Published var tuckByTapping: Bool { didSet { changed() } }
     @Published var mirrored: Bool { didSet { changed() } }
     @Published var tapOfferAnswered: Bool { didSet { changed() } }
+    @Published var hingeReadout: Bool { didSet { changed() } }
 
     /// Set by the controller once the device is known to be a Duo (the Strong default).
     var isDuo = false {
@@ -89,6 +93,7 @@ final class SettingsStore: ObservableObject {
         tuckByTapping = stored.tuckByTapping
         mirrored = stored.mirrored
         tapOfferAnswered = stored.tapOfferAnswered
+        hingeReadout = stored.hingeReadout
     }
 
     /// The haptic level in effect.
@@ -109,6 +114,7 @@ final class SettingsStore: ObservableObject {
         d.tuckByTapping = tuckByTapping
         d.mirrored = mirrored
         d.tapOfferAnswered = tapOfferAnswered
+        d.hingeReadout = hingeReadout
         return d
     }
 

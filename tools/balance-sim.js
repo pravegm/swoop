@@ -40,7 +40,7 @@ const T = {
   stormBaseSpeed: 480,
   stormAccel: 12,
   stormCruiseSpeed: 1300,
-  stormLateAccel: 3.5,
+  stormLateAccel: 2.5,
   stormMaxSpeed: 3200,
   // R3 leash: beyond stormLeashGap the storm closes the excess gap at stormLeashRate per second (always in view).
   stormLeashGap: 9000,
@@ -57,6 +57,7 @@ const T = {
   cloudHeight: 900,
   cloudRearmHeight: 650,
   tuckAttack: 0.06,
+  tuckMaxRise: 1 / 0.15,
   tuckRelease: 0.08,
   bodyAngleSmoothing: 0.08,
   caughtDuration: 1.8,
@@ -264,7 +265,7 @@ class FlightSession {
     this.mode = mode; this.seed = seed; this.sea = new SeaProfile(seed);
     this.phase = 'countdown'; this.countdownLeft = T.countdownDuration; this.time = 0; this.flightTime = 0;
     this.x = T.startX; this.y = this.sea.height(T.startX) + T.startHeight; this.vx = 0; this.vy = 0;
-    this.skimming = false; this.s = 0; this.u = 0;
+    this.skimming = false; this.s = 0; this.u = 0; this.uLim = 0;
     this.stormX = this.x - T.gapStart;
     this.chain = 0; this.bestChain = 0; this.perfects = 0; this.goods = 0; this.splashes = 0; this.tailwinds = 0;
     this.tailwindLeft = 0; this.lighthouses = 0; this.cloudTouches = 0; this.cloudArmed = true;
@@ -292,8 +293,10 @@ class FlightSession {
       if (this.countdownLeft <= 0) { this.phase = 'flying'; this.vx = T.startSpeed; this.vy = 0; ev.push('started'); }
       return;
     }
-    const tauE = input > this.u ? T.tuckAttack : T.tuckRelease;
-    this.u += (input - this.u) * (1 - Math.exp(-dt / tauE));
+    // R4: the rise of the input is rate-limited (a full tuck takes >= 1/tuckMaxRise s), so a slam gains nothing.
+    this.uLim = input > this.uLim ? Math.min(input, this.uLim + T.tuckMaxRise * dt) : input;
+    const tauE = this.uLim > this.u ? T.tuckAttack : T.tuckRelease;
+    this.u += (this.uLim - this.u) * (1 - Math.exp(-dt / tauE));
     if (this.phase === 'caught') {
       this.caughtElapsed += dt;
       this.physics(dt, 0, ev, true);
@@ -427,13 +430,14 @@ class FlightPilot {
   }
   // Fly the tucked branch from state b (copied) until touchdown. Returns quality rank and alpha.
   static landTucked(b0, sea, uTarget, delay, gScale, maxT) {
-    const b = { x: b0.x, y: b0.y, vx: b0.vx, vy: b0.vy, u: b0.u };
+    const b = { x: b0.x, y: b0.y, vx: b0.vx, vy: b0.vy, u: b0.u, r: b0.u };
     const k = 1 - Math.exp(-PRED_DT / T.tuckAttack);
     let t = 0, n = 0;
     while (t < maxT) {
       n++;
-      const tu = t >= delay ? uTarget : b.u; // before `delay`, hold whatever u it had
-      b.u += (tu - b.u) * k;
+      const tu = t >= delay ? uTarget : b.r; // before `delay`, hold whatever it had
+      b.r = tu > b.r ? Math.min(tu, b.r + T.tuckMaxRise * PRED_DT) : tu; // the session's rise limit
+      b.u += (b.r - b.u) * k;
       const px = b.x, py = b.y; const d0 = py - sea.height(px);
       FlightPilot.stepAir(b, b.u, PRED_DT, gScale);
       const d1 = b.y - sea.height(b.x);

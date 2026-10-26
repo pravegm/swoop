@@ -9,9 +9,10 @@ import Foundation
 // Every goal is something the player can see happen (Round 2 dropped the m/s speed goals, REVIEW-1 P1-8).
 // Round 3 (UX-C4, UX-SPEC §4): r9 and r12 lifetime goals are 400 km and 1,000 km, and the ladder is re-paced with
 // `tools/goal-cadence.js` (a player who is casual for 12 days at 5 runs a day, then half casual, half expert):
-// rank 1 at run 1, rank 3 at run 6, rank 6 at run 19, rank 10 at run 49, rank 14 at run 98 (targets 2/8/20/50/105).
-// Mid-ladder goals sit at the casual p75–p95 (a casual run: ~20 km, ~28 Perfects, chain ~11, 7 Tailwinds, 3
-// lighthouses, ~7 km clean, clouds rare); the top four need expert flying (clouds, chains of 30+, 75 km).
+// Round 4 (re-paced after the tuck rise limit): rank 1 at run 1, rank 3 at run 6, rank 6 at run 18, rank 10 at run 46,
+// rank 14 at run 86 (targets 2/8/20/50/105). Every goal text says "in one flight" or "in total" (`scope(of:)`).
+// Mid-ladder goals sit at the casual p75–p95 (a casual run: ~18 km, ~22 Perfects, chain ~10, 5 Tailwinds, 3
+// lighthouses, ~6.5 km clean, clouds rare); the top four need expert flying (clouds, chains of 25+, 65 km).
 // Past the top, `starGoals(n:)`. Lighthouses stand at 4, 9, 15, 22, 30, 38, 46… km.
 
 public enum GoalCatalog {
@@ -42,6 +43,15 @@ public enum GoalCatalog {
         return out
     }
 
+    /// Whether a goal counts within one flight or adds up over every flight (REVIEW-3 P0-1). Every goal's text
+    /// says which: "… in one flight" or "… in total". The App can show "4 / 4 in total" or "best 3 of 4 in one flight".
+    public static func scope(of goal: Goal) -> GoalScope {
+        switch goal.kind {
+        case .totalMeters, .dailyPlayed: return .total
+        default: return .oneFlight
+        }
+    }
+
     /// Daily goals met only by flying a Daily while the goal is current (UX-C2): "Fly a Daily Flight" at rank 7 must
     /// not be met by a Daily flown long ago. Other `.dailyPlayed` goals (rank 2) accept any Daily ever played.
     public static let dailyRunGoalIDs: Set<String> = ["r7-daily"]
@@ -49,15 +59,15 @@ public enum GoalCatalog {
     // MARK: Star flocks (UX-SPEC §4): past the top, 3 rotating goals at 1.5 × the top flock's targets.
 
     /// The pool the star flocks rotate through: 1.5 × the top targets of each kind (r13's reach, chain and clouds;
-    /// r12's Perfects and lighthouses; r11's Tailwinds; r7's clean 10 km).
+    /// r12's Perfects and lighthouses; r11's Tailwinds; r7's clean 9 km).
     static let starPool: [(kind: GoalKind, target: Double, text: String)] = [
-        (kind: .reachMeters, target: 112000, text: "Fly 112 km"),
-        (kind: .chain, target: 57, text: "Chain 57 Perfects"),
-        (kind: .cloudTouches, target: 14, text: "Touch the clouds 14 times in one flight"),
-        (kind: .perfectsInRun, target: 195, text: "195 Perfects in one flight"),
-        (kind: .lighthouses, target: 15, text: "Pass 15 lighthouses"),
-        (kind: .tailwinds, target: 38, text: "38 Tailwinds in one flight"),
-        (kind: .cleanMeters, target: 15000, text: "Fly 15 km without a splash"),
+        (kind: .reachMeters, target: 98000, text: "Fly 98 km in one flight"),
+        (kind: .chain, target: 48, text: "Chain 48 Perfects in one flight"),
+        (kind: .cloudTouches, target: 11, text: "Touch the clouds 11 times in one flight"),
+        (kind: .perfectsInRun, target: 158, text: "158 Perfects in one flight"),
+        (kind: .lighthouses, target: 14, text: "Pass 14 lighthouses in one flight"),
+        (kind: .tailwinds, target: 30, text: "30 Tailwinds in one flight"),
+        (kind: .cleanMeters, target: 14000, text: "Fly 14 km in one flight without a splash"),
     ]
 
     /// The n-th star flock (n = 0, 1, 2…; each one finished adds a ★ to the title): 3 goals rotating through
@@ -87,62 +97,67 @@ public enum GoalCatalog {
 
     static let ladder: [[Goal]] = [
         // 0 Fledgling → Puddle Hopper (Tern)
-        [g("r0-reach", .reachMeters, 1000, "Fly 1 km"),
-         g("r0-perfect", .perfectsInRun, 1, "Land a Perfect"),
+        [g("r0-reach", .reachMeters, 1000, "Fly 1 km in one flight"),
+         g("r0-perfect", .perfectsInRun, 1, "Land a Perfect in one flight"),
          g("r0-total", .totalMeters, 5000, "Fly 5 km in total")],
         // 1 Puddle Hopper → Spray Chaser (Coral trail)
-        [g("r1-reach", .reachMeters, 3000, "Fly 3 km"),
+        [g("r1-reach", .reachMeters, 3000, "Fly 3 km in one flight"),
          g("r1-perfects", .perfectsInRun, 3, "3 Perfects in one flight"),
-         g("r1-chain", .chain, 2, "Chain 2 Perfects")],
+         g("r1-chain", .chain, 2, "Chain 2 Perfects in one flight")],
         // 2 Spray Chaser → Wave Skimmer (Rose Dusk)
-        [g("r2-lighthouse", .lighthouses, 1, "Reach the first lighthouse"),
-         g("r2-clean", .cleanMeters, 2000, "Fly 2 km without a splash"),
-         g("r2-daily", .dailyPlayed, 1, "Play the Daily Flight")],
+        [g("r2-lighthouse", .lighthouses, 1, "Reach the first lighthouse in one flight"),
+         g("r2-clean", .cleanMeters, 2000, "Fly 2 km in one flight without a splash"),
+         g("r2-daily", .dailyPlayed, 1, "Play 1 Daily Flight in total")],
         // 3 Wave Skimmer → Swell Rider (Puffin)
-        [g("r3-perfects", .perfectsInRun, 15, "15 Perfects in one flight"),
-         g("r3-tailwind", .tailwinds, 1, "Catch a Tailwind"),
+        [g("r3-perfects", .perfectsInRun, 12, "12 Perfects in one flight"),
+         g("r3-tailwind", .tailwinds, 1, "Catch a Tailwind in one flight"),
          g("r3-total", .totalMeters, 150000, "Fly 150 km in total")],
         // 4 Swell Rider → Crest Hopper (Aurora trail)
-        [g("r4-reach", .reachMeters, 20000, "Fly 20 km"),
-         g("r4-chain", .chain, 12, "Chain 12 Perfects"),
-         g("r4-clean", .cleanMeters, 8000, "Fly 8 km without a splash")],
+        [g("r4-reach", .reachMeters, 18000, "Fly 18 km in one flight"),
+         g("r4-chain", .chain, 10, "Chain 10 Perfects in one flight"),
+         g("r4-clean", .cleanMeters, 7000, "Fly 7 km in one flight without a splash")],
         // 5 Crest Hopper → Gull Wing (Northern Lights)
-        [g("r5-lighthouses", .lighthouses, 4, "Pass 4 lighthouses"),
-         g("r5-perfects", .perfectsInRun, 32, "32 Perfects in one flight"),
-         g("r5-tailwinds", .tailwinds, 8, "8 Tailwinds in one flight")],
+        [g("r5-lighthouses", .lighthouses, 3, "Pass 3 lighthouses in one flight"),
+         g("r5-perfects", .perfectsInRun, 25, "25 Perfects in one flight"),
+         g("r5-tailwinds", .tailwinds, 6, "6 Tailwinds in one flight")],
         // 6 Gull Wing → Tern Turner (Swift)
-        [g("r6-clean", .cleanMeters, 9000, "Fly 9 km without a splash"),
-         g("r6-chain", .chain, 15, "Chain 15 Perfects"),
+        [g("r6-clean", .cleanMeters, 8000, "Fly 8 km in one flight without a splash"),
+         g("r6-chain", .chain, 12, "Chain 12 Perfects in one flight"),
          g("r6-total", .totalMeters, 250000, "Fly 250 km in total")],
         // 7 Tern Turner → Tailwinder (Ember trail)
-        [g("r7-reach", .reachMeters, 23000, "Fly 23 km"),
-         g("r7-clean", .cleanMeters, 10000, "Fly 10 km without a splash"),
-         g("r7-daily", .dailyPlayed, 1, "Fly a Daily Flight")],
+        [g("r7-reach", .reachMeters, 20000, "Fly 20 km in one flight"),
+         g("r7-clean", .cleanMeters, 9000, "Fly 9 km in one flight without a splash"),
+         g("r7-daily", .dailyPlayed, 1, "Fly 1 more Daily Flight in total")],
         // 8 Tailwinder → Lantern Seeker (Monsoon)
-        [g("r8-perfects", .perfectsInRun, 34, "34 Perfects in one flight"),
-         g("r8-tailwinds", .tailwinds, 9, "9 Tailwinds in one flight"),
-         g("r8-chain", .chain, 16, "Chain 16 Perfects")],
+        [g("r8-perfects", .perfectsInRun, 27, "27 Perfects in one flight"),
+         g("r8-tailwinds", .tailwinds, 7, "7 Tailwinds in one flight"),
+         g("r8-chain", .chain, 14, "Chain 14 Perfects in one flight")],
         // 9 Lantern Seeker → Cloud Brusher (Albatross)
-        [g("r9-reach", .reachMeters, 25000, "Fly 25 km"),
-         g("r9-chain", .chain, 17, "Chain 17 Perfects"),
+        [g("r9-reach", .reachMeters, 22000, "Fly 22 km in one flight"),
+         g("r9-chain", .chain, 15, "Chain 15 Perfects in one flight"),
          g("r9-total", .totalMeters, 400000, "Fly 400 km in total")],
         // 10 Cloud Brusher → Gale Glider (Storm Petrel)
-        [g("r10-lighthouses", .lighthouses, 5, "Pass 5 lighthouses"),
-         g("r10-cloud", .cloudTouches, 1, "Touch a cloud"),
-         g("r10-tailwinds", .tailwinds, 10, "10 Tailwinds in one flight")],
+        [g("r10-lighthouses", .lighthouses, 4, "Pass 4 lighthouses in one flight"),
+         g("r10-cloud", .cloudTouches, 1, "Touch a cloud in one flight"),
+         g("r10-tailwinds", .tailwinds, 8, "8 Tailwinds in one flight")],
         // 11 Gale Glider → Headland Hunter (Moonrise)
-        [g("r11-clouds", .cloudTouches, 6, "Touch the clouds 6 times in one flight"),
-         g("r11-chain", .chain, 30, "Chain 30 Perfects"),
-         g("r11-tailwinds", .tailwinds, 25, "25 Tailwinds in one flight")],
+        [g("r11-clouds", .cloudTouches, 4, "Touch the clouds 4 times in one flight"),
+         g("r11-chain", .chain, 25, "Chain 25 Perfects in one flight"),
+         g("r11-tailwinds", .tailwinds, 20, "20 Tailwinds in one flight")],
         // 12 Headland Hunter → Sky Diver (Night Heron)
-        [g("r12-perfects", .perfectsInRun, 130, "130 Perfects in one flight"),
-         g("r12-lighthouses", .lighthouses, 10, "Pass 10 lighthouses"),
+        [g("r12-perfects", .perfectsInRun, 105, "105 Perfects in one flight"),
+         g("r12-lighthouses", .lighthouses, 9, "Pass 9 lighthouses in one flight"),
          g("r12-total", .totalMeters, 1000000, "Fly 1,000 km in total")],
         // 13 Sky Diver → Storm Rider (Golden Gannet, Storm Gold trail)
-        [g("r13-reach", .reachMeters, 75000, "Fly 75 km"),
-         g("r13-chain", .chain, 38, "Chain 38 Perfects"),
-         g("r13-clouds", .cloudTouches, 9, "Touch the clouds 9 times in one flight")],
+        [g("r13-reach", .reachMeters, 65000, "Fly 65 km in one flight"),
+         g("r13-chain", .chain, 32, "Chain 32 Perfects in one flight"),
+         g("r13-clouds", .cloudTouches, 7, "Touch the clouds 7 times in one flight")],
     ]
+}
+
+/// See `GoalCatalog.scope(of:)`.
+public enum GoalScope: String, Sendable {
+    case oneFlight, total
 }
 
 public enum GoalEvaluator {

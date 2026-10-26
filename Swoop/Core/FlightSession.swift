@@ -36,6 +36,8 @@ public final class FlightSession {
     private var skimTime: Double = 0
     private var airTime: Double = 0
     private var tuckEased: Double = 0
+    /// The input after the rise limit (Tuning.tuckMaxRise), before the easing.
+    private var tuckLimited: Double = 0
     private var bodyAngle: Double = 0
 
     // The storm
@@ -207,8 +209,15 @@ public final class FlightSession {
     private func substep(_ dt: Double, _ input: Double, _ events: inout [FlightEvent]) {
         time += dt
         // The session's own tuck easing (also during the countdown, so the hovering bird mirrors the hinge).
-        let tau: Double = input > tuckEased ? Tuning.tuckAttack : Tuning.tuckRelease
-        tuckEased += (input - tuckEased) * (1 - exp(-dt / tau))
+        // Round 4: the rise is rate-limited first (a full tuck takes ≥ 1 / tuckMaxRise s), so any squeeze faster than
+        // that is exactly the same as one at that speed: slamming the hinge gains nothing (REVIEW-3 Duo).
+        if input > tuckLimited {
+            tuckLimited = min(input, tuckLimited + Tuning.tuckMaxRise * dt)
+        } else {
+            tuckLimited = input
+        }
+        let tau: Double = tuckLimited > tuckEased ? Tuning.tuckAttack : Tuning.tuckRelease
+        tuckEased += (tuckLimited - tuckEased) * (1 - exp(-dt / tau))
 
         switch phase {
         case .countdown:

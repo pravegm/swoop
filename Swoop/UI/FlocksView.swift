@@ -74,7 +74,13 @@ struct FlocksView: View {
                     ForEach(goals) { goal in
                         // QA-1 P2-9: lifetime goals read live from the lifetime metres.
                         let p = ProgressRules.liveProgress(goal, data: store.data)
-                        GoalProgressRow(goal: goal, progress: p, done: p >= 1, compact: c)
+                        GoalProgressRow(goal: goal, progress: p, done: p >= 1,
+                                        // Core R4: the goal text already says "in one flight"; totals get their count.
+                                        caption: GoalCatalog.scope(of: goal) == .total
+                                            ? AppRules.goalCaption(goal, before: 0, run: nil,
+                                                                   lifetime: store.data.lifetimeMeters)
+                                            : nil,
+                                        compact: c)
                     }
                 }
                 .swoopCard(padding: 18, radius: SwoopTheme.cardRadius(c))
@@ -150,6 +156,8 @@ struct FlocksView: View {
                 .overlay(RoundedRectangle(cornerRadius: SwoopTheme.tileRadius(c), style: .continuous)
                     .stroke(current ? SwoopTheme.gold.opacity(0.8) : SwoopTheme.stroke, lineWidth: current ? 2 : 1))
         )
+        // UX R3 P2-13: rewards past the next rank stay named but step back.
+        .opacity(r > rank + 1 ? 0.5 : 1)
         .accessibilityElement(children: .combine)
         .accessibilityValue(current ? "Current rank" : (reached ? "Reached" : "Locked"))
     }

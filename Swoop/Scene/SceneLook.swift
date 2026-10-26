@@ -161,7 +161,9 @@ enum SceneLook {
     static let trailWidthFast: CGFloat = 5         // …plus this at full speed (14)
     static let trailAlpha: CGFloat = 0.8           // the core at the bird
     /// The core is drawn as nested tapered ribbons starting further along (a smooth fade with no seams).
-    static let trailLayers: Int = 3
+    static let trailLayers: Int = 5
+    /// The ribbon tapers over this many px nearest the bird too (no square cap at the tail, REVIEW-3 juror #22).
+    static let trailHeadTaper: CGFloat = 24
     static let trailGlowWidth: CGFloat = 2.0       // × the core width, additive
     static let trailGlowAlphaLow: CGFloat = 0.12
     static let trailGlowAlphaHigh: CGFloat = 0.35
@@ -183,6 +185,12 @@ enum SceneLook {
     static let ringAspect: CGFloat = 0.32
     /// Reduce Motion: the ring appears at 120 px and fades over 0.3 s.
     static let ringStill: CGFloat = 120
+    /// Ring tiers by chain (ROUND-4 P1-8): ×1–4 foam, ×5–9 gold, ×10+ reward gold with a second ring.
+    static let ringTierGold: Int = 5
+    static let ringTierReward: Int = 10
+    /// Gold 4-point stars per Perfect: none below ×5, a few at ×5–9, at most 6 at ×10+ (REVIEW-3 juror #11).
+    static let perfectStarsMid: Int = 3
+    static let perfectStarsMax: Int = 6
     /// The ring rides this far behind the bird (px) so it stays ≥ 120 pt from the fold (ART-S15).
     static let ringBehind: CGFloat = 16
     /// The camera punch-in: +3 %, in 0.06 s, back out over 0.35 s.
@@ -211,7 +219,7 @@ enum SceneLook {
     static let bandAlpha: CGFloat = 0.18
     /// Lit faces: the faces turned toward the sun (dh/dx < 0) carry a lighter strip (two soft layers).
     static let litFaceWidth: CGFloat = 46
-    static let litFaceAlpha: CGFloat = 0.12
+    static let litFaceAlpha: CGFloat = 0.24   // two layers of 0.12 each (REVIEW-3: 0.06 did not read)
     /// Storm chop: amplitude 9 → 14 pt as the storm closes, reaching this far (pt) ahead of the front. Static in space.
     static let chopAmp: Double = 9
     static let chopAmpClose: Double = 5
@@ -225,6 +233,13 @@ enum SceneLook {
     /// Glints on the water: short dashes near the sun's half (the 4-point stars are kept for the Perfect).
     static let seaSparkleCount: Int = 12
     static let seaSparkleCell: Double = 150
+    /// Lace (REVIEW-3 juror #8): 6–10 foam streaks on the faces, 1.5 pt, α 0.25, 40–120 pt long, riding the surface.
+    static let laceCount: Int = 10
+    static let laceCell: Double = 260
+    static let laceAlpha: CGFloat = 0.25
+    /// The sun's glitter column continues down the near sea under the sun.
+    static let nearGlitterDepth: CGFloat = 220
+    static let nearGlitterAlpha: CGFloat = 0.42
 
     // MARK: Backdrop (ART §3, ART-S2/S3)
 
@@ -270,7 +285,14 @@ enum SceneLook {
 
     // MARK: Storm (ART §3, ART-S6/S7)
 
-    /// Closeness 0 (far) … 1 (on the bird) runs over this many canvas widths of gap.
+    /// R4 (ROUND-4 P0-2): the wall's edge follows the lead meter's fill (`SceneStormMap`): a hint this far in at a full
+    /// lead…
+    static let stormHintEdge: CGFloat = 24
+    /// …covering this fraction of the bird page at the storm-close fill (lead < 15 %)…
+    static let stormCloseCover: CGFloat = 0.40
+    /// …and closeness (height, darkness, rain) rising from 0 at this fill to 1 at contact.
+    static let stormFarFill: CGFloat = 0.5
+    /// (R3, unused since R4) closeness over canvas widths of gap.
     static let stormRangeScreens: CGFloat = 1.5
     /// The cloud edge never sits further behind than this (px from the behind edge), far → near.
     static let stormEdgeFar: CGFloat = 70
@@ -345,14 +367,18 @@ enum SceneLook {
     /// A Tailwind start pulls out 2 % for 0.5 s and flares the sun locally to 0.25 (never full-screen).
     static let tailwindPullOut: Double = 0.02
     static let flarePeak: CGFloat = 0.25
-    /// The Splash camera bump (impulse px/s): ≤ 6 pt of travel.
-    static let splashBump: CGFloat = 75
-    static let bumpOmega: CGFloat = 17
+    /// The Splash camera dip (ROUND-4 P1-9: heavier than a Perfect): an impulse giving about 8 pt of travel over
+    /// 0.25 s, plus the bird dunking 6 pt nose-down for 0.3 s.
+    static let splashBump: CGFloat = 95
+    static let splashDunk: CGFloat = 6
+    static let splashDunkTime: CGFloat = 0.3
+    static let bumpOmega: CGFloat = 12
     static let bumpDamping: CGFloat = 0.38
-    /// Splash: 18–26 hard drops and one mist puff ≤ 90 px at α ≤ 0.5.
-    static let splashDropsMin: Int = 18
-    static let splashDropsMax: Int = 26
-    static let splashMist: CGFloat = 90
+    /// Splash (R4: wetter and heavier than a Perfect): 36–48 hard drops, a mist puff 1.3 × 90 px at α 0.5, a foam
+    /// crater on the water.
+    static let splashDropsMin: Int = 36
+    static let splashDropsMax: Int = 48
+    static let splashMist: CGFloat = 117
     /// How often (frames) the scene re-reads the driver's bird and sky.
     static let cosmeticsCheckFrames: Int = 30
 }
