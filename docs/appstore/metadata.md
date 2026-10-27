@@ -248,7 +248,7 @@ Why each risky item is None:
 
 ## 10. Claims to check against the release-candidate build
 
-Checked against the release candidate on 27 Oct by QA-FINAL (commit `RC_COMMIT`). Before submission, Claude (or whoever cuts the release candidate) re-ticks each line on that build ("RC") or changes the copy, never the other way round.
+Checked against the release candidate on 27 Oct by QA-FINAL (commit `efdfdbf (CI run 40512902788, green)`). Before submission, Claude (or whoever cuts the release candidate) re-ticks each line on that build ("RC") or changes the copy, never the other way round.
 
 | Claim (where) | Source in the code (27 Oct) | Code | RC |
 |---|---|---|---|

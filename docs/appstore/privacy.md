@@ -1,6 +1,6 @@
 # Swoop: App Privacy answers and privacy policy (v1.0)
 
-**Answer: Data Not Collected.** Based on the design (`design/GAME-DESIGN.md` §11: no accounts, no analytics) and the privacy manifest `Swoop/PrivacyInfo.xcprivacy` (no tracking, no tracking domains, no collected data types; required-reason APIs UserDefaults `CA92.1` and system boot time `35F9.1`). The grep in §3 was run on the release candidate on 27 Oct by QA-FINAL (commit `RC_COMMIT`) and passed; re-run it only if the code changes before submission.
+**Answer: Data Not Collected.** Based on the design (`design/GAME-DESIGN.md` §11: no accounts, no analytics) and the privacy manifest `Swoop/PrivacyInfo.xcprivacy` (no tracking, no tracking domains, no collected data types; required-reason APIs UserDefaults `CA92.1` and system boot time `35F9.1`). The grep in §3 was run on the release candidate on 27 Oct by QA-FINAL (commit `efdfdbf (CI run 40512902788, green)`) and passed; re-run it only if the code changes before submission.
 
 The live policy page is `docs/site/privacy.html` (the text in §4 is the same; keep the two in step).
 

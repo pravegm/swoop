@@ -58,7 +58,7 @@ Optional ("Scores" button on Home). 2 leaderboards (Longest Flight, Daily Flight
 
 ## Check against the build (before submission)
 
-Checked against the release candidate on 27 Oct by QA-FINAL (commit `RC_COMMIT`). Re-tick the **RC** column on the build that is submitted.
+Checked against the release candidate on 27 Oct by QA-FINAL (commit `efdfdbf (CI run 40512902788, green)`). Re-tick the **RC** column on the build that is submitted.
 
 | Claim in the block | Source in the code | Code | RC |
 |---|---|---|---|
