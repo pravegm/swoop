@@ -33,18 +33,18 @@
 
 | # | Achievement ID | Title | Pre-earned description | Earned description | Points | Hidden | Trigger (for the App engineer) |
 |---|---|---|---|---|---|---|---|
-| 1 | `swoop.ach.firstflight` | First Flight | Finish your first flight. | Wings out, off you go. | 10 | No | The first run of any mode reaches `finished` (a Flight or Daily run, not attract) |
+| 1 | `swoop.ach.first` | First Flight | Finish your first flight. | Wings out, off you go. | 10 | No | The first run of any mode reaches `finished` (a Flight or Daily run, not attract) |
 | 2 | `swoop.ach.km1` | Open Water | Fly 1 km in one flight. | One kilometre of open sea. / One kilometer of open sea. | 15 | No | `RunResult.meters ≥ 1000` |
 | 3 | `swoop.ach.km5` | Long Haul | Fly 5 km in one flight. | Five kilometres, and the storm still behind you. / Five kilometers, and the storm still behind you. | 25 | No | `meters ≥ 5000` |
 | 4 | `swoop.ach.km10` | Ocean Crossing | Fly 10 km in one flight. | Ten kilometres. The gulls are impressed. / Ten kilometers. The gulls are impressed. | 75 | No | `meters ≥ 10000` |
-| 5 | `swoop.ach.chain5` | Skipping Stone | Chain 5 Perfects in a row. | Five Perfect skims, one after another. | 50 | No | `bestChain ≥ 5` in one run |
-| 6 | `swoop.ach.chain10` | Glass Water | Chain 10 Perfects in a row. | Ten in a row. Barely a ripple. | 100 | No | `bestChain ≥ 10` in one run |
-| 7 | `swoop.ach.tailwind` | Tailwind | Catch a Tailwind with three Perfects in a row. | The wind is on your side. | 25 | No | First `tailwindStarted` event (or `tailwinds ≥ 1`) |
+| 5 | `swoop.ach.chain5` | Skipping Stone | Make 5 perfect landings in a row. | Five perfect landings, one after another. | 50 | No | `bestChain ≥ 5` in one run |
+| 6 | `swoop.ach.chain10` | Glass Water | Make 10 perfect landings in a row. | Ten in a row. Barely a ripple. | 100 | No | `bestChain ≥ 10` in one run |
+| 7 | `swoop.ach.tailwind` | Tailwind | Catch a Tailwind: 3 perfect landings in a row. | The wind is on your side. | 25 | No | First `tailwindStarted` event (or `tailwinds ≥ 1`) |
 | 8 | `swoop.ach.lighthouse` | Keeper's Light | Fly past a lighthouse. | The beam swept over you. | 25 | No | `lighthouses ≥ 1` in one run |
 | 9 | `swoop.ach.lighthouse3` | Three Lights | Pass 3 lighthouses in one flight. | Three lighthouses, one flight. | 100 | No | `lighthouses ≥ 3` in one run (with the 4 / +5 / +6 km spacing that is about 15 km: check it with the balance harness) |
 | 10 | `swoop.ach.cloud` | Head in the Clouds | Soar high enough to touch the clouds. | Up where the clouds are. | 50 | No | First `cloudTouched` event (≥ 900 pt above the water), or `cloudTouches ≥ 1` |
 | 11 | `swoop.ach.daily3` | Three Dawns | Play the Daily Flight three days in a row. | Three days, three seas. | 50 | No | The Daily streak reaches 3 (scored tries on 3 consecutive Daily days) |
-| 12 | `swoop.ach.allbirds` | Whole Flock | Unlock all eight birds. | Every bird in the flock is yours. | 100 | No | All 8 `BirdID`s unlocked (the last one comes with the top ranks in Flocks) |
+| 12 | `swoop.ach.allbirds` | Whole Flock | Unlock all eight birds. | Every bird in the flock is yours. | 100 | No | All 8 `BirdID`s unlocked (the last one comes with the top levels in Goals) |
 | | | | | | **625** | | |
 
 Points: 10 + 15 + 25 + 75 + 50 + 100 + 25 + 25 + 100 + 50 + 50 + 100 = **625**. **375 points stay in reserve** for later updates (new birds, skies or sea events), well under the 1,000 cap.
@@ -72,7 +72,7 @@ If the harness shows a step is far off (for example casual players never reachin
 
 Twelve 1024 × 1024 PNGs, one per achievement, opaque (no alpha channel), in the app icon's style: a golden-hour sky over a dark swell with the fold crease as a faint vertical glint, a medallion whose ring shows the tier (sea-green for 10–25 points, deep teal with gold studs for 50–75, gold for 100) and one motif: wings spread (First Flight), a wake line with 1 / 5 / 10 km, a skipping stone with 5 / 10 rings (chains), a golden trail (Tailwind), a lighthouse beam, three beams, a cloud, three suns rising (Three Dawns), eight small silhouettes (Whole Flock). No words, only short numerals.
 
-**Where they come from:** the app draws them itself, the way Brim does (`Brim/UI/AchievementArt.swift`, `AchievementBadge(id:)`). The demo key `screen=badges` (`design/ROUND-1.md`) renders all twelve into the app's Documents/badges/, and CI copies them into the `screenshots` artifact, folder `screenshots/badges/`, one file per achievement named by its ID (e.g. `swoop.ach.firstflight.png`). Claude sends the founder the link to the latest green run; the founder uploads each file to its achievement in App Store Connect.
+**Where they come from:** the app draws them itself, the way Brim does (`Brim/UI/AchievementArt.swift`, `AchievementBadge(id:)`). The demo key `screen=badges` (`design/ROUND-1.md`) renders all twelve into the app's Documents/badges/, and CI copies them into the `screenshots` artifact, folder `screenshots/badges/`, one file per achievement named by its ID (e.g. `swoop.ach.first.png`). Claude sends the founder the link to the latest green run; the founder uploads each file to its achievement in App Store Connect.
 
 ## Implementation checklist (App engineer)
 - [ ] IDs in code match this file exactly (one constant per ID), including the two leaderboard IDs.

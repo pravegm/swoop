@@ -155,7 +155,7 @@ struct SettingsView: View {
         }
     }
 
-    /// "Flight School · Replay the 45-second lesson" (UX §1.4).
+    /// "Flight School · Replay the short lesson" (UX §1.4).
     private var schoolRow: some View {
         Button {
             FeedbackDirector.shared.uiTap()
@@ -167,7 +167,7 @@ struct SettingsView: View {
                     Text("Flight School")
                         .font(SwoopType.body(c).weight(.bold))
                         .foregroundStyle(SwoopTheme.foam)
-                    Text("Replay the 45-second lesson")
+                    Text("Replay the short lesson")
                         .font(SwoopType.caption(c))
                         .foregroundStyle(SwoopTheme.haze)
                 }

@@ -1,6 +1,8 @@
 # Swoop: App Store metadata (v1.0)
 
-*Written Mon 26 Oct 2026 by the launch lead. Paste from the code blocks exactly. Counts are Unicode characters, except keywords, which Apple counts in bytes (all ASCII here, so the same). Each choice has a one-line reason in `DECISIONS.md`. Every feature claim comes from `design/GAME-DESIGN.md`. The build didn't exist yet when this was written, so the claims listed in §10 must be checked against the release-candidate build before submission.*
+*Written Mon 26 Oct 2026 by the launch lead; **rewritten Tue 27 Oct for the Round 6–9 build** (Flight School, the lighthouse route, the bird on the sharp half, and the plain words of `design/UX-ROUND-9.md` §3–4). Paste from the code blocks exactly. Counts are Unicode characters (counted with Node), except keywords, which Apple counts in bytes (all ASCII here, so the same). Each choice has a one-line reason in `DECISIONS.md`. Every feature claim was checked against the code on 27 Oct (§10); re-tick §10 on the release-candidate build before submission.*
+
+**Words the copy uses** (the app's glossary, `UX-ROUND-9.md` §3–4): *fold / open* on the Duo and *hold / let go* on other iPhones (never "tuck" as an instruction; "Tuck & Soar" stays only in the name), *flight*, *the way down / the way up*, *Perfect* and *perfect landings*, *in a row*, *stay ahead of the storm*, *the next lighthouse*, *Route*, *Level n*, *Goals*, *top scores*, *same waves for everyone*. Never "Outfly", "downslope", "crest", "chain", "rank", "Flocks".
 
 Localisations: **English (U.K.)** is the primary language, plus **English (U.S.)**. Every other storefront shows en-GB. Only the description differs between the two (§4); everything else is identical.
 
@@ -30,59 +32,62 @@ Fold your phone. Fly.
 ```
 **21 / 30**, the same in en-GB and en-US. Duo-first in four words, and it indexes "fold", "phone" and "fly" without spending keyword bytes. It is not Valley Run's "Fold to Fly". It has no price, superlative or Apple mark (Guideline 2.3.7).
 
-Alternative to A/B later (Product Page Optimization can't test the subtitle, so this would be a version change): `Fold to dive. Beat the storm.` (29).
+Alternative to A/B later (Product Page Optimization can't test the subtitle, so this would be a version change): `Stay ahead of the storm` (23), the app's own goal line.
 
 ## 3. Promotional text (limit 170; can change any time without a new version)
 
 ```
-On iPhone Duo, hold it like a book: fold a little to dive, open to soar. On any other iPhone, hold to tuck. Outfly the storm. No ads, no in-app purchases.
+On iPhone Duo, hold it like a book: fold going down a wave, open going up. On any other iPhone, hold and let go. Stay ahead of the storm. No ads, no in-app purchases.
 ```
-**154 / 170**, both locales. It leads with the Duo, because if the Duo screenshot slot is missing on upload day, this line, frame 1 and the description carry the Duo pitch, and it says straight away that other iPhones can play.
+**166 / 170**, both locales. It leads with the Duo, because if the Duo screenshot slot is missing on upload day, this line, frame 1 and the description carry the Duo pitch, and it says straight away that other iPhones can play.
 
 Rotation ideas for later (count before pasting):
-- After launch week: `Today's Daily Flight is live: the same sea for everyone, one scored try. How many lighthouses can you pass before the storm catches you?` (136)
+- After launch week: `Today's Daily Flight is live: same waves for everyone, one try that counts. How far along the route can you get before the storm catches up?` (140)
 - After a press mention: `"[real quote]" ([outlet]). ...` (only with a real quote).
 
 ## 4. Description (limit 4,000)
 
-**en-GB 2,834 / 4,000; en-US 2,834 / 4,000.**
+**en-GB 3,435 / 4,000; en-US 3,434 / 4,000.**
 
 ### en-GB (English U.K.)
 
 ```
 The two halves of your iPhone Duo are a bird's wings.
 
-Hold your Duo open like a book, one hand on each half. Fold it in a little and your bird tucks its wings and dives down the face of an ocean swell, picking up speed. Open it at the bottom and the bird soars off the next crest. Keep skimming, keep launching, and outfly the storm that's chasing you across the sea.
+Hold your Duo open like a book, one hand on each half. Fold it a little and your bird folds its wings and dives down the face of an ocean wave, picking up speed. Open it at the bottom and the bird flies off the top. One fold per wave: you never flap. A storm is chasing you out to sea. Stay ahead of it and reach the lighthouses along the route.
 
 No ads. No in-app purchases. No accounts. No data collected. Pay once and it's yours.
 
+FLIGHT SCHOOL
+Your first flight starts with a short lesson on a calm practice sea. A guide gull shows each move first, then you copy it: fold, open, land, and how the storm works. Skip it if you like, and replay it from Settings any time.
+
 MADE FOR THE FOLD. PLAYS ON EVERY iPhone.
-On iPhone Duo, the hinge is the control: short, easy squeezes of about 30° in a relaxed book pose, roughly one per wave. You never need to close the phone, lay it flat or fold fast. On any other iPhone, press and hold anywhere to tuck and let go to soar. Same sea, same leaderboards, but the fold is the best way to fly.
+On iPhone Duo, the hinge is the control: easy folds of about 30° from a relaxed book pose, roughly one per wave. You never need to close the phone, lay it flat or fold fast. iPhone Duo softens one half of the screen for a moment when a fold starts from flat, so your bird flies on the half that stays sharp, and Settings lets you pick the side. On any other iPhone, press and hold anywhere on the way down and let go on the way up. Same sea, same top scores, but the fold is the best way to fly.
 
 ONE MOVE, A LOT OF SKILL
-• Tuck on the way down: heavier is faster
-• Open on the way up: lighter flies further
-• Land on the next downslope for a Perfect skim and a little extra speed
-• Three Perfects in a row catch a Tailwind: a golden trail and a burst of speed
+• Fold (or hold) on the way down: heavier is faster
+• Open (or let go) on the way up: lighter flies further
+• Land on the way down of the next wave for a Perfect and a little extra speed
+• Three perfect landings in a row: Tailwind! A golden trail and a burst of speed
 • Nose-dive into a rising wave and you'll know about it: a big, heavy splash
 
-OUTFLY THE STORM
-A storm front follows you from behind, a wall of slate cloud and slanting rain, and it gets faster the longer you fly. Ahead, across the fold, the sky stays clear and golden. Every Perfect pushes the storm back. When it catches you, your bird simply tucks its head and rides the swell. No crash, just one more go.
+STAY AHEAD OF THE STORM
+The storm follows you, a wall of slate cloud and slanting rain, and it gets faster the longer you fly. Ahead, across the fold, the sky stays clear and golden. Perfect landings push the storm back. Sooner or later it catches up and the flight is over: no crash, just one more go.
 
-LIGHTHOUSES
-Lighthouses stand along the way, each with its own name. Pass one for a sweep of its beam, a distant bell and a big lead over the storm. How many can you reach?
+THE ROUTE
+The lighthouses are fixed places on a route out to sea: Gull Point at 4 km, Saltlight at 9 km, Kestrel Head at 15 km, and on. The next one is always on screen with the distance to go. Fly past one for a sweep of its beam, a distant bell and a lead over the storm, and it lights up on your Route. How far out can you get?
 
 DAILY FLIGHT
-The same sea for everyone, every day. One scored try, then practise as much as you like. Keep your streak going and share your result.
+Same waves for everyone, every day, and one try that counts. Then practise as much as you like. Keep your streak going and share your result.
 
-FLOCKS, BIRDS AND SKIES
-Work through goals three at a time to rank up from Fledgling to Storm Rider. Ranks unlock eight birds, from Gull and Puffin to Albatross and Golden Gannet, and five skies, from Golden Hour to Northern Lights and Moonrise. Every bird flies exactly the same; only the look changes.
+GOALS, BIRDS AND SKIES
+Three goals at a time take you up 15 levels. Levels unlock eight birds, from Gull and Puffin to Albatross and Golden Gannet, five skies, from Golden Hour to Northern Lights and Moonrise, and coloured trails. Every bird flies exactly the same; only the look changes.
 
 SOUND AND FEEL
-The wind, the hiss of the skim, the chimes that climb with each Perfect and the splash are all synthesised live in the app as you fly, and the haptics rise with your speed. Sound plays with the silent switch on; a setting makes Swoop respect it instead. Sound and haptics each switch off in Settings. With Reduce Motion on, camera shake and screen bloom are turned off. Rather have the bird on the other side? There's a setting for that too.
+The wind, the hiss of the water, the chimes that climb with every perfect landing and the splash are all synthesised live in the app as you fly, and the haptics rise with your speed. Sound plays with the silent switch on; a setting makes Swoop respect it instead. Sound switches off, and haptics can be Off, Normal or Strong. Swoop follows Reduce Motion: no camera shake or screen bloom. Rather tap than hold? One tap folds the wings, the next opens them.
 
 GAME CENTER
-Leaderboards for your longest flight and the Daily Flight, and 12 achievements. It's optional: Swoop works fully without signing in.
+Top scores for your longest flight and the Daily Flight, and 12 achievements. It's optional: Swoop works fully without signing in.
 
 PRIVATE BY DESIGN
 No accounts, no tracking, no data collected. Your progress stays on your iPhone.
@@ -90,60 +95,65 @@ No accounts, no tracking, no data collected. Your progress stays on your iPhone.
 
 ### en-US (English U.S.)
 
-Identical except two spellings (same length): synthesised → synthesized, practise → practice. Full text, ready to paste:
+Identical except three spellings: synthesised → synthesized, practise → practice, coloured → colored. Full text, ready to paste:
 
 ```
 The two halves of your iPhone Duo are a bird's wings.
 
-Hold your Duo open like a book, one hand on each half. Fold it in a little and your bird tucks its wings and dives down the face of an ocean swell, picking up speed. Open it at the bottom and the bird soars off the next crest. Keep skimming, keep launching, and outfly the storm that's chasing you across the sea.
+Hold your Duo open like a book, one hand on each half. Fold it a little and your bird folds its wings and dives down the face of an ocean wave, picking up speed. Open it at the bottom and the bird flies off the top. One fold per wave: you never flap. A storm is chasing you out to sea. Stay ahead of it and reach the lighthouses along the route.
 
 No ads. No in-app purchases. No accounts. No data collected. Pay once and it's yours.
 
+FLIGHT SCHOOL
+Your first flight starts with a short lesson on a calm practice sea. A guide gull shows each move first, then you copy it: fold, open, land, and how the storm works. Skip it if you like, and replay it from Settings any time.
+
 MADE FOR THE FOLD. PLAYS ON EVERY iPhone.
-On iPhone Duo, the hinge is the control: short, easy squeezes of about 30° in a relaxed book pose, roughly one per wave. You never need to close the phone, lay it flat or fold fast. On any other iPhone, press and hold anywhere to tuck and let go to soar. Same sea, same leaderboards, but the fold is the best way to fly.
+On iPhone Duo, the hinge is the control: easy folds of about 30° from a relaxed book pose, roughly one per wave. You never need to close the phone, lay it flat or fold fast. iPhone Duo softens one half of the screen for a moment when a fold starts from flat, so your bird flies on the half that stays sharp, and Settings lets you pick the side. On any other iPhone, press and hold anywhere on the way down and let go on the way up. Same sea, same top scores, but the fold is the best way to fly.
 
 ONE MOVE, A LOT OF SKILL
-• Tuck on the way down: heavier is faster
-• Open on the way up: lighter flies further
-• Land on the next downslope for a Perfect skim and a little extra speed
-• Three Perfects in a row catch a Tailwind: a golden trail and a burst of speed
+• Fold (or hold) on the way down: heavier is faster
+• Open (or let go) on the way up: lighter flies further
+• Land on the way down of the next wave for a Perfect and a little extra speed
+• Three perfect landings in a row: Tailwind! A golden trail and a burst of speed
 • Nose-dive into a rising wave and you'll know about it: a big, heavy splash
 
-OUTFLY THE STORM
-A storm front follows you from behind, a wall of slate cloud and slanting rain, and it gets faster the longer you fly. Ahead, across the fold, the sky stays clear and golden. Every Perfect pushes the storm back. When it catches you, your bird simply tucks its head and rides the swell. No crash, just one more go.
+STAY AHEAD OF THE STORM
+The storm follows you, a wall of slate cloud and slanting rain, and it gets faster the longer you fly. Ahead, across the fold, the sky stays clear and golden. Perfect landings push the storm back. Sooner or later it catches up and the flight is over: no crash, just one more go.
 
-LIGHTHOUSES
-Lighthouses stand along the way, each with its own name. Pass one for a sweep of its beam, a distant bell and a big lead over the storm. How many can you reach?
+THE ROUTE
+The lighthouses are fixed places on a route out to sea: Gull Point at 4 km, Saltlight at 9 km, Kestrel Head at 15 km, and on. The next one is always on screen with the distance to go. Fly past one for a sweep of its beam, a distant bell and a lead over the storm, and it lights up on your Route. How far out can you get?
 
 DAILY FLIGHT
-The same sea for everyone, every day. One scored try, then practice as much as you like. Keep your streak going and share your result.
+Same waves for everyone, every day, and one try that counts. Then practice as much as you like. Keep your streak going and share your result.
 
-FLOCKS, BIRDS AND SKIES
-Work through goals three at a time to rank up from Fledgling to Storm Rider. Ranks unlock eight birds, from Gull and Puffin to Albatross and Golden Gannet, and five skies, from Golden Hour to Northern Lights and Moonrise. Every bird flies exactly the same; only the look changes.
+GOALS, BIRDS AND SKIES
+Three goals at a time take you up 15 levels. Levels unlock eight birds, from Gull and Puffin to Albatross and Golden Gannet, five skies, from Golden Hour to Northern Lights and Moonrise, and colored trails. Every bird flies exactly the same; only the look changes.
 
 SOUND AND FEEL
-The wind, the hiss of the skim, the chimes that climb with each Perfect and the splash are all synthesized live in the app as you fly, and the haptics rise with your speed. Sound plays with the silent switch on; a setting makes Swoop respect it instead. Sound and haptics each switch off in Settings. With Reduce Motion on, camera shake and screen bloom are turned off. Rather have the bird on the other side? There's a setting for that too.
+The wind, the hiss of the water, the chimes that climb with every perfect landing and the splash are all synthesized live in the app as you fly, and the haptics rise with your speed. Sound plays with the silent switch on; a setting makes Swoop respect it instead. Sound switches off, and haptics can be Off, Normal or Strong. Swoop follows Reduce Motion: no camera shake or screen bloom. Rather tap than hold? One tap folds the wings, the next opens them.
 
 GAME CENTER
-Leaderboards for your longest flight and the Daily Flight, and 12 achievements. It's optional: Swoop works fully without signing in.
+Top scores for your longest flight and the Daily Flight, and 12 achievements. It's optional: Swoop works fully without signing in.
 
 PRIVATE BY DESIGN
 No accounts, no tracking, no data collected. Your progress stays on your iPhone.
 ```
 
 Copy rules this text keeps:
-- **Duo first, then "plays on every iPhone"** in the second section. The touch fallback is described honestly ("press and hold anywhere to tuck") and not oversold ("the fold is the best way to fly").
+- **Duo first, then "plays on every iPhone"**. The touch way is described honestly ("press and hold anywhere on the way down and let go on the way up") and not oversold ("the fold is the best way to fly"). The store page may talk about the Duo; the *app* never shows a Duo line on a non-Duo iPhone, and nothing here promises that it does.
+- **The blur is explained once, plainly** ("softens one half of the screen for a moment when a fold starts from flat"), as an iOS behaviour Swoop works around, never as a Swoop fault.
+- **The app's glossary** (see the top of this file).
 - **"iPhone Duo" is used only referentially**, never in the name, subtitle or keywords, and "iPhone" keeps its exact form even in a capitalised heading (Apple trademark guidelines).
 - **No hinge-wear bait.** Never "flap", "slam", "snap" or "close it fast"; the copy says what Swoop *doesn't* ask for.
 - **Nothing that echoes Tiny Wings** (`research/01-market.md` §3): no "tiny", no "islands", no "fever", no "before sunset"/"nightfall". The clock is the storm.
-- **No violence words.** The bird is never hurt: the storm "catches" it and it "rides the swell".
+- **No violence words.** The bird is never hurt: the storm "catches up" and the flight is over.
 
 ## 5. Keywords (limit 100 bytes, comma-separated, no spaces)
 
 ```
-bird,glide,wings,dive,ocean,wave,sea,surf,storm,gull,flying,hinge,foldable,endless,momentum,sky,skim
+bird,glide,wings,dive,ocean,wave,sea,surf,storm,gull,flying,hinge,foldable,endless,sky,lighthouse
 ```
-**100 / 100 bytes**, both locales.
+**97 / 100 bytes**, both locales. Changed 27 Oct: "momentum" and "skim" (game-designer words nobody searches) out, "lighthouse" (the route is now the goal) in.
 - Nothing repeats the name or subtitle: swoop, tuck, soar, fold, your, phone, fly are already indexed from them.
 - Singular forms only ("wave", not "waves"): Apple matches plurals.
 - No competitor names (Tiny Wings, Alto, Valley Run, Flappy Bird), no Apple marks ("iPhone", "Duo"). "wings" is the generic word for the game's own fantasy; it is never paired with "tiny".
@@ -155,11 +165,11 @@ Alternate set to A/B after 4 weeks of Search data (check the bytes first): `bird
 
 App Store Connect has no What's New field for an app's first version. Use the 1.0 line for TestFlight's "What to Test", press and social:
 ```
-First flight. Hold your Duo like a book, fold a little to dive and open to soar. Outfly the storm. On other iPhones, hold to tuck.
+First flight. Hold your Duo like a book: fold going down a wave, open going up. Stay ahead of the storm and reach the lighthouses. On other iPhones, hold and let go.
 ```
-Template for 1.0.1 (fill in only what actually shipped):
+(165 characters.) Template for 1.0.1 (fill in only what actually shipped):
 ```
-Smoother tucks on iPhone Duo, [one real change], and small fixes. Thanks for every Perfect.
+Smoother folds on iPhone Duo, [one real change], and small fixes. Thanks for every perfect landing.
 ```
 
 ## 7. Category
@@ -171,7 +181,7 @@ Smoother tucks on iPhone Duo, [one real change], and small fixes. Thanks for eve
 | Game subcategory 2 | **Arcade** | `GAMES_ARCADE` |
 | Secondary category | **Entertainment** | `ENTERTAINMENT` |
 
-**Why:** Casual is where paid one-input games chart, and its paid chart is shallow enough for a launch spike to show. Arcade is what Swoop is underneath (endless score chase, chains, leaderboards), and it puts us next to the momentum flyers people already know. Entertainment (optional) catches people browsing for "look what my phone does" apps, the same choice as Brim.
+**Why:** Casual is where paid one-input games chart, and its paid chart is shallow enough for a launch spike to show. Arcade is what Swoop is underneath (an endless distance chase, perfect landings in a row, top scores), and it puts us next to the momentum flyers people already know. Entertainment (optional) catches people browsing for "look what my phone does" apps, the same choice as Brim.
 
 ## 8. Age rating: 4+
 
@@ -206,9 +216,9 @@ Answer the questionnaire exactly like this (App Store Connect → the app → Ap
 **Expected result: 4+.** If the form you see has extra or renamed items, the honest answer to each is None or No.
 
 Why each risky item is None:
-- **Horror/Fear:** the storm is weather, not a monster: slate cloud, rain and a distant rumble, with an occasional soft lightning flicker. Nothing jumps out. Being caught is calm (the bird rides the swell under the rain).
+- **Horror/Fear:** the storm is weather, not a monster: slate cloud, rain and a distant rumble, with an occasional soft lightning flicker. Nothing jumps out. Being caught is calm: the storm passes over and "Flight over" appears.
 - **Violence:** a splash is a splash. The bird is never hurt, never falls, never dies.
-- **Simulated gambling / loot boxes:** no chance-based rewards and nothing to buy. Birds and skies unlock by rank, and the Daily seed is a fixed sea, not a prize draw.
+- **Simulated gambling / loot boxes:** no chance-based rewards and nothing to buy. Birds, skies and trails unlock by level, and the Daily Flight is the same fixed waves for everyone, not a prize draw.
 - **Contests:** Game Center leaderboards are not prize contests.
 - **Made for Kids: No.** The Kids category adds parental-gate rules and moves the app out of Games; Swoop is for everyone, not built for under-11s specifically.
 
@@ -238,22 +248,23 @@ Why each risky item is None:
 
 ## 10. Claims to check against the release-candidate build
 
-The build didn't exist when this was written. Before submission, Claude (or whoever cuts the release candidate) ticks each line or changes the copy, never the other way round.
+Checked against the code on Tue 27 Oct (commit `a036bc4`, Round 9 + R9b). Before submission, Claude (or whoever cuts the release candidate) re-ticks each line on that build ("RC") or changes the copy, never the other way round.
 
-| Claim (where) | Source today | Check |
-|---|---|---|
-| Book pose: fold a little = tuck and dive, open = soar (everywhere) | Bible §3, `HingeTuckSource` | [ ] |
-| "Press and hold anywhere to tuck, let go to soar" on other iPhones (description, promo, review notes) | Bible §3, `TouchTuckSource` | [ ] |
-| Never needs closing, flat or fast folds; strokes of 30–36°, about 40 a minute in active play (balance sim, casual player) | Bible §2.4, §3 (play band 100–178°, ready pose 130–170°) | [ ] |
-| Perfect = a little extra speed; Tailwind = 3 Perfects, golden trail, burst of speed | Bible §5–6, `Tuning` | [ ] |
-| Storm follows from behind, speeds up, Perfects push it back; caught = rides the swell | Bible §6 | [ ] |
-| Lighthouses with names, beam, bell, lead | Bible §6, `Lighthouses` | [ ] |
-| Daily Flight: one scored try, practice after, streak, share | Bible §8 | [ ] |
-| Flocks: 3 goals at a time, Fledgling → Storm Rider (15 ranks) | Bible §8, `GoalCatalog` | [ ] |
-| 8 birds (Gull, Puffin, Albatross, Golden Gannet named) and 5 skies (Golden Hour, Northern Lights, Moonrise named); all birds fly the same | Bible §8, `BirdCatalog`, `SkyCatalog` | [ ] |
-| All sound synthesised live; no audio files in the bundle | Bible §7 | [ ] |
-| Sound plays on silent; "respect silent switch" setting | Bible §7, §10 | [ ] |
-| Separate Sound and Haptics switches; Reduce Motion turns off camera shake and bloom | Bible §3, §10 | [ ] |
-| "Bird on the other side" setting | Bible §10 | [ ] |
-| 2 leaderboards + 12 achievements report from the build | `achievements.md` | [ ] |
-| No network code, no SDKs (privacy) | `privacy.md` grep | [ ] |
+| Claim (where) | Source in the code (27 Oct) | Code | RC |
+|---|---|---|---|
+| Duo: fold = the wings fold and the bird dives; open = it flies off the top; one fold per wave | `Input/HingeTuckSource.swift`; Flight School "One per wave" (`UX-ROUND-9` §1.2) | [x] | [ ] |
+| Other iPhones: press and hold anywhere on the way down, let go on the way up | `Input/TouchTuckSource.swift`; Home caption "Hold going down. Let go going up." | [x] | [ ] |
+| Tapping alternative: one tap folds, the next opens | `UI/SettingsView.swift` "Wings by: Holding · Tapping" | [x] | [ ] |
+| Flight School on the first flight: calm practice sea, the guide gull shows each move, skippable, replay from Settings | `App/FlightSchool.swift`, `UI/FlightSchoolView.swift`, `Scene/SceneGuideGull.swift`, Settings "Flight School" | [x] | [ ] |
+| Never needs closing, flat or fast folds; folds of about 30°, roughly one per wave | `Core/Tuning.swift`, stroke-rate fix 98595e2 | [x] | [ ] |
+| The bird flies on the half that stays sharp; Settings → Bird side (Sharp side (auto) · Left · Right on a Duo) | `Input/SharpHalf.swift`, `UI/SettingsView.swift` `birdSideRow` | [x] | [ ] |
+| Perfect = a little extra speed (`perfectBoost` 6 %); Tailwind at 3 in a row, +15 % speed | `Core/Tuning.swift` | [x] | [ ] |
+| The storm speeds up; perfect landings push it back (`perfectGapBonus`); caught = "Flight over" | `Core/Tuning.swift`, `UX-ROUND-9` §2.1 | [x] | [ ] |
+| Fixed route: Gull Point 4 km, Saltlight 9 km, Kestrel Head 15 km…; the next one always on screen; beam, bell, lead (`lighthouseGapBonus`); the Route page | `Core/Lighthouses.swift`, `UI/PlayHUD.swift`, `UI/RouteView.swift` | [x] | [ ] |
+| Daily Flight: same waves for everyone, one try that counts, practice after, streak, share | `UI/HomeView.swift` ("Same waves for everyone · 1 try"), `UI/ShareText.swift` | [x] | [ ] |
+| Goals: 3 at a time, 15 levels; unlock 8 birds, 5 skies and trails; every bird flies the same | `Core/Goals.swift`, `Core/Catalogs.swift` (`TrailCatalog`), `UI/FlocksView.swift` ("Level n of 15") | [x] | [ ] |
+| All sound synthesised live; no audio files in the bundle | `Feedback/FeelSynth.swift` | [x] | [ ] |
+| Sound on silent; "Respect silent switch"; Sound on/off; Haptics Off · Normal · Strong | `UI/SettingsView.swift` | [x] | [ ] |
+| Follows iOS Reduce Motion: no camera shake or screen bloom | `UI/SettingsView.swift` (info row) | [x] | [ ] |
+| 2 leaderboards ("Top scores" on Home) + 12 achievements report from the build | `App/GameCenterManager.swift`, `Persistence/ProgressStore.swift` | [x] | [ ] |
+| No network code, no SDKs (privacy) | `privacy.md` grep | [ ] | [ ] |

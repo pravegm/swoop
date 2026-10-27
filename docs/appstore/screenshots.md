@@ -1,6 +1,6 @@
 # Swoop: App Store screenshot plan (v1.0)
 
-*Written Mon 26 Oct 2026, pipeline built the same day (Round 4, `design/notes/store-R4.md`). Owner: CI captures and captions, the launch lead writes captions, the founder approves. **Every frame comes from a CI demo scenario**: the app's own rendering, launched with `-swoopDemo "…"` (keys in the header of `Swoop/App/DemoMode.swift` and `design/ROUND-1.md`) on the iPhone Duo simulator and the iPhone simulators, then captioned on the Mac runner. **The scenario files are the source of truth**: `ci/store-scenarios.txt` (iPhone sets) and `ci/duo-store-scenarios.txt` (Duo set). Change a caption there, not only here.*
+*Written Mon 26 Oct 2026; captions rewritten Tue 27 Oct for the Round 6–9 build (see "Captions for the Round 6–9 build"). Pipeline built 26 Oct (Round 4, `design/notes/store-R4.md`). Owner: CI captures and captions, the launch lead writes captions, the founder approves. **Every frame comes from a CI demo scenario**: the app's own rendering, launched with `-swoopDemo "…"` (keys in the header of `Swoop/App/DemoMode.swift` and `design/ROUND-1.md`) on the iPhone Duo simulator and the iPhone simulators, then captioned on the Mac runner. **The scenario files are the source of truth**: `ci/store-scenarios.txt` (iPhone sets) and `ci/duo-store-scenarios.txt` (Duo set). Change a caption there, not only here.*
 
 ## How to make the sets
 
@@ -38,39 +38,61 @@ The hero is the whole pitch: **an iPhone Duo standing open like a book, the titl
 
 ## Caption style (what `ci/store-frame.swift` draws)
 
-- **Layout:** the caption band runs **across the top** (3.5–21.5 % of the height) with the screenshot under it (24–96.5 %). In a landscape frame a ≤ 7-word headline fits on one line at a size that still reads in a search thumbnail, the eye goes caption → picture, and the capture keeps ~55 % of the frame (a side column leaves ~44 %) with its storm-left / sun-right split intact. **Exception:** the book frame on the iPhone slots (2.2 : 1) puts the caption in a **left column** (left-aligned, up to three lines) with the book on the right, because a book is only ~1.25 : 1 and would fill under half the width under a top band.
+- **Layout:** the caption band runs **across the top** (3.5–21.5 % of the height) with the screenshot under it (24–96.5 %). In a landscape frame a ≤ 7-word headline fits on one line at a size that still reads in a search thumbnail, the eye goes caption → picture, and the capture keeps ~55 % of the frame (a side column leaves ~44 %) with its storm-behind / clear-sky-ahead split intact (storm left on iPhones, storm right on the mirrored Duo frames). **Exception:** the book frame on the iPhone slots (2.2 : 1) puts the caption in a **left column** (left-aligned, up to three lines) with the book on the right, because a book is only ~1.25 : 1 and would fill under half the width under a top band.
 - **Background:** a diagonal sweep from deep sea-navy (`#0B2236` UI surface, `#0A2B44` near-deep sea) to dusk (`#2E2A5E` Rose Dusk zenith → `#7A5C9E`), with the Golden Hour sun glow `#FFC46B` added on the right with plus-lighter blending (never gold at partial alpha over navy, ART-DIRECTION §2), and a soft shade along the bottom.
 - **Flat frames (2–8):** the capture itself, unaltered, scaled to fit, rounded corners (9 % of the short side on iPhone, 5 % on Duo), a hairline edge and a soft shadow. No device frame.
 - **Type:** SF Pro Rounded Heavy (plain system Heavy if missing), foam `#F2F7FA`. Headline cap height starts at 6 % of the image height and shrinks in 5 % steps until it fits in ≤ 2 balanced lines (floor 4 %; side column: 8.5 %, ≤ 3 lines, floor 5 %). **One** highlighted word, `*word*` in the scenario file, drawn as ink `#0E2438` letters on a UI-gold `#F7C75B` marker swash. Sub-line after ` / ` in SF Pro Rounded Semibold at ~46 %, mist `#B6CCDA` (top band: shrinks to stay on one line, floor 36 %).
 - **Seven words maximum** per headline, no logo, never "Fold to Fly" (Valley Run's tagline) and none of DECISIONS #36's words. `store-set.sh` lints all three.
 
-## A. iPhone 6.9" (2868 × 1320) and 6.3" (2622 × 1206): 8 frames each
+## Captions for the Round 6–9 build (27 Oct): **the scenario files must be updated to match**
 
-Same frames and captions at both sizes, captured with the `touch` key so no Duo-only hint shows.
+The game changed after the founder's real-Duo test (ROUND-6 to ROUND-9): Flight School with a guide gull, a fixed lighthouse route with a Route page and a "NEXT" goal chip, the bird on the Duo's sharp half (screen-right by default, flying right to left), and plain words (`design/UX-ROUND-9.md` §3–4). The captions below use the app's own words. **`ci/store-scenarios.txt` and `ci/duo-store-scenarios.txt` still carry the 26 Oct captions** ("Outfly", "downslope", "Chain three", "rank up", "Hold to tuck", "Same sea for all"), so the CI owner must paste these in before the final store run (`DECISIONS.md` §2 #13). Until then a fresh run produces frames with the old words: don't upload them.
+
+Caption rules for every frame: ≤ 7 words per headline, one `*word*`, the glossary's words only (fold / open on the Duo, hold / let go on iPhones, "the way down", "perfect landings", "in a row", "stay ahead of the storm", "the next lighthouse", "Route", "level"), never "tuck" as an instruction, "Outfly", "downslope", "crest", "chain", "rank" or "Flocks".
+
+## A. iPhone 6.9" (2868 × 1320) and 6.3" (2622 × 1206): 8 frames each, plus 2 recommended
+
+Same frames and captions at both sizes, captured with the `touch` key so no Duo-only hint shows. On iPhones the bird flies on the left half, left to right, with the storm behind on the left.
 
 | # | In-game moment | Caption: headline / sub-line | Demo args (`ci/store-scenarios.txt`) |
 |---|---|---|---|
-| **P1** | **Book composite** of D1: the title bird's wings across the fold | **The two halves are your *wings*.** / Best on iPhone Duo. Hold to tuck on any iPhone. | frame `book:D1-book-hero` (fallback capture `screen=home;progress=mid;bird=gull;sky=goldenHour;touch`) |
-| **P2** | A Perfect skim, chain 5: ring on the water, gold trail | **Land the downslope. *Perfect.*** / Three in a row catch a Tailwind. | `mode=flight;seed=7;autopilot=perfect;touch;chain=4;freezeOn=perfect;freezeAfter=0;freezeDelay=0.12` |
-| **P3** | A Tailwind starting | **Chain three. Ride the *Tailwind*.** / A burst of speed. The storm falls back. | `…;chain=2;freezeOn=tailwind;freezeAfter=0;freezeDelay=0.12` |
-| **P4** | The storm close, lead low | ***Outfly* the storm.** / Every Perfect pushes it back. | `mode=flight;seed=7;autopilot=casual;touch;lead=0.12;freezeOn=stormclose;freezeAfter=0` |
-| **P5** | Passing the first lighthouse | **Reach the next *lighthouse*.** / The first is 4 km out. Can you make it? | `…;skipTo=3850;freezeOn=lighthouse;freezeAfter=0;freezeDelay=0.4` |
-| **P6** | Flight under the Moonrise sky (heron) | **Fly on by *moonlight*.** / Earn new skies and birds as you rank up. | `mode=flight;seed=11;…;sky=moonrise;bird=heron;freezeAt=7` |
-| **P7** | Results card, mid progress (a real headless run) | **One more *flight*?** / Goals to chase. Ranks to earn. | `screen=results;seed=7;progress=mid;autopilot=casual` |
+| **P1** | **Book composite** of D1: the title bird's wings across the fold | **The two halves are your *wings*.** / Made for iPhone Duo. Plays on every iPhone. | frame `book:D1-book-hero` (fallback capture `screen=home;progress=mid;bird=gull;sky=goldenHour;touch`) |
+| **P2** | A Perfect: ring on the water, gold trail, the "×4 in a row" chip | **Land on the way down: *Perfect*** / Perfect landings push the storm back. | `mode=flight;seed=7;autopilot=perfect;touch;chain=4;freezeOn=perfect;freezeAfter=0;freezeDelay=0.12` |
+| **P3** | The storm close behind, the meter low, the NEXT chip showing the lighthouse ahead | **Stay ahead of the *storm*** / Reach the next lighthouse. | `mode=flight;seed=7;autopilot=casual;touch;lead=0.12;freezeOn=stormclose;freezeAfter=0` |
+| **P4** | Passing Gull Point: beam, "Gull Point!" | **Reach the next *lighthouse*** / Gull Point is 4 km out. Can you make it? | `…;skipTo=3850;freezeOn=lighthouse;freezeAfter=0;freezeDelay=0.4` |
+| **P5** | A Tailwind starting | **Three in a row: *Tailwind!*** / A burst of speed. The storm falls back. | `…;chain=2;freezeOn=tailwind;freezeAfter=0;freezeDelay=0.12` |
+| **P6** | Flight under the Moonrise sky (heron) | **Fly on by *moonlight*** / New birds and skies as you level up. | `mode=flight;seed=11;…;sky=moonrise;bird=heron;freezeAt=7` |
+| **P7** | Results card, mid progress: the route strip and "You made it past …" | **One more *flight*?** / See how far along the route you got. | `screen=results;seed=7;progress=mid;autopilot=casual` |
 | **P8** | Birds screen, mid progress | **Eight birds. Five *skies*.** / No ads. No in-app purchases. | `screen=birds;progress=mid` |
+| **P9** (recommended, new) | The Route page, mid progress: lighthouses passed ✓, the next one tagged | **How far out can you *fly*?** / Gull Point, Saltlight, Kestrel Head, and on. | `screen=route;progress=mid;touch` |
+| **P10** (recommended, new) | Flight School, the land step: the guide gull's arc into the bright landing ring | **A guide gull shows you *how*** / A short lesson on your first flight. | `school=land;schoolTouch;touch` (pick the "ghost demo" phase in which the ring and the guide are both visible) |
 
-Reserves (run with `phone_filter` `^(P[0-9]|R[0-9])`): `R1-soar` **Hold to *dive*. Let go to soar.**; `R2-daily` **One *Daily Flight*. Same sea for all.**
+**Order:** frames 1–3 are the pitch (the wings, the move, the goal), so the storm-and-goal frame moved up to P3. If the two new frames are added, consider P9 Route at position 4 and P10 Flight School at position 5 once their MANIFEST lines are clean. 10 is Apple's maximum per size.
 
-## B. iPhone Duo, inner display (2853 × 2007): 8 frames
+Reserves (run with `phone_filter` `^(P[0-9]|R[0-9])`): `R1-soar` **Hold going down. *Let go* going up.**; `R2-daily` **One *Daily Flight*. Same waves for everyone.** / One try a day.
 
-Same moments and captions as A (no `touch`: the Duo frames are the hinge game; the autopilot flies). D1 is the book composite of its own capture, captioned **The two halves are your *wings*.** / Hold your Duo like a book. The storm close uses `lead=0.06` (as proven in `ci/duo-scenarios.txt`). Every Duo frame must log the folded inner canvas (`SWOOP-T canvas 951x669 fold=1`), so a cover-display capture is FLAGGED, never uploaded. Reserves (`^(D[0-9]|DR)`): `DR1-soar` **Fold to dive. Open to *soar*.**; `DR2-countdown` **Hold your Duo like a *book*.**
+## B. iPhone Duo, inner display (2853 × 2007): 8 frames, plus 2 recommended
+
+The same moments as A (no `touch`: the Duo frames are the hinge game; the autopilot flies). **The Duo frames are mirrored**: the bird flies on the right half (the sharp one, the Duo default), right to left, with the storm behind it on the right and the clear sky ahead on the left page. That is the layout a Duo player sees; don't "fix" it to match the iPhone frames.
+
+| # | Caption: headline / sub-line (where it differs from A) |
+|---|---|
+| **D1** | **The two halves are your *wings*.** / Hold your Duo like a book. |
+| **D2** | **Land on the way down: *Perfect*** / Fold going down. Open going up. |
+| **D3** | as P3 (`lead=0.06`, as proven in `ci/duo-scenarios.txt`) |
+| **D4–D8** | as P4–P8 |
+| **D9, D10** (recommended) | as P9 (`screen=route;progress=mid`) and P10 (`school=land`, the Duo variant with the phone diagram folding beside the bird) |
+
+Every Duo frame must log the folded inner canvas (`SWOOP-T canvas 951x669 fold=1`), so a cover-display capture is FLAGGED, never uploaded. Reserves (`^(D[0-9]|DR)`): `DR1-soar` **Fold going down. *Open* going up.**; `DR2-countdown` **Hold your Duo like a *book*.** / Wings open, hold steady.
 
 ## Truthfulness rules (check every frame before upload)
 
 - [ ] **Only what the app renders.** Every screen is an unedited capture from the app (frame 1: only warped onto the device); captions sit outside it. No composited spray, rings, birds or skies.
 - [ ] **Frame 1's device is a real iPhone Duo pose** (book, 140–150°), never a non-folding iPhone drawn folded, never closed or flat.
 - [ ] **No hands, no people, no photos** in 1.0's sets.
-- [ ] **Every caption is true of the build** (checked in `Swoop/Core/Tuning.swift` on 26 Oct): a Tailwind at every 3rd Perfect in a chain (+15 % speed, storm pushed back); every Perfect pushes the storm back; the first lighthouse at 4 km, each one pushing the storm back; 8 birds and 5 skies, earned by rank; press and hold is the iPhone tuck. If any of these change, change the caption.
+- [ ] **Every caption is true of the build** (checked in the code on 27 Oct): a Tailwind at 3 perfect landings in a row (`tailwindChain` 3, +15 % speed, storm pushed back); every perfect landing pushes the storm back (`perfectGapBonus`); the route's first lighthouse is Gull Point at 4 km, then Saltlight 9 km and Kestrel Head 15 km (`Core/Lighthouses.swift`), each pushing the storm back; 8 birds and 5 skies, unlocked by level; press and hold / let go is the iPhone control; Flight School's guide gull demonstrates each move on the first flight. If any of these change, change the caption.
+- [ ] **The app's words** (`UX-ROUND-9.md` §3–4) on every caption; and on the iPhone frames, **no Duo-only line inside the app capture** (the app never shows one on a non-Duo iPhone; the `touch` key keeps it so).
+- [ ] **The Duo frames show the bird on the right half** (the default sharp side), the iPhone frames on the left.
 - [ ] **Seeded states are reachable states:** chain 2–5, a low lead and "mid progress" are things a real player sees. Never seed every bird unlocked or an impossible distance.
 - [ ] **No stale hint text** that contradicts the caption (iPhone frames use `touch` and no `hints=fresh`).
 - [ ] **Nothing important in the crease band** (x ≈ 456–496 pt) on the Duo frames, except the title bird's body in D1, which is the point.
@@ -79,7 +101,7 @@ Same moments and captions as A (no `touch`: the Duo frames are the hinge game; t
 
 ## Upload order and checks (founder, runbook §6e)
 
-1. 6.9" slot: `store-69` P1–P8. 2. 6.3" slot: `store-63` P1–P8. 3. If an **iPhone Duo** entry appears in the device list: `store-duo` D1–D8, then check them in App Store Connect's preview. No Duo entry: skip it; the Duo set ships with 1.0.1.
+1. 6.9" slot: `store-69` P1–P8 (P1–P10 if the two new frames were added). 2. 6.3" slot: `store-63`, the same. 3. If an **iPhone Duo** entry appears in the device list: `store-duo` D1–D8 (or D1–D10), then check them in App Store Connect's preview. No Duo entry: skip it; the Duo set ships with 1.0.1.
 
 **Never upload** anything in `_flagged/`, anything from a `raw-*` artifact, or anything from `ci.yml`'s `screenshots` artifact (test frames). Upload only from the `store-*` artifact of the run Claude names, after reading its MANIFEST.
 

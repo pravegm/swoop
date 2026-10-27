@@ -1822,7 +1822,8 @@ struct RoundSevenTests {
         #expect(FlightSchoolCopy.praise(.land) == "PERFECT")
         // R9: no praise card; the game's own Perfect callout and ring name it in the world.
         #expect(FlightSchoolCopy.praiseLine(.land) == nil)
-        #expect(FlightSchoolCopy.praiseSeconds(.land) == FlightSchoolCopy.praiseSeconds(.dive))
+        // R10 P0-1: the land step's big "Perfect" holds longer than the other steps' successes.
+        #expect(FlightSchoolCopy.praiseSeconds(.land) > FlightSchoolCopy.praiseSeconds(.dive))
         #expect(LeadMeter.showsTooClose(teach: true, lead: AppRules.meterDangerZone * 0.5))
         #expect(!LeadMeter.showsTooClose(teach: true, lead: 0.6))
         #expect(!LeadMeter.showsTooClose(teach: false, lead: 0.01))
@@ -2330,10 +2331,14 @@ struct RoundTenTests {
         #expect(s.words(at: 0.5)?.text == "Now open" && s.diagramTarget == 0)
         s.start(at: .dive, time: 0)
         #expect(s.diagramTarget == 1)
-        for step in [SchoolStep.land, .rhythm, .storm, .wingCheck] {
+        for step in [SchoolStep.land, .rhythm, .storm] {
             s.start(at: step, time: 0)
             #expect(s.diagramTarget == nil)
         }
+        // The clear-side step has no diagram either (without the check asked, `start(at: .wingCheck)` is step 3).
+        var check = FlightSchool(touch: false, asksWingCheck: true)
+        check.start(at: .wingCheck, time: 0)
+        #expect(check.stepNow == .wingCheck && check.diagramTarget == nil)
         s.start(at: .rhythm, time: 0)
         #expect(s.words(at: 0.5)?.text == "One fold per wave")
     }

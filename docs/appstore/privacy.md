@@ -63,7 +63,7 @@ One-line grep: `URLSession|URLRequest|NWConnection|WKWebView|SFSafari|openURL|Li
 > On iPhone Duo, Swoop reads how far the phone is folded, only to steer the bird while you play. That reading never leaves your iPhone and isn't stored.
 >
 > ## What stays on your device
-> Your best flights, ranks, unlocked birds and skies, Daily streak and settings are saved only on your iPhone. We can't see them. If you delete the app, they're deleted too.
+> Your best flights, levels, lighthouses passed, unlocked birds, skies and trails, your bird side, Daily streak and settings are saved only on your iPhone. We can't see them. If you delete the app, they're deleted too.
 >
 > ## Sharing your Daily Flight
 > When you tap Share, Swoop makes a short text result (your distance, Perfects and the last lighthouse you passed) and hands it to the iOS share sheet. Where it goes next is up to you. Nothing is sent to us.

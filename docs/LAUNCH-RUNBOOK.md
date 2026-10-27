@@ -185,13 +185,13 @@ Both are in **metres** flown. Fill in the display name and suffix for **English 
 
 | Achievement ID | Title | Description before earning | Description after earning | Points |
 |---|---|---|---|---|
-| `swoop.ach.firstflight` | First Flight | Finish your first flight. | Wings out, off you go. | 10 |
+| `swoop.ach.first` | First Flight | Finish your first flight. | Wings out, off you go. | 10 |
 | `swoop.ach.km1` | Open Water | Fly 1 km in one flight. | One kilometre of open sea. | 15 |
 | `swoop.ach.km5` | Long Haul | Fly 5 km in one flight. | Five kilometres, and the storm still behind you. | 25 |
 | `swoop.ach.km10` | Ocean Crossing | Fly 10 km in one flight. | Ten kilometres. The gulls are impressed. | 75 |
-| `swoop.ach.chain5` | Skipping Stone | Chain 5 Perfects in a row. | Five Perfect skims, one after another. | 50 |
-| `swoop.ach.chain10` | Glass Water | Chain 10 Perfects in a row. | Ten in a row. Barely a ripple. | 100 |
-| `swoop.ach.tailwind` | Tailwind | Catch a Tailwind with three Perfects in a row. | The wind is on your side. | 25 |
+| `swoop.ach.chain5` | Skipping Stone | Make 5 perfect landings in a row. | Five perfect landings, one after another. | 50 |
+| `swoop.ach.chain10` | Glass Water | Make 10 perfect landings in a row. | Ten in a row. Barely a ripple. | 100 |
+| `swoop.ach.tailwind` | Tailwind | Catch a Tailwind: 3 perfect landings in a row. | The wind is on your side. | 25 |
 | `swoop.ach.lighthouse` | Keeper's Light | Fly past a lighthouse. | The beam swept over you. | 25 |
 | `swoop.ach.lighthouse3` | Three Lights | Pass 3 lighthouses in one flight. | Three lighthouses, one flight. | 100 |
 | `swoop.ach.cloud` | Head in the Clouds | Soar high enough to touch the clouds. | Up where the clouds are. | 50 |

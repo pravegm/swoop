@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
 <title>Swoop: Tuck &amp; Soar</title>
-<meta name="description" content="A flying game for iPhone Duo: hold it like a book, fold a little to dive, open to soar, and outfly the storm. Plays on every iPhone. £1.99, no ads, no in-app purchases.">
+<meta name="description" content="A flying game for iPhone Duo: hold it like a book, fold going down a wave, open going up, and stay ahead of the storm. Plays on every iPhone. £1.99, no ads, no in-app purchases.">
 <style>
   :root { color-scheme: light; --paper:#FFF8EE; --card:#FFFDF8; --gold:#F6B73C; --coral:#F08C5A; --sea:#1F5574; --slate:#2A3644; --ink:#13212E; --ink2:#4A5A68; --line:#EADFCF; }
   * { box-sizing: border-box; }
@@ -55,14 +55,14 @@
       <div>
         <h1>Swoop</h1>
         <p class="sub">Tuck &amp; Soar</p>
-        <p class="lead">Hold your iPhone&nbsp;Duo open like a book. <mark>The two halves are your wings.</mark> Fold a little to dive down the swell, open to soar off the crest, and outfly the storm.</p>
+        <p class="lead">Hold your iPhone&nbsp;Duo open like a book. <mark>The two halves are your wings.</mark> Fold going down a wave, open going up. Stay ahead of the storm and reach the next lighthouse.</p>
         <span class="badge">On the App Store 24&nbsp;November&nbsp;2026</span>
         <p class="note">£1.99 / $1.99. No ads. No in-app purchases. No data collected. Rated 4+.</p>
       </div>
       <div class="art" aria-hidden="true">
         <svg viewBox="0 0 320 224" xmlns="http://www.w3.org/2000/svg">
           <defs>
-            <linearGradient id="sk" x1="0" y1="0" x2="1" y2="0">
+            <linearGradient id="sk" x1="1" y1="0" x2="0" y2="0">
               <stop offset="0" stop-color="#3A4757"/>
               <stop offset="0.36" stop-color="#7F7A78"/>
               <stop offset="0.55" stop-color="#F2B266"/>
@@ -75,25 +75,31 @@
             <clipPath id="lh"><path d="M20 30 L155 20 L155 204 L20 194 Z"/></clipPath>
             <clipPath id="rh"><path d="M165 20 L300 30 L300 194 L165 204 Z"/></clipPath>
           </defs>
-          <!-- the Duo, open like a book -->
+          <!-- the Duo, open like a book; as in the game on a Duo, the storm is behind on the right and the clear sky ahead on the left -->
           <path d="M20 30 L155 20 L155 204 L20 194 Z" fill="#13212E" stroke="#13212E" stroke-width="14" stroke-linejoin="round"/>
           <path d="M165 20 L300 30 L300 194 L165 204 Z" fill="#13212E" stroke="#13212E" stroke-width="14" stroke-linejoin="round"/>
           <defs><g id="screen">
             <rect x="0" y="0" width="320" height="224" fill="url(#sk)"/>
-            <circle cx="252" cy="122" r="24" fill="#FFF3C9" opacity="0.95"/>
+            <circle cx="68" cy="122" r="24" fill="#FFF3C9" opacity="0.95"/>
+            <!-- a lighthouse far ahead -->
+            <g transform="translate(40 128)">
+              <path d="M-4 30 L-2.5 4 L2.5 4 L4 30 Z" fill="#FFF8EE" stroke="#13212E" stroke-width="1.5" stroke-linejoin="round"/>
+              <rect x="-3.5" y="-2" width="7" height="6" fill="#F6B73C" stroke="#13212E" stroke-width="1.5"/>
+              <path d="M-3 13 L3 13 M-3.6 21 L3.6 21" stroke="#F08C5A" stroke-width="3"/>
+            </g>
             <g fill="#2A3644" opacity="0.9">
-              <ellipse cx="26" cy="58" rx="46" ry="30"/>
-              <ellipse cx="70" cy="44" rx="34" ry="22"/>
-              <ellipse cx="18" cy="100" rx="36" ry="30"/>
+              <ellipse cx="294" cy="58" rx="46" ry="30"/>
+              <ellipse cx="250" cy="44" rx="34" ry="22"/>
+              <ellipse cx="302" cy="100" rx="36" ry="30"/>
             </g>
             <g stroke="#9AA7B4" stroke-width="2" stroke-linecap="round" opacity="0.7">
-              <line x1="22" y1="96" x2="14" y2="120"/><line x1="40" y1="92" x2="32" y2="116"/>
-              <line x1="58" y1="74" x2="50" y2="98"/><line x1="30" y1="128" x2="22" y2="152"/>
-              <line x1="76" y1="66" x2="68" y2="90"/>
+              <line x1="298" y1="96" x2="290" y2="120"/><line x1="280" y1="92" x2="272" y2="116"/>
+              <line x1="262" y1="74" x2="254" y2="98"/><line x1="290" y1="128" x2="282" y2="152"/>
+              <line x1="244" y1="66" x2="236" y2="90"/>
             </g>
-            <path d="M0 168 C 30 150, 60 186, 100 170 S 170 140, 214 164 S 280 150, 320 160 L320 224 L0 224 Z" fill="url(#se)"/>
-            <path d="M0 168 C 30 150, 60 186, 100 170 S 170 140, 214 164 S 280 150, 320 160" fill="none" stroke="#FFF8EE" stroke-width="2.5" opacity="0.85"/>
-            <!-- the title bird, wings spanning both halves -->
+            <path d="M0 160 C 40 150, 106 164, 106 164 S 150 140, 220 170 S 290 150, 320 168 L320 224 L0 224 Z" fill="url(#se)"/>
+            <path d="M0 160 C 40 150, 106 164, 106 164 S 150 140, 220 170 S 290 150, 320 168" fill="none" stroke="#FFF8EE" stroke-width="2.5" opacity="0.85"/>
+            <!-- the Home bird, wings spanning both halves -->
             <path d="M154 92 C 124 72, 84 62, 34 74 C 70 82, 106 96, 154 106 Z" fill="#FFFFFF" stroke="#13212E" stroke-width="2.5" stroke-linejoin="round"/>
             <path d="M166 92 C 196 72, 236 62, 286 74 C 250 82, 214 96, 166 106 Z" fill="#FFFFFF" stroke="#13212E" stroke-width="2.5" stroke-linejoin="round"/>
             <path d="M34 74 C 50 74, 62 77, 72 80 C 60 72, 48 70, 34 74 Z" fill="#13212E"/>
@@ -120,41 +126,51 @@
     <div class="cards">
       <div class="card">
         <h3>On iPhone Duo</h3>
-        <p>Hold the Duo open like a book, one hand on each half. Fold it in a little and the bird tucks its wings and dives down the face of a swell, picking up speed. Open it at the bottom and the bird soars off the next crest. Small, slow folds, one wave at a time.</p>
+        <p>Hold the Duo open like a book, one hand on each half. Fold it a little and the bird folds its wings and dives down the face of a wave, picking up speed. Open it at the bottom and the bird flies off the top. One fold per wave: you never flap.</p>
       </div>
       <div class="card">
         <h3>On every other iPhone</h3>
-        <p>Press and hold anywhere to tuck, and let go to soar. Same sea, same leaderboards. The fold is the best way to fly, but nobody is left out.</p>
+        <p>Press and hold anywhere on the way down, and let go on the way up. Rather tap? One tap folds the wings, the next opens them. Same sea, same top scores. The fold is the best way to fly, but nobody is left out.</p>
       </div>
     </div>
   </section>
 
   <section>
+    <h2>Flight School</h2>
+    <p>Your first flight starts with a short lesson on a calm practice sea, with no storm and no score. A guide gull shows each move first, then waits for you to copy it: fold, open, land, and how the storm works. Skip it if you like, and replay it from Settings any time.</p>
+  </section>
+
+  <section>
     <div class="storm">
-      <h2>Outfly the storm</h2>
-      <p>A storm front follows you from behind, slate cloud and slanting rain, and it gets faster the longer you fly. Ahead, across the fold, the sky stays clear and golden. Every Perfect skim pushes the storm back, and every lighthouse you pass buys you a lead.</p>
+      <h2>Stay ahead of the storm</h2>
+      <p>A storm chases you out to sea, slate cloud and slanting rain, and it gets faster the longer you fly. Ahead, across the fold, the sky stays clear and golden. Perfect landings push the storm back, and every lighthouse you pass buys you a lead.</p>
     </div>
+  </section>
+
+  <section>
+    <h2>The route</h2>
+    <p>The lighthouses are fixed places on a route out to sea: <strong>Gull Point</strong> at 4&nbsp;km, <strong>Saltlight</strong> at 9&nbsp;km, <strong>Kestrel Head</strong> at 15&nbsp;km, and on. The next one is always on screen with the distance to go. Fly past one for a sweep of its beam and a distant bell, and it lights up on your Route. How far out can you get?</p>
   </section>
 
   <section>
     <h2>One move, a lot of skill</h2>
     <ul>
-      <li>Tuck on the way down: heavier is faster. Open on the way up: lighter flies further.</li>
-      <li>Land on the next downslope for a <strong>Perfect</strong>: a white ring, a chime that climbs with your chain, a little extra speed.</li>
-      <li>Three Perfects in a row catch a <strong>Tailwind</strong>: a golden trail and a burst of speed.</li>
+      <li>Fold (or hold) on the way down: heavier is faster. Open (or let go) on the way up: lighter flies further.</li>
+      <li>Land on the way down of the next wave for a <strong>Perfect</strong>: a white ring, a chime that climbs with every one in a row, a little extra speed.</li>
+      <li>Three perfect landings in a row: <strong>Tailwind!</strong> A golden trail and a burst of speed.</li>
       <li>Nose-dive into a rising wave and you'll know about it: a big, heavy splash.</li>
     </ul>
     <h3>Ways to play</h3>
     <ul>
-      <li><strong>Flight</strong>: endless, a new sea every time.</li>
-      <li><strong>Daily Flight</strong>: the same sea for everyone today, one scored try. Keep your streak and share your result.</li>
-      <li><strong>Flocks</strong>: goals three at a time. Rank up from Fledgling to Storm Rider and unlock eight birds and five skies. Every bird flies the same; only the look changes.</li>
+      <li><strong>Flight</strong>: endless, new waves every time, along the route.</li>
+      <li><strong>Daily Flight</strong>: same waves for everyone, one try that counts. Keep your streak and share your result.</li>
+      <li><strong>Goals</strong>: three at a time, up 15 levels. Levels unlock eight birds, five skies and coloured trails. Every bird flies the same; only the look changes.</li>
     </ul>
   </section>
 
   <section>
-    <h2>Kind to your hinge</h2>
-    <p>Swoop plays from a relaxed book pose with short, easy folds of about 30°, roughly one per wave. It never asks you to close your phone, lay it flat or fold fast. Nothing real ever goes on the screen.</p>
+    <h2>Made for the Duo's fold</h2>
+    <p>iPhone Duo softens one half of the screen for a moment when a fold starts from flat. Swoop keeps your bird on the half that stays sharp, and Settings → Bird side lets you choose. It plays from a relaxed book pose with short, easy folds of about 30°, roughly one per wave, and never asks you to close your phone, lay it flat or fold fast. Nothing real ever goes on the screen.</p>
   </section>
 
   <section>
@@ -164,15 +180,15 @@
 
   <section id="press">
     <h2>Press</h2>
-    <p><strong>One-liner:</strong> The two halves of your iPhone Duo are a bird's wings: fold a little to dive, open to soar, and outfly the storm.</p>
+    <p><strong>One-liner:</strong> The two halves of your iPhone Duo are a bird's wings: fold going down a wave, open going up, and stay ahead of the storm.</p>
     <table>
       <tr><th>Name</th><td>Swoop (App Store: “Swoop: Tuck &amp; Soar”)</td></tr>
       <tr><th>Release</th><td>Tuesday 24 November 2026, worldwide</td></tr>
-      <tr><th>Platform</th><td>iPhone. Designed for iPhone Duo held like a book; press and hold to play on every other iPhone. iOS 18 or later</td></tr>
+      <tr><th>Platform</th><td>iPhone. Designed for iPhone Duo held like a book; press and hold (or tap) to play on every other iPhone. iOS 18 or later</td></tr>
       <tr><th>Price</th><td>£1.99 / $1.99, one-off. No ads, no in-app purchases</td></tr>
       <tr><th>Rating</th><td>4+</td></tr>
-      <tr><th>Modes</th><td>Flight (endless), Daily Flight, Flocks (goals and unlocks)</td></tr>
-      <tr><th>Game Center</th><td>Two leaderboards, twelve achievements (optional)</td></tr>
+      <tr><th>Modes</th><td>Flight (endless, along a route of named lighthouses), Daily Flight, Goals (15 levels), Flight School (the first-flight lesson)</td></tr>
+      <tr><th>Game Center</th><td>Top scores for the longest flight and the Daily Flight, twelve achievements (optional)</td></tr>
       <tr><th>Sound</th><td>Every sound is synthesised live in the app</td></tr>
       <tr><th>Privacy</th><td>Data Not Collected</td></tr>
       <tr><th>Contact</th><td><a href="https://github.com/pravegm/swoop/issues">GitHub issues</a></td></tr>

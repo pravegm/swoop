@@ -1,6 +1,6 @@
 # Swoop 1.0: launch decisions
 
-*Made Mon 26 Oct 2026 by the launch lead, unsupervised, mirroring Brim's launch kit (`C:\Users\59527\Fold\docs\appstore\`), which itself mirrored Squish's reviewed one. Each line is the decision and the reason that settled it. The clicks are in `docs/LAUNCH-RUNBOOK.md`. Left to the founder: Apple and GitHub logins, the review contact details (typed into App Store Connect only), and the five sanity checks in §3.*
+*Made Mon 26 Oct 2026 by the launch lead, unsupervised; **revised Tue 27 Oct** after the founder's real-Duo test changed the game (ROUND-6 to ROUND-9: Flight School, the lighthouse route, the bird on the sharp half, plain words; rows 3–6, 22, 24 and 37–43). Built mirroring Brim's launch kit (`C:\Users\59527\Fold\docs\appstore\`), which itself mirrored Squish's reviewed one. Each line is the decision and the reason that settled it. The clicks are in `docs/LAUNCH-RUNBOOK.md`. Left to the founder: Apple and GitHub logins, the review contact details (typed into App Store Connect only), and the five sanity checks in §3.*
 
 ## 1. The decisions
 
@@ -8,10 +8,10 @@
 |---|---|---|---|
 | 1 | **App name** | `Swoop: Tuck & Soar` (18/30) | The design's name. Bare "Swoop" is crowded; "Fold to Fly" is Valley Run's tagline; "Tuck & Soar" teaches both inputs (`research/01-market.md` §2) |
 | 2 | **Fallback names** | `Swoop: Fold to Soar` → `Foldwing: Tuck & Soar` → `Swoop: Tuck and Soar` | Research's second choice, then its unique fallback name; the home-screen name stays "Swoop" |
-| 3 | **Subtitle** | `Fold your phone. Fly.` (21/30), both locales | Duo-first in four words, indexes fold/phone/fly, and it isn't "Fold to Fly". The risk: it sits close to Valley Run's tagline in spirit. Alternative ready: `Fold to dive. Beat the storm.` (29) |
-| 4 | **Promotional text** | Duo first, then "hold to tuck" on other iPhones, then no ads/IAP (154/170) | If the Duo screenshot slot is missing, this, frame 1 and the description carry the Duo pitch; editable any time |
-| 5 | **Description** | Opens "The two halves of your iPhone Duo are a bird's wings.", then the hold, then "plays on every iPhone"; 2,834/4,000; en-US differs in 2 spellings | The brief's order (Duo-first, honest about touch); every claim from the bible, with a check table (`metadata.md` §10) because the build didn't exist yet |
-| 6 | **Keywords** | `bird,glide,wings,dive,ocean,wave,sea,surf,storm,gull,flying,hinge,foldable,endless,momentum,sky,skim` (100/100 bytes) | No repeats of name/subtitle words, no competitor or Apple marks, singulars only |
+| 3 | **Subtitle** | `Fold your phone. Fly.` (21/30), both locales | Duo-first in four words, indexes fold/phone/fly, and it isn't "Fold to Fly". It also uses the app's own verb for the Duo ("fold"). The risk: it sits close to Valley Run's tagline in spirit. Alternative ready, in the app's words: `Stay ahead of the storm` (23) |
+| 4 | **Promotional text** | Duo first ("fold going down a wave, open going up"), then "hold and let go" on other iPhones, then "Stay ahead of the storm" and no ads/IAP (166/170) | If the Duo screenshot slot is missing, this, frame 1 and the description carry the Duo pitch; editable any time |
+| 5 | **Description** | Opens "The two halves of your iPhone Duo are a bird's wings.", then the move and the goal ("one fold per wave", "stay ahead of it and reach the lighthouses along the route"), then Flight School, then "plays on every iPhone" with the sharp-half line; 3,435/4,000 (en-US 3,434, 3 spellings) | Rewritten 27 Oct for the current build and checked against the code (`metadata.md` §10). The fresh testers' four questions (hands, storm, where to, success) are each answered in the first paragraph |
+| 6 | **Keywords** | `bird,glide,wings,dive,ocean,wave,sea,surf,storm,gull,flying,hinge,foldable,endless,sky,lighthouse` (97/100 bytes) | No repeats of name/subtitle words, no competitor or Apple marks, singulars only. 27 Oct: "momentum" and "skim" out (designer words), "lighthouse" in (the route is the goal) |
 | 7 | **Categories** | Games → **Casual** + **Arcade**; secondary **Entertainment** | The brief's Casual + Arcade; Entertainment as for Brim (novelty browsers). Optional, harmless |
 | 8 | **Age rating** | **4+**: every content item None, every capability No, not Made for Kids | A bird over the sea; the storm is weather; nothing is harmed, random or bought |
 | 9 | **Price** | Base **UK £1.99**, Apple equalises the rest ($1.99). No launch discount | The brief's price; impulse-buy level, same as Brim |
@@ -27,9 +27,9 @@
 | 19 | **Daily Flight day boundary** | Recommend **00:00 UTC** for everyone (engineering change from the contract's local calendar) | Game Center's recurring board resets at one UTC moment; Brim made the same change |
 | 20 | **Achievements** | 12 (`swoop.ach.*`), **625 points**, 375 held back; none hidden; none repeatable; none rewards fold speed or count | The brief's list; room for future content under the 1,000 cap; App Review 2.4.2 |
 | 21 | **App Privacy** | **Data Not Collected** (confirm with the grep in `privacy.md` §3 on the release build) | No network, SDKs or accounts by design; the hinge angle never leaves the phone; Game Center data is Apple's to disclose |
-| 22 | **Accessibility labels** | Claim **Reduced Motion**, **Sufficient Contrast**, **Differentiate Without Color Alone**, each only if its check passes; not VoiceOver, Voice Control, Larger Text; Dark Interface only if check D passes | Flying needs sight of the waves; HUD isn't built for 200% text; the play sky is bright gold. Labels go live on launch day |
+| 22 | **Accessibility labels** | Claim **Reduced Motion**, **Sufficient Contrast**, **Differentiate Without Color Alone**, each only if its check passes; not VoiceOver, Voice Control, Larger Text; Dark Interface only if check D passes | Flying needs sight of the waves; the HUD isn't built for 200% text; the play sky is bright gold. The build now has a tapping control ("Wings by: Tapping", for Switch Control and VoiceOver) and a spoken Flight School, which the press kit mentions but which don't earn a label. Labels go live on launch day |
 | 23 | **Content Rights** | **No** third-party content | All art drawn in code, all sound synthesised, system fonts only |
-| 24 | **Review notes** | Lead with "testing without a Duo", then the hinge (read only for gameplay, never stored or sent), then the wear answer (2.4.2/1.4.5); 3,708 bytes, ASCII | Reviewers may not have a Duo; hinge wear is the likeliest objection (Foldy Bird's "break your foldable" coverage) |
+| 24 | **Review notes** | Lead with "testing without a Duo" (Flight School first, then hold / let go, then the route and "Flight over"), then the hinge (read only for gameplay, never stored or sent) and the bird side, then the wear answer (2.4.2/1.4.5); 3,745 bytes, ASCII | Reviewers may not have a Duo, and they now meet a tutorial before play; hinge wear is the likeliest objection (Foldy Bird's "break your foldable" coverage) |
 | 25 | **Fallback date** | **Tue 8 Dec** if 1.0 isn't submitted by Fri 20 Nov; never 1 Dec (Brim's fallback) or 17 Nov | Keeps the one-launch-per-week rule across the studio |
 | 26 | **Featuring** | App Launch nomination, publish date 24 Nov, **submitted by Tue 3 Nov** (sooner is better); "Optimized for iPhone Duo" in Helpful Details | Apple asks for 3 weeks' notice and asks Duo apps to use that phrase |
 | 27 | **Localisation** | en-GB primary, en-US added; English only | The founder is UK-based; US spelling is the only difference that matters for 1.0 |
@@ -42,8 +42,17 @@
 | 34 | **What's New** | None for 1.0 (App Store Connect has no field); the 1.0 line goes into TestFlight's "What to Test" | Apple's rule |
 | 35 | **Social and press timing** | Swoop posts and emails on days between Brim's; nothing for Swoop on 17 Nov | Two launches from one founder must never compete on the same day |
 | 36 | **No Tiny Wings echoes in copy** | No "tiny", "island", "fever", "sunset"/"nightfall" wording; the clock is "the storm" | `research/01-market.md` §3 clone and IP notes |
+| 37 | **The app's glossary in every store word** | Store copy, captions, posts and emails use `design/UX-ROUND-9.md` §3–4: fold / open (Duo), hold / let go (touch), flight, the way down / up, Perfect / perfect landings, in a row, stay ahead of the storm, the next lighthouse, Route, Level n, Goals, top scores, same waves for everyone. "Tuck & Soar" stays only as the name | A store page that speaks differently from the app is the "drift" the fresh testers marked down; the name can't change without a new record, and as a lockup it reads fine |
+| 38 | **Flight School is a selling point** | Its own section in the description, a frame recommended for the screenshot sets (P10 / D10), a beat in the App Preview and a clip on Sun 15 Nov | The founder's first complaint was "not very clear how it works"; a tutorial that teaches by showing answers that on the product page too |
+| 39 | **The blur, said plainly** | One sentence in the description and the review notes ("softens one half of the screen for a moment when a fold starts from flat") and that the bird flies on the half that stays sharp, with Settings → Bird side | It is an iOS behaviour every Duo owner has seen; saying Swoop works around it turns a support question into a feature. Never framed as a defect of Swoop or of the Duo |
+| 40 | **Duo lines only where the device is a Duo** | The store page and frame 1 may pitch the Duo (every iPhone visitor sees it); inside the app no Duo line ever shows on a non-Duo iPhone, so every iPhone capture uses `touch` and the iPhone captions never quote Duo-only UI | The build's rule (coordinator, 27 Oct); P1's sub-line "Made for iPhone Duo. Plays on every iPhone." is store copy over a Duo composite, not app UI |
+| 41 | **Lighthouse names in copy** | Name only the first three (Gull Point 4 km, Saltlight 9 km, Kestrel Head 15 km) and "and on" | They are fixed in every mode (`Core/Lighthouses.swift`); naming more gives the route away and invites spacing errors |
+| 42 | **Screenshot captions** | New captions for every frame in `screenshots.md` (27 Oct), plus two recommended frames (Route, Flight School); the CI scenario files must be updated before the final store run | The 26 Oct captions said "Outfly", "downslope", "Chain three", "rank up", "Hold to tuck": all off-glossary now |
+| 43 | **First achievement ID** | `swoop.ach.first`, as the code has it (`Persistence/ProgressStore.swift`), not `swoop.ach.firstflight` as first written | IDs are permanent once typed into App Store Connect, so the docs follow the code; `achievements.md` and runbook §4 now match |
 
 ## 2. Requests to engineering (not mine to edit; must land before the release build)
+
+Status checked in the code on 27 Oct: **done** #1 (`DailySeed.utc`), #4 and #5 (`store.yml`, the book composite), #12 (`AppRules.launchDay`: Daily #1 is 24 Nov); #3 and #6 look in place (`UI/AchievementArt.swift`; "Perfect" and "Tailwind!" in the world) but need a check on the RC frames. New: #13–#15.
 
 | # | Priority | Owner | Request |
 |---|---|---|---|
@@ -59,13 +68,16 @@
 | 10 | Low | CI | **App Preview recorder** (Squish's `preview.yml` approach), only if the preview is wanted for 1.0 |
 | 11 | Low | Founder (`.github/`) | A GitHub issue template `support.yml` (device, iOS version, mode, what happened), as Squish has; the support page then links to `issues/new?template=support.yml` |
 | 12 | Low | Design | Consider numbering the Daily from launch day (Daily #1 on 24 Nov) rather than days since 1 Jan 2026 (#327 on launch day) |
+| 13 | **High** | CI | **Update the store captions** in `ci/store-scenarios.txt` and `ci/duo-store-scenarios.txt` to the 27 Oct captions in `screenshots.md` (plain words), and re-run `store.yml`. The current files still say "Outfly", "downslope", "Chain three", "rank up", "Hold to tuck", "Same sea for all" |
+| 14 | Medium | CI + App | **Two new store frames:** the Route page (`screen=route;progress=mid`) and Flight School's land step with the guide gull (`school=land`, `schoolTouch` on iPhones), frozen at the peak (ROUND-10 P1-5) |
+| 15 | Low | App | Settings says "Replay the 45-second lesson", but the R9 school runs about 30 s (Duo) / 24 s (touch). The store copy names no duration; align the label or drop the number |
 
 ## 3. Five decisions for the founder to sanity-check
 
 1. **Launch Tue 24 Nov** (a week after Brim), manual release at 08:00 UK, nomination **by Tue 3 Nov**, fallback Tue 8 Dec.
 2. **Support through GitHub issues** (as for Squish) and copyright `© 2026 pravegm`. Say if you'd rather have a support email or your legal name.
 3. **Daily Flight resets at 00:00 UTC** for everyone (midnight UK in winter, 4 pm California), to match Game Center's daily board.
-4. **Store words:** subtitle `Fold your phone. Fly.` (or the alternative `Fold to dive. Beat the storm.`), Casual + Arcade.
+4. **Store words:** subtitle `Fold your phone. Fly.` (or the alternative `Stay ahead of the storm`), Casual + Arcade.
 5. **Frame 1 is a rendered Duo** held like a book (no hands) in every set, with a real-hands photo planned for 1.0.1.
 
 ## Sources
