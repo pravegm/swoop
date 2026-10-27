@@ -2327,7 +2327,7 @@ final class Engine {
     }
 
     func waitForLibraryImage(_ id: String, name: String) async throws {
-        for _ in 0..<60 {
+        for _ in 0..<300 {   // 27 Oct: Apple took over 4 minutes per image (runs 40526091756, 40531856268); wait up to 20
             let res = try await api.get("/v1/appAssetLibraryImages/\(id)")
             let a = attrs(dataOne(res))
             let state = a["state"] as? String ?? ""
@@ -2338,7 +2338,7 @@ final class Engine {
             }
             try await Task.sleep(nanoseconds: 4_000_000_000)
         }
-        throw ToolError("library image \(name) still processing after 4 minutes; re-run push later (it resumes)")
+        throw ToolError("library image \(name) still processing after 20 minutes; re-run push later (it resumes)")
     }
 
     /// Deprecated set-based flow (appScreenshotSets / appScreenshots): reserve, PUT the parts, commit with an MD5
