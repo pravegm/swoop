@@ -47,7 +47,9 @@ and on a normal iPhone. **All twelve correctly explained** the hands, the storm,
 | 1.0 (7) | Round 10 |
 | 1.0 (8) | Round 11: the storm has no hard edges, "The storm caught you", the lesson teaches each move before correcting it, a side-on fold diagram, and Perfects visibly push the storm back |
 | 1.0 (9) | Round 12: the lesson only names landing rings that are on screen, and Skip is out of the bird's path |
-| **1.0 (10)** | **Your fold note: install this one.** Folding about halfway no longer pauses; the pause is now under about 55° |
+| 1.0 (10) | Your fold note: folding about halfway no longer pauses; the pause is now under about 55° |
+| 1.0 (11) | Release candidate: every final-QA fix |
+| **1.0 (12)** | **The release build** (commit `c117b2d`, CI green): 11 plus one Results fix. This is the build Apple reviews |
 
 ## Final QA (27 Oct) and the fixes
 Four release audits ran on 1.0 (10) (`design/qa/QA-FINAL-*.md`):
@@ -70,8 +72,8 @@ The fixes you approved (`design/qa/FINAL-FIXES.md`) landed in commit `73c8369`:
 Every store document was then checked line by line against the code: the 55° pause, "The storm caught you", the
 "Scores" button, the resting angle saved on the phone (privacy policy corrected), "Plays on other iPhones too".
 The listing, Game Center, screenshots and the featuring nomination are pushed by the App Store Connect tool
-(`asc.yml`), so you paste nothing. CI was still running on `73c8369` when this was written; the release build is
-made from the release-candidate commit once its CI run is green.
+(`asc.yml`), so you paste nothing. The release build is **1.0 (12)** (commit `c117b2d`): CI green, Duo hinge checks all
+pass, checked on the smallest iPhone (SE) and on iPad, and the final store screenshots come from the same commit.
 
 ## What only you can do
 Everything is in the checklist at the top of `docs/LAUNCH-RUNBOOK.md`, in order, with the exact clicks:

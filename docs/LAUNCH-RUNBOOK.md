@@ -4,7 +4,7 @@
 
 **Launch: as soon as Apple approves it.** The release is set to **"Automatically release this version"**: the moment App Review approves Swoop (usually 24–48 hours after you submit), it goes live by itself. **There is nothing to press.** If you submit on Tue 27 or Wed 28 Oct, expect it live around **Thu 29 – Fri 30 Oct**.
 
-**Already done, nothing for you to do:** the app record, the GitHub secrets, TestFlight builds 1.0 (2) to 1.0 (10), your Duo tests, and the final QA. The tool fills in the listing, categories, age rating, price and countries, the review notes and contact, Game Center, the screenshots and the featuring nomination (see "Reference" at the end).
+**Already done, nothing for you to do:** the app record, the GitHub secrets, TestFlight builds 1.0 (2) to 1.0 (12), your Duo tests, and the final QA. The tool fills in the listing, categories, age rating, price and countries, the review notes and contact, Game Center, the screenshots and the featuring nomination (see "Reference" at the end).
 
 ---
 
@@ -73,15 +73,14 @@ Apple asked again for Brim, even though your account answer was already set for 
 
 ### 5. Pick the build and submit for review (when Claude says "ready")
 
-Claude tells you the build number (for example "1.0 (12)"). Claude only names a build whose CI run is green and whose TestFlight run says "Game Center entitlement in the App Store signature: yes".
+The release build is **1.0 (12)**. The tool has already put it on the 1.0 page and attached the 2 leaderboards and 12 achievements to the draft submission.
 
 1. In the app's left list, under **iOS App**, click **1.0 Prepare for Submission**.
-2. Scroll to **Build** → click **+** (or **Add Build**) → pick the build Claude named → **Done**.
-3. Click **Save** (top right).
-4. Click **Add for Review**. If App Store Connect lists something missing, send Claude a screenshot.
-5. Click **Submit to App Review**.
+2. Check that **Build** shows **1.0 (12)**. (If it's empty: click **+** → pick **1.0 (12)** → **Done** → **Save**.)
+3. Click **Add for Review** (top right). If App Store Connect lists something missing, send Claude a screenshot.
+4. Click **Submit to App Review**.
 
-You don't need to touch anything else on that page: the description, screenshots, review notes, Game Center and the release setting are already filled in. The 2 leaderboards and 12 achievements are **already attached to this submission** by the tool, so they go to Apple together with the build. Leave **Version Release** as it is: **Automatically release this version**.
+You don't need to touch anything else on that page: the description, screenshots, review notes, Game Center and the release setting are already filled in. Leave **Version Release** as it is: **Automatically release this version**.
 
 Apple usually answers within 24–48 hours, by email. **Approved:** nothing to do; Swoop goes live by itself straight away (it can take a few hours to show in every country). That day is launch day: go to step 7.
 
@@ -200,5 +199,5 @@ English (U.S.) uses "kilometer" instead of "kilometre" in the three distance des
 - **Repo public** (26 Oct): needed because this account's billing blocks GitHub Actions on private repos.
 - **Bundle ID** `com.pravegm.swoop` with Game Center, and the **app record** (English (U.K.) primary, SKU `swoop-2026`).
 - **The 4 GitHub secrets** (`ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_PRIVATE_KEY`, `APPLE_TEAM_ID`): the same Apple key as Brim and Squish. Builds sign with Apple's cloud-managed distribution certificate, so no certificates are created.
-- **TestFlight internal group** `Studio`, and builds 1.0 (2) to 1.0 (10).
+- **TestFlight internal group** `Studio`, and builds 1.0 (2) to 1.0 (12).
 - **Support** runs through GitHub issues (`github.com/pravegm/swoop/issues`), the same as Squish, so there's no support email to set up.
