@@ -1425,9 +1425,10 @@ final class ASC {
                     continue
                 }
                 return Response(status: status, json: json)
-            } catch let e as URLError where attempt < (method == "GET" ? 8 : 3) {
-                // 27 Oct: Apple's Game Center endpoints hung for minutes (runs 40511872575, 40516094226). Reads are
-                // safe to retry, so they get more tries with a growing pause; writes keep 3 (no duplicate creates).
+            } catch let e where (e as NSError).domain == NSURLErrorDomain && attempt < (method == "GET" ? 8 : 3) {
+                // 27 Oct: Apple's Game Center endpoints hung for minutes (runs 40511872575, 40516094226, 40519091155).
+                // The error arrives as an NSError, so match the domain, not `URLError`. Reads are safe to retry, so they
+                // get more tries with a growing pause; writes keep 3 (no duplicate creates).
                 attempt += 1
                 warn("network: \(e.localizedDescription); retrying (\(attempt))")
                 try await Task.sleep(nanoseconds: UInt64(min(5 * attempt, 30)) * 1_000_000_000)
