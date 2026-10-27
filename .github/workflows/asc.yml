@@ -89,7 +89,7 @@ jobs:
         run: |
           run="$CI_RUN"
           if [ -z "$run" ]; then
-            run=$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --branch main --status success -L 1 --json databaseId -q '.[0].databaseId')
+            run=$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --branch main --event push --status success -L 1 --json databaseId -q '.[0].databaseId')
           fi
           [ -n "$run" ] || { echo "::error::no green CI run found"; exit 1; }
           echo "run=$run" >> "$GITHUB_OUTPUT"
