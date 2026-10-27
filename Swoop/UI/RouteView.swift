@@ -1,9 +1,10 @@
 import SwiftUI
 
-// R9 (UX-ROUND-9 §5, ART-ROUND-9 §4 / AR5): the Route reads LEFT TO RIGHT always, like a sentence (the mirrored play
-// layout exists for the blur; a map is a map): the harbour with the storm behind it at the left, the lighthouses in km
-// order to the right, every one by its real name, labels on one baseline row that never overlap, "and on…" in its own
-// slot, the single Best pin, and the next lighthouse at 60 % of the width on open.
+// R9 (UX-ROUND-9 §5, ART-ROUND-9 §4 / AR5): the harbour with the storm behind it, the lighthouses in km order, every
+// one by its real name, labels on one baseline row that never overlap, "and on…" in its own slot, the single Best pin,
+// and the next lighthouse 60 % of the way from the harbour's side on open. R11 P0-8 (tester 14): the map runs the way
+// the bird FLIES: left to right on an iPhone, right to left in a mirrored flight (the Duo's default: the harbour and
+// the storm at the right, the lighthouses leading left), so the map and the flight never disagree.
 
 /// The Route's geometry as data (content points, y down). Pure; tested (`routeLabelsNeverOverlap`,
 /// `routeReadsLeftToRight`).
@@ -29,6 +30,9 @@ struct RouteLayout: Equatable {
     var bestLabelRect: CGRect?
     /// The scroll offset (content x at the view's left edge) on open.
     var openOffset: CGFloat
+    /// R11 P0-8: the map runs the way the bird flies: mirrored (the Duo's default, the bird on the right half flying
+    /// right to left), the harbour and the storm are at the RIGHT and the lighthouses lead left.
+    var mirrored = false
 
     static func spacing(_ compact: Bool) -> CGFloat { compact ? 130 : 150 }
     static func coastBase(_ compact: Bool) -> CGFloat { compact ? 118 : 150 }
@@ -51,7 +55,42 @@ struct RouteLayout: Equatable {
     }
 
     static func make(viewWidth w: CGFloat, compact c: Bool, routeReached: Int, best: Double, edge: CGFloat = 0,
-                     fold: ClosedRange<CGFloat>? = nil) -> RouteLayout {
+                     fold: ClosedRange<CGFloat>? = nil, mirrored: Bool = false) -> RouteLayout {
+        let ltr = makeLeftToRight(viewWidth: w, compact: c, routeReached: routeReached, best: best, edge: edge,
+                                  fold: fold)
+        guard mirrored else { return ltr }
+        // R11 P0-8: the same map read right to left: every x reflected about the content's width.
+        let cw = ltr.contentWidth
+        func fx(_ x: CGFloat) -> CGFloat { cw - x }
+        func fr(_ r: CGRect) -> CGRect { CGRect(x: cw - r.maxX, y: r.minY, width: r.width, height: r.height) }
+        var m = ltr
+        m.mirrored = true
+        m.harbourX = fx(ltr.harbourX)
+        m.nodes = ltr.nodes.map { n in
+            var k = n
+            k.x = fx(n.x)
+            k.iconRect = fr(n.iconRect)
+            k.labelRect = fr(n.labelRect)
+            return k
+        }
+        m.tailRect = fr(ltr.tailRect)
+        m.bestPin = ltr.bestPin.map { CGPoint(x: fx($0.x), y: $0.y) }
+        m.bestLabelRect = ltr.bestLabelRect.map(fr)
+        // On open: the next lighthouse at 40 % of the width (60 % from the harbour's side), snapped off the fold.
+        let heads = m.nodes.map(\.x)
+        let nextX = routeReached < heads.count ? heads[routeReached] : (heads.last ?? m.harbourX)
+        var offset = min(max(nextX - 0.4 * w, 0), max(cw - w, 0))
+        if let fold {
+            let band = (fold.lowerBound - 22)...(fold.upperBound + 22)
+            offset = min(max(RouteArt.snapOffset(proposed: offset, centres: heads, band: band), 0), max(cw - w, 0))
+        }
+        m.openOffset = offset
+        return m
+    }
+
+    /// The map left to right (the iPhone, an unmirrored Duo), the harbour at the left.
+    private static func makeLeftToRight(viewWidth w: CGFloat, compact c: Bool, routeReached: Int, best: Double,
+                                        edge: CGFloat, fold: ClosedRange<CGFloat>?) -> RouteLayout {
         let s = spacing(c)
         let base = coastBase(c)
         let harbour = 48 + edge
@@ -114,8 +153,9 @@ struct RouteLayout: Equatable {
 
     /// The route line: 26 pt seaward of the headland tips, straight between them; from the harbour to the first.
     static func lineY(_ x: CGFloat, base: CGFloat, heads: [CGFloat], harbour: CGFloat) -> CGFloat {
-        let pts = [CGPoint(x: harbour, y: coastY(harbour, base: base, heads: heads) + routeDrop)]
-            + heads.map { CGPoint(x: $0, y: coastY($0, base: base, heads: heads) + routeDrop) }
+        // Sorted by x, so a mirrored map (the harbour at the right) reads the same way.
+        let pts = ([CGPoint(x: harbour, y: coastY(harbour, base: base, heads: heads) + routeDrop)]
+            + heads.map { CGPoint(x: $0, y: coastY($0, base: base, heads: heads) + routeDrop) }).sorted { $0.x < $1.x }
         guard let first = pts.first, let last = pts.last else { return base + routeDrop }
         if x <= first.x { return first.y }
         if x >= last.x { return last.y }
@@ -127,7 +167,19 @@ struct RouteLayout: Equatable {
     }
 
     var heads: [CGFloat] { nodes.map(\.x) }
-    func lineY(_ x: CGFloat) -> CGFloat { Self.lineY(x, base: coastBase, heads: heads, harbour: harbourX) }
+
+    /// The coast's y at content x; a mirrored map reflects the left-to-right coast, so every lighthouse stays on its
+    /// headland. Pure.
+    func coastY(_ x: CGFloat) -> CGFloat {
+        guard mirrored else { return Self.coastY(x, base: coastBase, heads: heads) }
+        return Self.coastY(contentWidth - x, base: coastBase, heads: heads.map { contentWidth - $0 })
+    }
+
+    func lineY(_ x: CGFloat) -> CGFloat {
+        guard mirrored else { return Self.lineY(x, base: coastBase, heads: heads, harbour: harbourX) }
+        return Self.lineY(contentWidth - x, base: coastBase, heads: heads.map { contentWidth - $0 },
+                          harbour: contentWidth - harbourX)
+    }
 }
 
 struct RouteView: View {
@@ -142,7 +194,7 @@ struct RouteView: View {
         let edge = max(info.insets.leading, info.insets.trailing)
         let fold: ClosedRange<CGFloat>? = info.hasFold ? 447...503 : nil
         let layout = RouteLayout.make(viewWidth: info.size.width, compact: c, routeReached: reached,
-                                      best: store.data.bestMeters, edge: edge, fold: fold)
+                                      best: store.data.bestMeters, edge: edge, fold: fold, mirrored: info.mirrored)
         ZStack(alignment: .topLeading) {
             SwoopTheme.backdrop
                 .frame(width: info.size.width, height: info.size.height)
@@ -241,13 +293,13 @@ struct RouteMap: View {
                         chart(height: h)
                         // An anchor at the open offset (content x at the view's left edge).
                         Color.clear.frame(width: 1, height: 1).position(x: L.openOffset + 0.5, y: 0.5).id("open")
-                        // The storm behind the harbour at the far left, the quay at the harbour.
+                        // The storm behind the harbour (left, or right on a mirrored map), the quay at the harbour.
                         Path(RouteArt.stormGlyph(size: 40))
                             .fill(SwoopTheme.slate)
                             .overlay(Path(RouteArt.stormRainTicks(size: 40))
                                 .stroke(SwoopTheme.mist, style: StrokeStyle(lineWidth: 2, lineCap: .round)))
                             .frame(width: 40, height: 40)
-                            .position(x: L.harbourX - 30, y: L.lineY(L.harbourX) - 30)
+                            .position(x: L.harbourX + (L.mirrored ? 30 : -30), y: L.lineY(L.harbourX) - 30)
                         Path(RouteArt.quayGlyph(size: 30))
                             .fill(Color(swoopHex: 0xC9B98F))
                             .frame(width: 30, height: 30)
@@ -265,7 +317,7 @@ struct RouteMap: View {
                             .frame(width: L.tailRect.width, alignment: .center)
                             .position(x: L.tailRect.midX, y: L.tailRect.midY)
                         if let pin = L.bestPin {
-                            YouGlyph(facingLeft: false)
+                            YouGlyph(facingLeft: L.mirrored)
                                 .fill(SwoopTheme.foam)
                                 .frame(width: 22, height: 14)
                                 .position(x: pin.x, y: pin.y - 2)
@@ -332,9 +384,9 @@ struct RouteMap: View {
             func coastLine(_ offset: CGFloat) -> Path {
                 var p = Path()
                 var x: CGFloat = 0
-                p.move(to: CGPoint(x: 0, y: RouteLayout.coastY(0, base: L.coastBase, heads: L.heads) + offset))
+                p.move(to: CGPoint(x: 0, y: L.coastY(0) + offset))
                 while x <= size.width {
-                    p.addLine(to: CGPoint(x: x, y: RouteLayout.coastY(x, base: L.coastBase, heads: L.heads) + offset))
+                    p.addLine(to: CGPoint(x: x, y: L.coastY(x) + offset))
                     x += 4
                 }
                 return p
@@ -352,7 +404,9 @@ struct RouteMap: View {
             ctx.stroke(coastLine(0), with: .color(Color(swoopHex: 0xC9B98F)), lineWidth: 3)
             // The route: flown solid gold to the last passed lighthouse, dashed after, fading past the last node.
             let reachedX = routeReached > 0 ? L.heads[min(routeReached, L.heads.count) - 1] : L.harbourX
-            func route(_ a: CGFloat, _ b: CGFloat) -> Path {
+            // Either way along x (a mirrored map runs right to left).
+            func route(_ a0: CGFloat, _ b0: CGFloat) -> Path {
+                let a = min(a0, b0), b = max(a0, b0)
                 var p = Path()
                 var x = a
                 p.move(to: CGPoint(x: a, y: L.lineY(a)))
@@ -368,12 +422,13 @@ struct RouteMap: View {
             let lastX = L.heads.last ?? reachedX
             ctx.stroke(route(reachedX, lastX), with: .color(SwoopTheme.mist.opacity(0.45)),
                        style: StrokeStyle(lineWidth: 2, dash: [6, 8]))
+            let tailEnd = lastX + (L.mirrored ? -140 : 140)
             var tail = Path()
             tail.move(to: CGPoint(x: lastX, y: L.lineY(lastX)))
-            tail.addLine(to: CGPoint(x: lastX + 140, y: L.lineY(lastX)))
+            tail.addLine(to: CGPoint(x: tailEnd, y: L.lineY(lastX)))
             ctx.stroke(tail, with: .linearGradient(Gradient(colors: [SwoopTheme.mist.opacity(0.45), .clear]),
                                                    startPoint: CGPoint(x: lastX, y: 0),
-                                                   endPoint: CGPoint(x: lastX + 140, y: 0)),
+                                                   endPoint: CGPoint(x: tailEnd, y: 0)),
                        style: StrokeStyle(lineWidth: 2, dash: [6, 8]))
         }
         .frame(width: L.contentWidth, height: h)
@@ -386,6 +441,14 @@ struct RouteMap: View {
 struct MiniRouteStrip: View {
     let reachedThisRun: Int
     let meters: Double
+    /// R11 P0-8: the flight's direction: mirrored, the last lighthouse is at the RIGHT and the next leads left.
+    var mirrored = false
+
+    /// The strip's two ends (the passed one, then the next one) at width `w`. Pure; tested.
+    nonisolated static func ends(width w: CGFloat, mirrored: Bool) -> (from: CGFloat, to: CGFloat) {
+        let inset: CGFloat = 16
+        return mirrored ? (w - inset, inset) : (inset, w - inset)
+    }
 
     /// The bird's place between the last passed lighthouse (or the start) and the next one, 0…1. Pure; tested.
     nonisolated static func birdFraction(meters: Double, reachedThisRun: Int) -> CGFloat {
@@ -405,10 +468,11 @@ struct MiniRouteStrip: View {
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width
-            let inset: CGFloat = 16
-            let x0 = inset
-            let x1 = w - inset
+            let e = Self.ends(width: w, mirrored: mirrored)
+            let x0 = e.from
+            let x1 = e.to
             let lineY: CGFloat = 22
+            let labelW = max(w * 0.55, 60)
             let birdX = x0 + (x1 - x0) * Self.birdFraction(meters: meters, reachedThisRun: reachedThisRun)
             let names = Self.labels(meters: meters, reachedThisRun: reachedThisRun)
             ZStack(alignment: .topLeading) {
@@ -429,7 +493,7 @@ struct MiniRouteStrip: View {
                         .frame(width: 20, height: 20).position(x: x0, y: lineY - 4)
                 }
                 LighthouseIcon(state: .next, size: 24).position(x: x1, y: lineY - 8)
-                YouGlyph(facingLeft: false)
+                YouGlyph(facingLeft: mirrored)
                     .fill(SwoopTheme.foam)
                     .frame(width: 20, height: 13)
                     .position(x: birdX, y: lineY + 2)
@@ -437,14 +501,14 @@ struct MiniRouteStrip: View {
                     .font(SwoopType.caption(true))
                     .foregroundStyle(SwoopTheme.mist)
                     .fixedSize()
-                    .position(x: x0 + 40, y: lineY + 24)
+                    .position(x: x0 + (mirrored ? -40 : 40), y: lineY + 24)
                 Text(names.right)
                     .font(SwoopType.caption(true))
                     .foregroundStyle(SwoopTheme.mist)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-                    .frame(width: max(w * 0.55, 60), alignment: .trailing)
-                    .position(x: x1 - max(w * 0.55, 60) / 2, y: lineY + 24)
+                    .frame(width: labelW, alignment: mirrored ? .leading : .trailing)
+                    .position(x: x1 + (mirrored ? labelW / 2 : -labelW / 2), y: lineY + 24)
             }
             .frame(width: w, height: geo.size.height)
         }

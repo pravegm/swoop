@@ -118,6 +118,8 @@ final class FlightScene: SKScene {
     var homeTextRects: [CGRect] = []
     /// The margin under the ceiling: the text rects + 24 pt, plus room for the bird's own half-height and its trail.
     static let attractClearance: CGFloat = 24 + 36
+    /// R11: the trail may rise this far above the bird's ceiling (so it still ends 24 pt under the text).
+    static let attractTrailAllowance: CGFloat = 36
 
     // MARK: Flight School (ROUND-6 D2, ART-FLIGHT-SCHOOL §2, SC1–SC2)
 
@@ -140,6 +142,13 @@ final class FlightScene: SKScene {
     var stormDrawnRightU: CGFloat { storm.drawnRightU }
     /// Storm glows so far (strikes included; tests).
     var stormGlows: Int { storm.glowCount }
+    /// R11 (ROUND-11 P0-1, tests): the storm's soft layers this frame in u-space (the sky shade, the sea wash, the
+    /// caught warm strip; nil = not drawn), the cloud's backing, and where the cloud's behind-edge fade ends.
+    var stormTintSpans: [SceneStormTint.Span] { [storm.skySpan, storm.seaSpan, storm.stripSpan].compactMap { $0 } }
+    var stormSkySpan: SceneStormTint.Span? { storm.skySpan }
+    var stormBackingSpan: SceneStormTint.Span? { storm.backingSpan }
+    var stormCloudFadeEndU: CGFloat { storm.cloudFadeEndU }
+    var stormCloudLeftU: CGFloat { storm.cloudLeftU }
     /// The lighthouse lamp's centre in canvas points (SpriteKit, y up) while the tower is on screen, so the App can keep
     /// the reached card off the beam's source; nil when no tower shows.
     private(set) var lampCanvasPoint: CGPoint?
@@ -199,6 +208,8 @@ final class FlightScene: SKScene {
     var onGhostFinished: (() -> Void)?
     /// SR7: the live landing ring's rect (the ellipse with its drop marker) in view points, nil when none is up.
     private(set) var ringScreenRect: CGRect?
+    /// R11: the live ring's centre on the canvas (SpriteKit, y up), nil when none is up (tests: `ringSafeRect`).
+    private(set) var ringCanvasPoint: CGPoint?
     /// UX-ROUND-9 step 6: while set, a dotted line flows from the storm's front to this view point (the meter's storm
     /// icon). Set it for about 1 s, then nil.
     var stormLinkTarget: CGPoint?
@@ -499,6 +510,7 @@ final class FlightScene: SKScene {
         ghost.clear()
         ghostScreenPoint = nil
         ringScreenRect = nil
+        ringCanvasPoint = nil
         caughtAge = 0
         caughtStartEdge = nil
         caughtBoltDone = false
@@ -681,6 +693,18 @@ final class FlightScene: SKScene {
         }
         let biasRoom = w * ScreenLayout.birdScreenFraction - SceneLook.biasEdgeClearance
         viewCam.biasTarget = Double(min(bias, max(biasRoom, 0)))
+        // R11 (ROUND-11 P0-5): the live landing ring ahead is framed ≥ 200 pt inboard of the sides and the bottom
+        // (clear of Skip, the step dots and the pause button): the bird rides higher in its band and, if that is not
+        // enough, the zoom comes out until the ring fits.
+        if inSchool, let rc = guides.ringCenter, Double(rc.x) > bx - 40, Double(rc.x) < bx + 4000 {
+            let safe = ringSafeRect()
+            viewCam.keepInView = rc
+            viewCam.keepInset = Double(safe.minY - layout.visibleRect.minY)
+            let fit = viewCam.zoomToFit(rc, inside: safe)
+            viewCam.zoomCap = min(viewCam.zoomCap ?? SceneCamera.zoomMax, fit)
+        } else {
+            viewCam.keepInView = nil
+        }
         // A jump of the bird (a rewind, a session switch, a held frame) never leaves a straight trail (defect #29).
         if let lx = lastBirdX, abs(bx - lx) > 600 { birdView.clearTrail() }
         if needsSnap {
@@ -938,8 +962,15 @@ final class FlightScene: SKScene {
         var goldK: CGFloat = tailwind ? 1 : min(1, goldTimer / SceneLook.perfectGoldTime)
         // School (R9 §1E): the trail turns gold as the dive reaches its speed (the speed is shown in the world).
         if inSchool { goldK = max(goldK, SceneMoments.smooth(1100, 1600, CGFloat(s.speed))) }
+        // R11 (ROUND-11 P1-11): on Home the trail never rises into the text either (the camera holds the bird under
+        // it, so the older, higher trail points used to show above it, behind the tagline: s1-01).
+        var trailCeiling: CGFloat?
+        if s.mode == .attract, let c = attractBirdCeiling() {
+            let canvasY = Double(c + FlightScene.attractTrailAllowance - bumpY)
+            trailCeiling = CGFloat((canvasY - viewCam.visibleMinY) / max(viewCam.zoom, 0.01) + viewCam.bottomY)
+        }
         birdView.updateTrail(emit: birdView.tailPoint, show: !caught && !countdown, time: t, zoom: z, speedK: speedK,
-                             goldK: goldK, tailwind: tailwind)
+                             goldK: goldK, tailwind: tailwind, ceiling: trailCeiling)
         if s.skimming && !caught && !countdown && dt > 0 {
             let tip = birdView.wingtipPoint
             let tipWater = CGFloat(seaHeight(Double(tip.x) + originX))
@@ -1057,13 +1088,27 @@ final class FlightScene: SKScene {
         if wasActive && ghost.finishedNow { onGhostFinished?() }
     }
 
+    /// R11 (ROUND-11 P0-5): where the live landing ring may sit on the canvas (y up): ≥ `ringEdgeInset` (200 pt) in
+    /// from the sides and the visible bottom (at most a quarter of the width / 30 % of the height on small screens),
+    /// and `ringTopInset` under the visible top (the HUD band).
+    func ringSafeRect() -> CGRect {
+        let v = layout.visibleRect
+        let side = min(SceneLook.ringEdgeInset, layout.size.width * 0.25)
+        let bottom = min(SceneLook.ringEdgeInset, v.height * 0.3)
+        let top = min(SceneLook.ringTopInset, v.height * 0.2)
+        return CGRect(x: side, y: v.minY + bottom, width: max(layout.size.width - 2 * side, 1),
+                      height: max(v.height - bottom - top, 1))
+    }
+
     /// SR7: the live ring's rect in view points (its ellipse, widened 1.1×, with the drop marker above it).
     private func updateRingRect(zoom z: CGFloat) {
         guard let c = guides.ringCenter else {
             ringScreenRect = nil
+            ringCanvasPoint = nil
             return
         }
         let p = viewCam.screenPoint(c)
+        ringCanvasPoint = CGPoint(x: p.x, y: p.y + bumpY)
         let w = SceneLook.ringWidth * 1.1
         let below = w * SceneLook.ringAspect * 0.5
         let above = SceneLook.dropHeight + SceneLook.dropChevron + 8

@@ -102,8 +102,16 @@ struct BirdSideView: View {
 
     /// How much of the box the reference pose fills (room left for the wings to flap and tuck).
     var fill: CGFloat = 0.72
+    /// R11 P0-8: face the flight's direction (left in a mirrored flight, the Duo's default).
+    var facingLeft: Bool = false
 
     var body: some View {
+        canvas
+            .scaleEffect(x: facingLeft ? -1 : 1, y: 1)
+            .accessibilityHidden(true)
+    }
+
+    private var canvas: some View {
         Canvas(rendersAsynchronously: false) { context, size in
             let parts = BirdArt.path(for: bird, tuck: tuck, flap: flap)
             // Scene R5: one transform that fits every flap and tuck pose (the Gull's wing never clips), at most 2.2 ×

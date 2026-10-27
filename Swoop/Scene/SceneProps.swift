@@ -15,7 +15,7 @@ final class SceneProps {
     /// The cloud band high above the water.
     let cloudRoot: SKNode
 
-    private let rock: SKShapeNode
+    private let rock: SKSpriteNode
     private let rockRim: SKShapeNode
     private let beam: SKSpriteNode
     private let lamp: SKSpriteNode
@@ -38,25 +38,22 @@ final class SceneProps {
         lighthouseRoot = SKNode()
         buoyRoot = SKNode()
         cloudRoot = SKNode()
-        rock = SKShapeNode()
+        rock = SKSpriteNode(texture: SceneTextures.headland)
         rockRim = SKShapeNode()
         beam = SKSpriteNode(texture: SceneTextures.beam)
         lamp = SKSpriteNode(texture: SceneTextures.glow)
         pennant = SKShapeNode()
 
-        // The rock: a sea stack, its top at y = 0, reaching well below any trough.
-        let rp = CGMutablePath()
-        let rockPts: [CGPoint] = [CGPoint(x: -100, y: -320), CGPoint(x: -92, y: -60), CGPoint(x: -74, y: -16),
-                                  CGPoint(x: -44, y: 2), CGPoint(x: -14, y: 9), CGPoint(x: 18, y: 7),
-                                  CGPoint(x: 48, y: -1), CGPoint(x: 74, y: -16), CGPoint(x: 94, y: -54),
-                                  CGPoint(x: 104, y: -320)]
-        rp.addLines(between: rockPts)
-        rp.closeSubpath()
-        rock.path = rp
-        rock.lineWidth = 0
+        // R11 (ROUND-11 P0-9): the rock is an irregular headland (`SceneHeadland.outline`), a texture whose
+        // underwater part fades out by 70 pt down (`SceneHeadland.rockFade`). The R6 sea stack ran 320 pt down with
+        // straight sides, and through the school's 70 % far sea it read as a translucent slab under Gull Point (s1-12).
+        let box = SceneHeadland.box
+        rock.size = box.size
+        rock.anchorPoint = CGPoint(x: -box.minX / box.width, y: -box.minY / box.height)
+        rock.colorBlendFactor = 1
         rock.zPosition = 0
         let rim = CGMutablePath()
-        rim.addLines(between: Array(rockPts[1...8]))
+        rim.addLines(between: SceneHeadland.rim)
         rockRim.path = rim
         rockRim.fillColor = .clear
         rockRim.lineWidth = 2.5
@@ -122,7 +119,7 @@ final class SceneProps {
         litNode.zPosition = 1.3
         lighthouseRoot.addChild(litNode)
         // A foam ring where the rock meets the far sea (drawn over the far-front layer).
-        let foamRing = SKShapeNode(ellipseOf: CGSize(width: 214, height: 12))
+        let foamRing = SKShapeNode(ellipseOf: CGSize(width: 300, height: 12))
         foamRing.fillColor = .clear
         foamRing.strokeColor = UIColor(white: 1, alpha: 0.55)
         foamRing.lineWidth = 2
@@ -185,8 +182,7 @@ final class SceneProps {
     func apply(palette p: ScenePalette) {
         // The rock sits between the two far layers in value (ART §3), its sun-facing rim lit.
         let stone = p.farFront.mixed(with: p.nearDeep, 0.55)
-        rock.fillColor = ScenePaint.ui(stone)
-        rock.strokeColor = .clear
+        rock.color = ScenePaint.ui(stone)
         rockRim.strokeColor = ScenePaint.ui(p.horizon, alpha: 0.7)
         let tint = ScenePaint.ui(p.cloud)
         for c in clouds { c.color = tint }
@@ -241,6 +237,7 @@ final class SceneProps {
 
     func hideBuoy() { buoyRoot.isHidden = true }
 
+
     /// Recycles the band's clouds around the bird (stable per cell, so they never pop). The clouds overlap, and their
     /// bottoms sit `cloudBandDrop` under Core's cloud height, so a `cloudTouched` always happens inside a cloud.
     func updateClouds(birdX: Double, originX: Double) {
@@ -259,5 +256,36 @@ final class SceneProps {
             c.position = CGPoint(x: CGFloat(seaX - originX), y: bottom + height * 0.40 + 24 * h1)
             c.alpha = 0.5 + 0.2 * h3
         }
+    }
+}
+
+/// R11 (ROUND-11 P0-9): the lighthouse's headland, pure (no actor isolation; unit-tested).
+enum SceneHeadland {
+    /// The headland's top profile, left to right (the tower stands at x 0, its foot at y 4; y 0 is the waterline): a
+    /// low shoulder, a knoll under the tower, a ledge and a spit, no two points level and no vertical run.
+    static let top: [CGPoint] = [
+        CGPoint(x: -166, y: -30), CGPoint(x: -140, y: -15), CGPoint(x: -119, y: -9), CGPoint(x: -97, y: -12),
+        CGPoint(x: -79, y: -4), CGPoint(x: -61, y: 1), CGPoint(x: -44, y: 4), CGPoint(x: -28, y: 8),
+        CGPoint(x: -14, y: 10), CGPoint(x: 2, y: 11), CGPoint(x: 18, y: 9), CGPoint(x: 32, y: 6),
+        CGPoint(x: 46, y: 2), CGPoint(x: 60, y: -4), CGPoint(x: 75, y: -2), CGPoint(x: 91, y: -9),
+        CGPoint(x: 109, y: -15), CGPoint(x: 127, y: -13), CGPoint(x: 146, y: -22), CGPoint(x: 168, y: -32),
+    ]
+
+    /// The whole outline: the top, then down and round under the water (where `rockFade` has taken it to nothing).
+    static var outline: [CGPoint] {
+        top + [CGPoint(x: 176, y: -56), CGPoint(x: 150, y: -86), CGPoint(x: 60, y: -90),
+               CGPoint(x: -40, y: -88), CGPoint(x: -140, y: -86), CGPoint(x: -174, y: -58)]
+    }
+
+    /// The lit rim: the top from the shoulder to the spit (its ends dip just under the waterline).
+    static var rim: [CGPoint] { Array(top[2...16]) }
+
+    /// The texture's box (node units, y up).
+    static let box = CGRect(x: -180, y: -94, width: 360, height: 112)
+
+    /// The rock's alpha at height y: solid above 6 pt under the waterline, gone by 70 pt under it (smoothstep).
+    static func rockFade(y: CGFloat) -> CGFloat {
+        let t = min(max((y + 70) / 64, 0), 1)
+        return t * t * (3 - 2 * t)
     }
 }

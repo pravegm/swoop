@@ -82,18 +82,20 @@ struct HomeView: View {
             menu(l)
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared || reduceMotion ? 0 : 24)
-            SwoopIconButton(systemName: "gearshape.fill", compact: info.isCompact, label: "Settings") {
+            // R11 P1-13: the corner buttons say what they are (testers could not tell the list icon from Goals).
+            HomeCornerButton(systemName: "gearshape.fill", title: "Settings", compact: info.isCompact) {
                 controller.show(.settings)
             }
+            .frame(width: l.settings.width, height: l.settings.height)
             .position(x: l.settings.midX, y: l.settings.midY)
             .accessibilitySortPriority(5)
-            SwoopIconButton(systemName: "list.number", compact: info.isCompact, label: "Top scores") {
+            HomeCornerButton(systemName: "list.number", title: "Scores", spoken: "Top scores", compact: info.isCompact) {
                 // QA-1 P1-5: never a dead button. Signed out with no sheet to offer: say how to sign in.
                 if GameCenterManager.shared.showDashboard() == .signedOut { showSignInHint() }
             }
+            .frame(width: l.gameCenter.width, height: l.gameCenter.height)
             .position(x: l.gameCenter.midX, y: l.gameCenter.midY)
             .accessibilitySortPriority(4)
-            // R9 (ART #2): no text labels on the corner icons; VoiceOver says Settings and Top scores.
             if gameCenterHint {
                 Text("Sign in to Game Center in Settings to see leaderboards.")
                     .font(SwoopType.caption(info.isCompact))
@@ -421,17 +423,20 @@ struct HomeView: View {
     /// the word on a row, or in place of the icon when the tile stacks. `badge` reserves its width.
     nonisolated static let badgeWidth: CGFloat = 40
 
+    /// R11 P1-13: the "New" badge is a corner dot (it takes no room), so the Birds tile is laid out exactly like Goals
+    /// and Route (icon and word inline); `badge` is kept for the call sites.
     nonisolated static func tilePlan(width: CGFloat, height: CGFloat, title: String, detail: String,
                                      compact: Bool, badge: Bool = false) -> TilePlan {
+        _ = badge
         let pad = 2 * tilePadding
         let icon: CGFloat = 22 + 6
         let tw = titleWidth(title, compact: compact)
-        let detailW = detailWidth(detail) + (badge ? badgeWidth + 4 : 0)
+        let detailW = detailWidth(detail)
         let withDetail = pad + icon + max(tw, detailW)
         if !compact && height >= 54 && withDetail <= width { return TilePlan(stacked: false, detail: true, need: withDetail) }
-        let row = pad + icon + tw + (badge ? badgeWidth + 6 : 0)
+        let row = pad + icon + tw
         if row <= width { return TilePlan(stacked: false, detail: false, need: row) }
-        return TilePlan(stacked: true, detail: false, need: pad + max(tw, badge ? badgeWidth : 0))
+        return TilePlan(stacked: true, detail: false, need: pad + tw)
     }
 
     private func menuTile(_ r: CGRect, title: String, icon: TileIcon, detail: String, dot: Bool,
@@ -442,7 +447,7 @@ struct HomeView: View {
             Group {
                 if plan.stacked {
                     VStack(spacing: 2) {
-                        if dot { NewCapsule().fixedSize() } else { tileIcon(icon) }
+                        tileIcon(icon)
                         tileTitle(title)
                     }
                     .frame(maxWidth: .infinity)
@@ -453,20 +458,26 @@ struct HomeView: View {
                             tileTitle(title)
                             // iPhone: icon + one word (UX §4.5); the Duo adds the detail line when it fits.
                             if plan.detail {
-                                HStack(spacing: 4) {
-                                    if dot { NewCapsule().fixedSize() }
-                                    Text(detail)
-                                        .font(SwoopType.caption(true))
-                                        .foregroundStyle(SwoopTheme.mist)
-                                        .lineLimit(1)
-                                        .minimumScaleFactor(0.8)
-                                }
+                                Text(detail)
+                                    .font(SwoopType.caption(true))
+                                    .foregroundStyle(SwoopTheme.mist)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
                             }
                         }
-                        if dot && !plan.detail { NewCapsule().fixedSize() }
                         Spacer(minLength: 0)
                     }
                 }
+            }
+        }
+        // R11 P1-13: "New" is a gold dot in the tile's corner, so every tile reads the same.
+        .overlay(alignment: .topTrailing) {
+            if dot {
+                NewDot()
+                    .frame(width: 10, height: 10)
+                    .padding(.top, 8)
+                    .padding(.trailing, 8)
+                    .allowsHitTesting(false)
             }
         }
         .frame(width: r.width, height: r.height)
@@ -539,6 +550,43 @@ struct WingCheckCard: View {
             }
         }
         .swoopCard(radius: SwoopTheme.cardRadius(compact))
+    }
+}
+
+/// R11 P1-13: Home's corner buttons as labelled pills (icon + word) on the play pause's solid surface, 44 pt drawn
+/// inside a 56 pt tap.
+struct HomeCornerButton: View {
+    let systemName: String
+    let title: String
+    /// VoiceOver's name when it differs from the visible word.
+    var spoken: String? = nil
+    var compact = false
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            FeedbackDirector.shared.uiTap()
+            action()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: systemName)
+                    .font(.system(size: compact ? 15 : 16, weight: .semibold))
+                Text(title)
+                    .font(SwoopType.caption(compact).weight(.bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(SwoopTheme.foam)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
+            .background(Capsule().fill(SwoopTheme.surface.opacity(0.82))
+                .overlay(Capsule().stroke(SwoopTheme.stroke, lineWidth: 1)))
+            .frame(maxWidth: .infinity, minHeight: AppCanvas.minTap)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(SwoopPressStyle())
+        .accessibilityLabel(spoken ?? title)
     }
 }
 

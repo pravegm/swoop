@@ -69,6 +69,8 @@ struct RecordOutcome: Equatable {
     var starEarned = false
     /// R6: this run reached a lighthouse the route had never reached ("New on your route").
     var newOnRoute = false
+    /// R11 P1-10: how many lighthouses were new on the route ("2 new lighthouses").
+    var newOnRouteCount = 0
     /// R8 P0-4: after a rank-up, the new rank's goals as this run leaves them (already-met ones ticked now).
     var nextGoals: [GoalRowOutcome] = []
     /// Lighthouses entered in the logbook for the first time by this run.
@@ -395,6 +397,7 @@ enum ProgressRules {
         data.bestTailwindsInRun = max(data.bestTailwindsInRun, result.tailwinds)
         data.bestCloudTouchesInRun = max(data.bestCloudTouchesInRun, result.cloudTouches)
         outcome.newOnRoute = result.lighthouses > data.routeReached
+        outcome.newOnRouteCount = max(result.lighthouses - data.routeReached, 0)
         data.routeReached = max(data.routeReached, result.lighthouses)
         if result.longestCleanMeters.isFinite { data.bestCleanMeters = max(data.bestCleanMeters, result.longestCleanMeters) }
         if result.maxSpeed.isFinite { data.bestSpeed = max(data.bestSpeed, result.maxSpeed) }

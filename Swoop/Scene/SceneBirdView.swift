@@ -319,9 +319,10 @@ final class SceneBirdView {
     }
 
     /// The slipstream through the last ~0.45 s of the tail's path: 9 → 14 pt wide with speed, tapering to nothing,
-    /// gold after a Perfect (`goldK`), longer with two wobbling gold strands during a Tailwind.
+    /// gold after a Perfect (`goldK`), longer with two wobbling gold strands during a Tailwind. R11: `ceiling`
+    /// (world-local y) trims the older end of the trail back to its last point above it (Home: never into the text).
     func updateTrail(emit: CGPoint, show: Bool, time: Double, zoom z: CGFloat, speedK: CGFloat, goldK: CGFloat,
-                     tailwind: Bool) {
+                     tailwind: Bool, ceiling: CGFloat? = nil) {
         guard show else {
             clearTrail()
             return
@@ -347,6 +348,11 @@ final class SceneBirdView {
         while let first = trailTimes.first, time - first > life || trailTimes.count > SceneLook.trailMaxPoints {
             trailTimes.removeFirst()
             trailPoints.removeFirst()
+        }
+        if let c = ceiling, let high = trailPoints.lastIndex(where: { $0.y > c }) {
+            let n = min(high + 1, trailPoints.count, trailTimes.count)
+            trailPoints.removeFirst(n)
+            trailTimes.removeFirst(n)
         }
         drawPoints.removeAll(keepingCapacity: true)
         drawPoints.append(contentsOf: trailPoints)

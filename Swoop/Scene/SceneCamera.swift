@@ -68,6 +68,15 @@ struct SceneCamera: Equatable {
     var waterCeiling: Double?
     /// Spring rate of the bias (rad/s).
     static let biasOmega: Double = 3.0
+    /// R11 (ROUND-11 P0-5): a sea point (the live landing ring) the framing keeps at least `keepInset` canvas pt above
+    /// the visible bottom, by riding the bird higher (its 78 % top limit still wins). The lift eases in and out on the
+    /// zoom's spring. nil = none.
+    var keepInView: CGPoint?
+    var keepInset: Double = 200
+    /// The lift now (canvas pt) and its target.
+    private(set) var keepLift: Double = 0
+    private(set) var keepLiftVelocity: Double = 0
+    private(set) var keepLiftTarget: Double = 0
 
     init(layout: ScreenLayout) {
         canvasWidth = Double(layout.size.width)
@@ -122,7 +131,8 @@ struct SceneCamera: Equatable {
         displayScale = 1
         bias = biasTarget
         biasVelocity = 0
-        frame(birdY: Double(bird.y))
+        keepLiftVelocity = 0
+        frame(birdY: Double(bird.y), instantLift: true)
     }
 
     /// Follow the bird. `water` is the sea height under it; `dt` 0 holds the springs (paused / frozen frames).
@@ -144,8 +154,33 @@ struct SceneCamera: Equatable {
             let ba = wb * wb * (biasTarget - bias) - 2 * wb * biasVelocity
             biasVelocity += ba * h
             bias += biasVelocity * h
+            let la = wz * wz * (keepLiftTarget - keepLift) - 2 * wz * keepLiftVelocity
+            keepLiftVelocity += la * h
+            keepLift = max(0, keepLift + keepLiftVelocity * h)
         }
         frame(birdY: Double(bird.y))
+    }
+
+    /// R11: where the sea point `p` would be drawn at framing zoom `z` (no display scale), the bird framed as now and
+    /// any `keepInView` lift fully applied. Pure.
+    func previewPoint(_ p: CGPoint, framingZoom z: Double) -> CGPoint {
+        var c = self
+        c.framingZoom = max(z, 0.01)
+        c.displayScale = 1
+        c.frame(birdY: birdY, instantLift: true)
+        return c.screenPoint(p)
+    }
+
+    /// R11: the largest framing zoom from the current top (`zoomCap` or `zoomMax`) down to `zoomMin`, in 0.02 steps,
+    /// at which the sea point `p` lands inside `safe` (canvas, y up); `zoomMin` when none does. Pure.
+    func zoomToFit(_ p: CGPoint, inside safe: CGRect) -> Double {
+        let top = min(SceneCamera.zoomMax, zoomCap ?? SceneCamera.zoomMax)
+        var z = top
+        while z > zoomMin {
+            if safe.contains(previewPoint(p, framingZoom: z)) { return z }
+            z -= 0.02
+        }
+        return zoomMin
     }
 
     /// A launch "pull-out": the zoom dips by about `amount` and springs back.
@@ -158,7 +193,7 @@ struct SceneCamera: Equatable {
         displayScale = min(max(s, 0.9), 1.1)
     }
 
-    private mutating func frame(birdY y: Double) {
+    private mutating func frame(birdY y: Double, instantLift: Bool = false) {
         birdY = y
         let z = max(framingZoom, 0.01)
         let hv = visibleHeight
@@ -170,6 +205,15 @@ struct SceneCamera: Equatable {
             let room = (1 - SceneLook.practiceHorizonInset) * hv - 34 - 18 * z
             b = max(b, -room / z)
         }
+        // R11: lower the frame (the bird rides higher) until the kept point is `keepInset` above the bottom.
+        if let k = keepInView {
+            // (2 pt of margin, so the point lands strictly inside a rect whose edge is the inset.)
+            keepLiftTarget = max(0, (b - (Double(k.y) - (keepInset + 2) / z)) * z)
+        } else {
+            keepLiftTarget = 0
+        }
+        if instantLift { keepLift = keepLiftTarget }
+        b -= keepLift / z
         b = max(b, y - SceneCamera.birdTopFraction * hv / z)
         b = min(b, y - SceneCamera.birdBottomFraction * hv / z)
         // Home's menu wins over the bird's bottom margin (the attract bird skims the water anyway).

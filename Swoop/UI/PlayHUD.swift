@@ -55,9 +55,10 @@ struct PlayLayer: View {
                     // Step 7 (Scene SC1): the meter and the first lighthouse fade in as the storm arrives.
                     Group {
                         // R10 P0-1: after step 6's Perfect the knob jumps away from the storm.
+                        // R11 P0-7: with a "+" gap pop ahead of the knob as it jumps.
                         LeadMeter(lead: AppRules.schoolMeterLead(hud.lead, pushed: hud.schoolStormPushed,
                                                                  recoil: hud.schoolStormRecoil), stormClose: false,
-                                  mirrored: info.mirrored)
+                                  mirrored: info.mirrored, showsLabels: true, gapPop: hud.schoolStormPushed)
                             .animation(.spring(response: 0.35, dampingFraction: 0.55), value: hud.schoolStormPushed)
                             .frame(width: l.meter.width, height: l.meter.height)
                             .position(x: l.meter.midX, y: l.meter.midY)
@@ -77,7 +78,7 @@ struct PlayLayer: View {
                 ReachedStage(hud: hud, info: info, reduceMotion: reduceMotion)
                     .allowsHitTesting(false)
             }
-            // R9 (UX-ROUND-9 §2.1, ART §2): "Flight over" at 1.4 s, on the bird page above the bird.
+            // R11 P0-2: "The storm caught you", big, on the bird page above the bird, as the storm crosses it.
             CaughtLine(hud: hud, info: info)
                 .allowsHitTesting(false)
             PerfectCalloutView(hud: hud, info: info, reduceMotion: reduceMotion)
@@ -350,14 +351,14 @@ struct HUDView: View {
                     .position(x: layout.pause.midX, y: layout.pause.midY)
                     .transition(.opacity)
             }
+            // R9 AR3: at the catch the knob slides into the storm icon and the bar flashes. R11 P0-2: the meter STAYS
+            // through the catch (it is the why: the storm end has reached the bird knob); the rest fades from 1.6 s.
+            LeadMeter(lead: hud.caught ? 0 : hud.lead, stormClose: hud.stormClose || hud.caught, mirrored: mirrored,
+                      showsLabels: hud.meterLabel && !hud.caught, teachesDanger: hud.meterTeach && !hud.caught)
+                .frame(width: layout.meter.width, height: layout.meter.height)
+                .position(x: layout.meter.midX, y: layout.meter.midY)
+                .allowsHitTesting(false)
             Group {
-                // R9 AR3: at the catch the knob slides into the storm icon and the bar flashes; the HUD fades from
-                // 1.6 s to 2.0 s (not at once). Only the distance stays.
-                LeadMeter(lead: hud.caught ? 0 : hud.lead, stormClose: hud.stormClose || hud.caught, mirrored: mirrored,
-                          showsLabels: hud.meterLabel, teachesDanger: hud.meterTeach)
-                    .frame(width: layout.meter.width, height: layout.meter.height)
-                    .position(x: layout.meter.midX, y: layout.meter.midY)
-                    .allowsHitTesting(false)
                 tagLine
                     .frame(width: layout.tagLine.width, height: layout.tagLine.height,
                            alignment: mirrored ? .trailing : .leading)
@@ -475,6 +476,13 @@ struct LeadMeter: View {
     var showsLabels: Bool = false
     /// R7: the first 3 runs name the danger zone ("Too close"), but only while the storm is inside it.
     var teachesDanger: Bool = false
+    /// R11 P0-7: a gold "+" pops just ahead of the knob as a Perfect pushes the storm back (the gap grew).
+    var gapPop: Bool = false
+
+    /// Where the "+" sits: just ahead of the knob (away from the storm), above the bar. Pure; tested.
+    nonisolated static func gapPopCenter(knobX: CGFloat, barHeight h: CGFloat, mirrored: Bool) -> CGPoint {
+        CGPoint(x: knobX + (mirrored ? -24 : 24), y: h / 2 - 20)
+    }
 
     /// Pure; tested.
     nonisolated static func showsTooClose(teach: Bool, lead: Double) -> Bool {
@@ -529,6 +537,15 @@ struct LeadMeter: View {
                             .frame(width: 20, height: 13)
                     }
                     .position(x: knobX, y: h / 2)
+                    if gapPop {
+                        Text("+")
+                            .font(.system(size: 22, weight: .black, design: .rounded))
+                            .foregroundStyle(SwoopTheme.rewardGold)
+                            .shadow(color: Color(swoopHex: Contrast.scrim).opacity(0.7), radius: 4)
+                            .fixedSize()
+                            .position(Self.gapPopCenter(knobX: knobX, barHeight: h, mirrored: mirrored))
+                            .transition(.scale(scale: 0.4).combined(with: .opacity))
+                    }
                     if Self.showsTooClose(teach: teachesDanger, lead: lead) {
                         // D4 / R7 P0-2: the coral end zone's label, on the first 3 runs, only while the knob is in it.
                         Text("Too close")
@@ -554,6 +571,7 @@ struct LeadMeter: View {
             }
         }
         .animation(.easeOut(duration: 0.25), value: lead)
+        .animation(.spring(response: 0.3, dampingFraction: 0.5), value: gapPop)
         .onAppear { setPulse(stormClose) }
         .onChange(of: stormClose) { _, close in setPulse(close) }
         .accessibilityElement(children: .ignore)
@@ -702,23 +720,27 @@ struct PerfectCalloutText: View {
         chain >= 2 ? "Perfect ×\(chain)" : "Perfect"
     }
 
-    /// Black, the gold gradient `#FFE7A0` → `#F2A93B` with a 2 pt ink outline at 45 % (ART §9 "soar").
+    /// R11 P1-14 (Scene's diagnosis, NEEDS "Scene → App (Round 11)"): a clean gold with a solid outline, crisp at 3×.
+    /// R10's two 45 % ink copies offset ±1.5 pt under a gradient alternated 45 % / 70 % ink where they overlapped,
+    /// which read as a speckled, mottled fill. Now: eight opaque 2 pt outline copies and one flat reward-gold fill,
+    /// composited once.
     static func label(_ text: String, compact: Bool) -> some View {
         let font = SwoopType.callout(compact)
+        let ink = SwoopTheme.ink
         return ZStack {
+            ForEach(0..<8, id: \.self) { i in
+                let a = Double(i) * Double.pi / 4
+                Text(text)
+                    .font(font)
+                    .foregroundStyle(ink)
+                    .offset(x: CGFloat(2 * cos(a)), y: CGFloat(2 * sin(a)))
+            }
             Text(text)
                 .font(font)
-                .foregroundStyle(SwoopTheme.ink.opacity(0.45))
-                .offset(x: 1.5, y: 1.5)
-            Text(text)
-                .font(font)
-                .foregroundStyle(SwoopTheme.ink.opacity(0.45))
-                .offset(x: -1.5, y: -1.5)
-            Text(text)
-                .font(font)
-                .foregroundStyle(LinearGradient(colors: [Color(swoopHex: 0xFFE7A0), Color(swoopHex: 0xF2A93B)],
-                                                startPoint: .top, endPoint: .bottom))
+                .foregroundStyle(SwoopTheme.rewardGold)
         }
+        .compositingGroup()
+        .shadow(color: ink.opacity(0.35), radius: 3, y: 1)
         .lineLimit(1)
         .minimumScaleFactor(0.6)
         .accessibilityHidden(true)
@@ -1143,31 +1165,19 @@ struct TouchWingFeedback: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { _ in
             let u = controller.touchTuck(now: CACurrentMediaTime())
-            let center = Self.glyphCenter(birdPage: info.birdPage, height: info.size.height, mirrored: info.mirrored)
-            let near = Self.birdNear(bird: controller.hud.birdPoint, glyph: center)
-            ZStack(alignment: .topLeading) {
-                HStack(spacing: 0) {
-                    LinearGradient(colors: [SwoopTheme.shadowBase.opacity(Self.vignetteAlpha * u), .clear],
-                                   startPoint: .leading, endPoint: .trailing)
-                        .frame(width: Self.vignetteDepth)
-                    Spacer(minLength: 0)
-                    LinearGradient(colors: [.clear, SwoopTheme.shadowBase.opacity(Self.vignetteAlpha * u)],
-                                   startPoint: .leading, endPoint: .trailing)
-                        .frame(width: Self.vignetteDepth)
-                }
-                .frame(width: info.size.width, height: info.size.height)
-                // R9 (ART #47): the 36 pt side-view gull on a 44 pt surface disc at 0.5 (the thin "M" read as a
-                // watermark); gold while held.
-                ZStack {
-                    Circle().fill(SwoopTheme.surface.opacity(0.5)).frame(width: 44, height: 44)
-                    YouGlyph(facingLeft: info.mirrored)
-                        .fill(u > 0.5 ? SwoopTheme.rewardGold : SwoopTheme.foam)
-                        .frame(width: 36, height: 23)
-                        .scaleEffect(x: 1 - 0.2 * u, y: 1)
-                }
-                .opacity(Self.glyphAlpha(tuck: u, birdNear: near))
-                .position(center)
+            // R11 P1-13: the round gull disc at the bottom corner is gone. Testers read it as an unlabelled button
+            // ("can I tap it?") that came and went; the hold's feedback is this vignette, the wings, and in Flight
+            // School the one diagram. (`glyphCenter`, `glyphAlpha` and `birdNear` stay, pure, for the tests.)
+            HStack(spacing: 0) {
+                LinearGradient(colors: [SwoopTheme.shadowBase.opacity(Self.vignetteAlpha * u), .clear],
+                               startPoint: .leading, endPoint: .trailing)
+                    .frame(width: Self.vignetteDepth)
+                Spacer(minLength: 0)
+                LinearGradient(colors: [.clear, SwoopTheme.shadowBase.opacity(Self.vignetteAlpha * u)],
+                               startPoint: .leading, endPoint: .trailing)
+                    .frame(width: Self.vignetteDepth)
             }
+            .frame(width: info.size.width, height: info.size.height)
         }
         .accessibilityHidden(true)
     }
@@ -1483,34 +1493,53 @@ struct ReachedCard: View {
     }
 }
 
-/// R9 (UX-ROUND-9 §2.1, ART §2 / AR3): "Flight over" (no full stop) in a `surface` pill at 0.85, `headline`, at the
-/// bird + (0, −110) on the bird page (never over the sea page water), 1.4 s after the catch.
+/// R9 (UX-ROUND-9 §2.1, ART §2 / AR3); R11 P0-2: failure says why. "The storm caught you", at the big "Perfect"'s
+/// scale (black rounded 52 / 40 pt, up to two lines), on the bird page above the bird (below it when the bird is high),
+/// under the meter that shows the storm reaching the knob. It comes as the storm crosses the bird.
 struct CaughtLine: View {
     @ObservedObject var hud: HUDState
     let info: AppCanvas
 
-    static let text = "Flight over"
-    static let delay: Double = 1.4
+    static let text = "The storm caught you"
+    static let delay: Double = 0.5
 
-    /// The pill's centre: above the bird, kept inside the bird page. Pure; tested.
+    nonisolated static func fontSize(_ compact: Bool) -> CGFloat { compact ? 40 : 52 }
+
+    /// The words' box: the bird page's width less 32 (at most 460), two lines. Pure; tested.
+    nonisolated static func size(canvas c: AppCanvas) -> CGSize {
+        let w = max(min(c.birdPage.width - 32, 460), 120)
+        let line = (fontSize(c.isCompact) * 1.2).rounded(.up)
+        return CGSize(width: w, height: 2 * line)
+    }
+
+    /// The words' centre: above the bird (its rect + 24 pt clear) and under the meter, inside the bird page; below the
+    /// bird when there is no room above. Pure; tested.
     nonisolated static func center(bird: CGPoint, canvas c: AppCanvas) -> CGPoint {
         let bp = c.birdPage
-        let x = min(max(bird.x, bp.minX + 110), bp.maxX - 110)
-        let y = max(bird.y - 110, c.top + 70)
-        return CGPoint(x: bp.width > 220 ? x : bp.midX, y: y)
+        let s = size(canvas: c)
+        let x = bp.width > s.width ? min(max(bird.x, bp.minX + s.width / 2), bp.maxX - s.width / 2) : bp.midX
+        let floorY = PlayLayout.make(c).meter.maxY + 12 + s.height / 2
+        let above = bird.y - 44 - 24 - s.height / 2
+        if above >= floorY { return CGPoint(x: x, y: above) }
+        let below = bird.y + 44 + 24 + s.height / 2
+        let maxY = c.bottom - s.height / 2
+        return CGPoint(x: x, y: below <= maxY ? below : max(floorY, min(above, maxY)))
     }
 
     var body: some View {
         let bird = hud.birdPoint ?? SceneAdapter.defaultBirdPoint(info)
+        let s = Self.size(canvas: info)
         ZStack(alignment: .topLeading) {
             if hud.caught {
                 Text(Self.text)
-                    .font(SwoopType.headline(info.isCompact))
+                    .font(.system(size: Self.fontSize(info.isCompact), weight: .black, design: .rounded))
                     .foregroundStyle(SwoopTheme.foam)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 8)
-                    .background(Capsule().fill(SwoopTheme.surface.opacity(0.85)))
-                    .fixedSize()
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .shadow(color: Color(swoopHex: Contrast.scrim).opacity(0.75), radius: 12)
+                    .shadow(color: Color(swoopHex: Contrast.scrim).opacity(0.5), radius: 4)
+                    .frame(width: s.width, height: s.height)
                     .position(Self.center(bird: bird, canvas: info))
                     .transition(.opacity.animation(.easeOut(duration: 0.3).delay(Self.delay)))
             }

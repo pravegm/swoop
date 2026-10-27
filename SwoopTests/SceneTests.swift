@@ -1032,6 +1032,269 @@ struct SceneTests {
         #expect(abs(g.phi - DuoDiagramArt.displayPhi(angle: 122)) < 0.0001)
     }
 
+    // MARK: Round 11: the storm has no straight edges (ROUND-11 P0-1)
+
+    /// Every soft span ends in a smoothstep ramp ≥ 300 pt, its coverage never jumps on the canvas (no more than the
+    /// ramp's own slope between neighbouring points), and its body runs off the canvas edge it reaches toward.
+    @Test func stormTintSpansHaveNoEdges() {
+        let w: CGFloat = 952
+        for e in stride(from: CGFloat(-400), through: CGFloat(1300), by: 37) {
+            let fall = SceneStormTint.falling(clearAt: e + 428, ramp: 120)
+            #expect(fall.rampWidth >= SceneStormTint.minRamp - 0.001)
+            #expect(fall.bodyLo <= -SceneStormTint.overscan + 0.001)
+            #expect(abs(fall.bodyHi - fall.rampLo) < 0.0001)
+            let fallLimit: CGFloat = 1.5 / fall.rampWidth + 0.002
+            #expect(SceneStormTint.maxStep(fall, from: -1, to: w + 1) <= fallLimit)
+            let rise = SceneStormTint.rising(startAt: e - 150, ramp: 300, width: w)
+            #expect(rise.rampWidth >= SceneStormTint.minRamp - 0.001)
+            #expect(rise.bodyHi >= w + SceneStormTint.overscan - 0.001)
+            #expect(abs(rise.bodyLo - rise.rampHi) < 0.0001)
+            let riseLimit: CGFloat = 1.5 / rise.rampWidth + 0.002
+            #expect(SceneStormTint.maxStep(rise, from: -1, to: w + 1) <= riseLimit)
+        }
+        let s = SceneStormTint.falling(clearAt: 600, ramp: 400)
+        #expect(abs(s.coverage(atU: 100) - 1) < 0.0001)
+        #expect(abs(s.coverage(atU: 700)) < 0.0001)
+        #expect(abs(s.coverage(atU: 400) - 0.5) < 0.001)
+        // A narrower minimum is allowed for the cloud's backing (it ramps out under the cloud's body).
+        let b = SceneStormTint.falling(clearAt: 100, ramp: 60, minimum: 1)
+        #expect(abs(b.rampWidth - 60) < 0.0001)
+    }
+
+    /// A span's body and ramp textures meet exactly: the ramp's seam column is the body's colour, its far column empty.
+    @Test func stormRampPixelsMatchTheirBodies() {
+        let profile = SceneStormTint.bandProfile(rows: 64)
+        let body = SceneStormTint.pixels(profile: profile, rows: 64, columns: 4, ramp: .flat)
+        let fall = SceneStormTint.pixels(profile: profile, rows: 64, columns: 128, ramp: .falling)
+        let rise = SceneStormTint.pixels(profile: profile, rows: 64, columns: 128, ramp: .rising)
+        #expect(body.count == 64 * 4 * 4 && fall.count == 64 * 128 * 4)
+        for j in 0..<64 {
+            let a = Int(body[(j * 4) * 4 + 3])
+            #expect(abs(Int(fall[(j * 128) * 4 + 3]) - a) <= 1)
+            #expect(Int(fall[(j * 128 + 127) * 4 + 3]) <= 1)
+            #expect(abs(Int(rise[(j * 128 + 127) * 4 + 3]) - a) <= 1)
+            #expect(Int(rise[(j * 128) * 4 + 3]) <= 1)
+        }
+        // The band is soft at its top and bottom, full in the middle.
+        #expect(profile[3] < 8 && profile[63 * 4 + 3] < 8 && profile[32 * 4 + 3] > 240)
+        let white = SceneStormTint.whiteProfile(rows: 2)
+        let allWhite = white.allSatisfy { $0 == 255 }
+        #expect(white.count == 8 && allWhite)
+    }
+
+    /// The cloud texture is empty along all four borders (no sprite edge can show, at any stretch), and its backing
+    /// profile is soft (no row step a stretch could turn into a streak), premultiplied, and empty at its top and bottom.
+    @Test func stormCloudHasNoHardBorderAndASoftBacking() {
+        let f = SceneTests.cloudField
+        var border: Float = 0
+        for i in 0..<f.w {
+            border = max(border, SceneStormCloud.alpha(f, i: i, j: 0), SceneStormCloud.alpha(f, i: i, j: f.h - 1))
+        }
+        for j in 0..<f.h {
+            border = max(border, SceneStormCloud.alpha(f, i: 0, j: j), SceneStormCloud.alpha(f, i: f.w - 1, j: j))
+        }
+        #expect(border < 0.01)
+        #expect(SceneStormCloud.leftFadeK(x: 0) < 0.0001)
+        #expect(SceneStormCloud.leftFadeK(x: Float(SceneStormCloud.leftFade)) > 0.9999)
+        let p = ScenePalette.palette(.goldenHour)
+        let px = SceneStormCloud.pixels(f, body: p.stormBody, top: p.stormTop, rim: p.stormRim, rain: p.rain)
+        var col0 = 0
+        for j in 0..<f.h { col0 = max(col0, Int(px[(j * f.w) * 4 + 3])) }
+        #expect(col0 <= 2)
+        let prof = SceneStormCloud.backingProfile(px, w: f.w, h: f.h)
+        #expect(prof.count == f.h * 4)
+        var worst = 0
+        var peak = 0
+        for j in 0..<f.h {
+            let a = Int(prof[j * 4 + 3])
+            peak = max(peak, a)
+            for c in 0..<3 { #expect(Int(prof[j * 4 + c]) <= a) }
+            if j > 0 { worst = max(worst, abs(a - Int(prof[(j - 1) * 4 + 3]))) }
+        }
+        #expect(peak > 200)
+        #expect(worst <= 16)
+        #expect(Int(prof[3]) <= 1 && Int(prof[(f.h - 1) * 4 + 3]) <= 1)
+    }
+
+    /// The scene, on the Duo (both orientations) and a phone: at every storm x on the way in and through the catch
+    /// sweep, every tint ramp is ≥ 300 pt with no jump on the canvas, the backing starts exactly where the cloud's fade
+    /// ends and runs off the behind edge, and once caught the sky shade covers the whole width.
+    @Test @MainActor func stormLayersNeverShowAnEdge() {
+        func check(_ scene: FlightScene, _ w: CGFloat) {
+            for sp in scene.stormTintSpans {
+                #expect(sp.rampWidth >= SceneStormTint.minRamp - 0.01)
+                let limit: CGFloat = 3 / sp.rampWidth + 0.003
+                #expect(SceneStormTint.maxStep(sp, from: -1, to: w + 1, step: 2) <= limit)
+            }
+            if scene.stormShown, let b = scene.stormBackingSpan {
+                #expect(abs(b.rampLo - scene.stormCloudFadeEndU) < 0.05)
+                #expect(b.bodyWidth < 0.5 || b.bodyLo <= -SceneStormTint.overscan + 0.01)
+            }
+        }
+        for layout in [SceneTests.duo, SceneTests.duoMirrored, SceneTests.phone] {
+            let w = layout.size.width
+            let scene = FlightScene(layout: layout)
+            let driver = SceneTestsDriver()
+            scene.driver = driver
+            scene.reset()
+            driver.snap.phase = .flying
+            driver.snap.stormX = -9000
+            driver.stormSpeed = 520 + 2500
+            var now: TimeInterval = 30
+            for _ in 0..<360 {
+                scene.update(now)
+                now += 1.0 / 120.0
+                check(scene, w)
+            }
+            #expect(!scene.stormTintSpans.isEmpty)
+            driver.snap.phase = .caught(elapsed: 0)
+            for _ in 0..<320 {
+                scene.update(now)
+                now += 1.0 / 120.0
+                check(scene, w)
+            }
+            if let sky = scene.stormSkySpan {
+                for u in stride(from: CGFloat(0), through: w, by: 8) { #expect(sky.coverage(atU: u) > 0.999) }
+            } else {
+                Issue.record("no sky shade once caught")
+            }
+        }
+    }
+
+    /// ROUND-11 P0-6 / P0-7: the storm step's storm is on screen from its first frame (it rolls in from u = 40, not
+    /// from off screen), and a school Perfect shoves it back while it stays in view, its layers soft throughout.
+    @Test @MainActor func schoolStormShowsFromTheFirstFrameAndRecoilsInView() {
+        let scene = FlightScene(layout: SceneTests.duoMirrored)
+        let driver = SceneTestsDriver()
+        driver.snap.stormX = -1_000_000
+        driver.snap.gap = 1_000_000
+        scene.driver = driver
+        scene.reset()
+        driver.snap.phase = .flying
+        var now: TimeInterval = 5
+        func frames(_ n: Int) {
+            for _ in 0..<n {
+                scene.update(now)
+                now += 1.0 / 120.0
+            }
+        }
+        frames(10)
+        #expect(!scene.stormShown)
+        scene.rollInStorm()
+        frames(1)
+        #expect(scene.stormShown)
+        #expect(scene.stormEdgeU >= SceneLook.rollInFrom - 1)
+        #expect(scene.stormDrawnRightU > 40)
+        frames(300)
+        driver.pending = [.touchdown(.perfect, speed: 1400, chain: 1)]
+        var lowest: CGFloat = 10_000
+        var reach: CGFloat = 10_000
+        for _ in 0..<120 {
+            frames(1)
+            lowest = min(lowest, scene.stormEdgeU)
+            reach = min(reach, scene.stormDrawnRightU)
+            for sp in scene.stormTintSpans { #expect(sp.rampWidth >= SceneStormTint.minRamp - 0.01) }
+            if let b = scene.stormBackingSpan {
+                #expect(b.bodyWidth < 0.5 || b.bodyLo <= -SceneStormTint.overscan + 0.01)
+            }
+        }
+        let rest: CGFloat = SceneLook.rollInEdge * 952
+        #expect(lowest <= rest - 140)
+        #expect(lowest > 0)
+        #expect(reach > 30)
+        #expect(scene.stormRecoil > 0.9)
+    }
+
+    // MARK: Round 11: the ring, the headland, the Home trail
+
+    /// ROUND-11 P0-5 (pure): the camera rides the bird higher so a kept point stays ≥ the inset above the bottom, and
+    /// `zoomToFit` finds the zoom that puts it inside a safe rect.
+    @Test func cameraKeepsTheRingInboard() {
+        var cam = SceneCamera(layout: SceneTests.duoMirrored)
+        cam.practiceFraming = true
+        let ring = CGPoint(x: 600, y: -160)
+        cam.keepInView = ring
+        cam.keepInset = 200
+        cam.snap(bird: CGPoint(x: 0, y: 60), water: -20)
+        let p = cam.screenPoint(ring)
+        let floorY: Double = cam.visibleMinY + 200 - 0.5
+        #expect(Double(p.y) >= floorY)
+        let safe = CGRect(x: 200, y: cam.visibleMinY + 200, width: 952 - 400, height: cam.visibleHeight - 320)
+        let fit = cam.zoomToFit(ring, inside: safe)
+        #expect(fit < 0.8 && fit >= cam.zoomMin - 0.0001)
+        #expect(safe.contains(cam.previewPoint(ring, framingZoom: fit)))
+        var plain = SceneCamera(layout: SceneTests.duo)
+        plain.snap(bird: CGPoint(x: 0, y: 60), water: -20)
+        #expect(plain.keepLift == 0)
+    }
+
+    /// ROUND-11 P0-5 in the scene: in school the live landing ring ahead settles ≥ 200 pt inside the sides and the
+    /// bottom of the canvas (clear of Skip, the step dots and the pause button).
+    @Test @MainActor func schoolRingSettlesInboard() {
+        for layout in [SceneTests.duoMirrored, SceneTests.duo] {
+            let scene = FlightScene(layout: layout)
+            let driver = SceneTestsDriver()
+            driver.snap.stormX = -1_000_000
+            driver.snap.gap = 1_000_000
+            scene.driver = driver
+            scene.practiceSea = true
+            scene.reset()
+            driver.snap.phase = .flying
+            var now: TimeInterval = 3
+            for _ in 0..<5 {
+                scene.update(now)
+                now += 1.0 / 120.0
+            }
+            scene.guide = .landing(at: Double(driver.snap.position.x) + 1100)
+            for _ in 0..<150 {
+                scene.update(now)
+                now += 1.0 / 120.0
+            }
+            let safe = scene.ringSafeRect().insetBy(dx: -25, dy: -25)
+            if let c = scene.ringCanvasPoint {
+                #expect(c.x >= safe.minX && c.x <= safe.maxX)
+                #expect(c.y >= safe.minY)
+            } else {
+                Issue.record("no live ring")
+            }
+        }
+    }
+
+    /// ROUND-11 P0-9: Gull Point's rock is an irregular headland (no vertical side, no level run) whose underwater
+    /// part fades out completely, not a translucent slab.
+    @Test func lighthouseHeadlandHasNoStraightEdges() {
+        let top = SceneHeadland.top
+        for i in 1..<top.count {
+            #expect(top[i].x > top[i - 1].x)
+            #expect(abs(top[i].y - top[i - 1].y) > 0.5)
+        }
+        let out = SceneHeadland.outline
+        for i in 0..<out.count {
+            let a = out[i], b = out[(i + 1) % out.count]
+            #expect(abs(a.x - b.x) > 1)
+        }
+        #expect(SceneHeadland.rockFade(y: 0) > 0.99)
+        #expect(SceneHeadland.rockFade(y: -70) < 0.001)
+        let lowest = out.map { $0.y }.min() ?? 0
+        let highest = out.map { $0.y }.max() ?? 0
+        #expect(SceneHeadland.rockFade(y: lowest) < 0.001)
+        #expect(SceneHeadland.box.minY <= lowest && SceneHeadland.box.maxY >= highest)
+        #expect(SceneHeadland.rim.count >= 3)
+    }
+
+    /// ROUND-11 P1-11: on Home the trail's older end is trimmed back below the ceiling (never into the text).
+    @Test @MainActor func trailCeilingTrimsTheOldEnd() {
+        let b = SceneBirdView()
+        for i in 0..<6 {
+            b.updateTrail(emit: CGPoint(x: CGFloat(i * 10), y: CGFloat(100 - i * 10)), show: true,
+                          time: Double(i) * 0.01, zoom: 1, speedK: 0, goldK: 0, tailwind: false)
+        }
+        #expect(b.trailPointCount == 6)
+        b.updateTrail(emit: CGPoint(x: 60, y: 40), show: true, time: 0.06, zoom: 1, speedK: 0, goldK: 0,
+                      tailwind: false, ceiling: 65)
+        #expect(b.trailPointCount == 3)
+    }
+
     // MARK: Camera
 
     static let duo = ScreenLayout.make(canvas: CGSize(width: 952, height: 670), hasFold: true)

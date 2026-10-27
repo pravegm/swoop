@@ -112,13 +112,13 @@ struct ResultsView: View {
             .opacity(appeared ? 1 : 0)
             .offset(x: appeared || reduceMotion ? 0 : (info.mirrored ? -30 : 30))
             if plan.twoPages && plan.hasSideCard {
-                let side = ResultsLayout.side(info)
-                // R10: the two cards share their top edge.
-                let top = max(min(farRect.minY, side.maxY - plan.sideHeight(width: side.width)), side.minY)
+                // R11 P1-15: the two cards have one height and one bottom (R10 shared only the top, so the right card
+                // ended mid-screen); its content sits in the middle.
+                let side = ResultsLayout.sideRect(side: ResultsLayout.side(info), far: farRect,
+                                                  need: plan.sideHeight(width: ResultsLayout.side(info).width))
                 sideCard(plan, width: side.width)
-                    .frame(width: side.width, alignment: .topLeading)
-                    .frame(width: side.width, height: side.maxY - top, alignment: .top)
-                    .position(x: side.midX, y: (top + side.maxY) / 2)
+                    .frame(width: side.width, height: side.height)
+                    .position(x: side.midX, y: side.midY)
                     .opacity(appeared ? 1 : 0)
                     .offset(x: appeared || reduceMotion ? 0 : (info.mirrored ? 30 : -30))
             }
@@ -148,6 +148,7 @@ struct ResultsView: View {
         var i = ResultsHeadline.Input(meters: s.result.meters, passed: s.result.lighthouses)
         i.lastPassed = s.result.lastLighthouseName
         i.newLighthouse = s.outcome.newOnRoute
+        i.newLighthouses = s.outcome.newOnRouteCount
         i.previousBest = s.outcome.previousBest
         i.isNewBest = s.outcome.showsNewBest
         i.firstFlight = kind == .firstFlight
@@ -168,7 +169,7 @@ struct ResultsView: View {
             // The mini route, left to right; tapping it opens the Route.
             if plan.routeStrip {
                 Button { controller.show(.route) } label: {
-                    MiniRouteStrip(reachedThisRun: result.lighthouses, meters: result.meters)
+                    MiniRouteStrip(reachedThisRun: result.lighthouses, meters: result.meters, mirrored: info.mirrored)
                         .frame(height: ResultsPlan.stripHeight)
                         .contentShape(Rectangle())
                 }
@@ -286,11 +287,12 @@ struct ResultsView: View {
     /// Pure; tested.
     nonisolated static func unlockMoment(_ s: ResultSummary) -> (title: String, level: String, bird: BirdID?)? {
         guard let up = s.outcome.rankUp else { return nil }
-        let level = "Level \(up.to + 1)"
+        // R11 P1-10: "Level 2 reward" (a bare "Level 2" read as "level of what?").
+        let level = "Level \(up.to + 1) reward"
         if let b = up.birds.first { return ("New bird: \(BirdCatalog.bird(b).name)", level, b) }
         if let sky = up.skies.first { return ("New sky: \(SkyCatalog.sky(sky).name)", level, nil) }
         if let trail = up.trailNames.first { return ("New trail: \(trail)", level, nil) }
-        return (level, GoalCatalog.rankTitle(up.to), nil)
+        return ("Level \(up.to + 1)", GoalCatalog.rankTitle(up.to), nil)
     }
 
     /// R9: the bird page's goal rows: after a level-up only the new level's UNMET goals (a goal this flight already met
@@ -314,7 +316,7 @@ struct ResultsView: View {
                 StreakDots(flown: Self.lastSevenDays(controller.store.data, today: today), today: today, compact: c)
             }
             if plan.rankUp, let m = Self.unlockMoment(summary) {
-                NewUnlockCard(title: m.title, level: m.level, bird: m.bird, compact: c) { bird in
+                NewUnlockCard(title: m.title, level: m.level, bird: m.bird, compact: c, facingLeft: info.mirrored) { bird in
                     controller.chooseBird(bird)
                     FeedbackDirector.shared.uiConfirm()
                 }
@@ -336,7 +338,7 @@ struct ResultsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .swoopCard(padding: ResultsPlan.padding(c), radius: SwoopTheme.cardRadius(c))
     }
     /// The small lines, most important first: the streak grace, the star goals,
@@ -625,9 +627,8 @@ struct ResultsPlan: Equatable {
         p.headline = kind != .dailySpent
         let framing = ResultsHeadline.make(ResultsView.headlineInput(s, today: AppRules.launchDay))
         let inner0 = ResultsLayout.far(canvas).width - 2 * padding(c)
-        p.headlineLines = framing.chip == nil
-            ? Self.lines(framing.headline, size: Self.title(c), width: inner0)
-            : Self.lines(framing.headline + " New lighthouse", size: Self.title(c), width: inner0)
+        p.headlineLines = framing.chip.map { Self.lines(framing.headline + " " + $0, size: Self.title(c), width: inner0) }
+            ?? Self.lines(framing.headline, size: Self.title(c), width: inner0)
         p.subLines = framing.lines.map { Self.lines($0, size: Self.body(c), width: inner0) }.reduce(0, +)
         p.headlineSub = p.headline
         p.routeStrip = p.headline && !c
@@ -662,8 +663,9 @@ struct ResultsPlan: Equatable {
         if p.farHeight() > cardHeight { p.routeNote = false }
         if p.farHeight() > cardHeight { p.hasHook = false }
         if p.farHeight() > cardHeight { p.hasStats = false }
-        if p.farHeight() > cardHeight { p.headlineSub = false }
+        // R11 P0-2: the line that says why the flight ended outlasts the tracker strip.
         if p.farHeight() > cardHeight { p.routeStrip = false }
+        if p.farHeight() > cardHeight { p.headlineSub = false }
         if p.farHeight() > cardHeight { p.headline = false }
         return p
     }
@@ -1138,6 +1140,8 @@ struct NewUnlockCard: View {
     let level: String
     let bird: BirdID?
     var compact = false
+    /// R11 P0-8: the bird faces the flight's direction (left in a mirrored flight).
+    var facingLeft = false
     let onFlyAs: (BirdID) -> Void
 
     nonisolated static func artHeight(_ c: Bool) -> CGFloat { c ? 48 : 104 }
@@ -1151,7 +1155,7 @@ struct NewUnlockCard: View {
         VStack(alignment: .leading, spacing: 4) {
             if let bird {
                 // R10: the new bird itself, side on (the top-down title art read as the same gull).
-                BirdSideView(bird: BirdCatalog.bird(bird))
+                BirdSideView(bird: BirdCatalog.bird(bird), facingLeft: facingLeft)
                     .frame(maxWidth: .infinity)
                     .frame(height: Self.artHeight(compact))
                     .padding(.bottom, 4)
@@ -1164,10 +1168,17 @@ struct NewUnlockCard: View {
                 .font(SwoopType.body(compact))
                 .foregroundStyle(SwoopTheme.mist)
             if let bird {
-                // R10: one way to fly again on the card (Fly again); this one only chooses the bird.
+                // R10: one way to fly again on the card (Fly again); this one only chooses the bird. R11 P1-15: a
+                // visible secondary style (gold words and a gold outline; it was dark on dark).
                 SwoopButton(kind: .secondary, height: ResultsPlan.secondary, compact: compact, action: { onFlyAs(bird) }) {
-                    Text("Choose \(BirdCatalog.bird(bird).name)").lineLimit(1).minimumScaleFactor(0.8)
+                    Text("Choose \(BirdCatalog.bird(bird).name)")
+                        .foregroundStyle(SwoopTheme.rewardGold)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
+                .overlay(RoundedRectangle(cornerRadius: SwoopTheme.buttonRadius(compact), style: .continuous)
+                    .stroke(SwoopTheme.rewardGold.opacity(0.75), lineWidth: 1.5)
+                    .allowsHitTesting(false))
                 .padding(.top, 6)
             }
         }

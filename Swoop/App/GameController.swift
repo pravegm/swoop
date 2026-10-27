@@ -58,8 +58,9 @@ final class GameController: ObservableObject, SceneDriver {
     /// R4: the splash word's life at the bird, and the first run's meter label (seconds after the drop).
     static let splashMarkSeconds: Double = 1.3
     /// R6: the reached card's life, the "YOUR GOAL" overline and the first-run storm line.
-    /// Scene SC1: the meter and the goal chip fade in this long after step 7's storm starts rolling in.
-    static let schoolStormHUDAfter: Double = 1.6
+    /// Scene SC1: the meter and the goal chip fade in this long after step 7's storm starts rolling in. R11 P0-6: the
+    /// storm rolls in during the rhythm step's success, so the meter is there from the storm step's first frame.
+    static let schoolStormHUDAfter: Double = 0
     static let reachedCardSeconds: Double = 1.9
     static let goalOverlineSeconds: Double = 5
     static let stormLineSeconds: Double = 3
@@ -983,6 +984,8 @@ final class GameController: ObservableObject, SceneDriver {
     /// The standalone Wing check (Settings, the Home card): its flow.
     @Published private(set) var wingCheckDisplay: WingCheckFlow.Phase = .explain
     private var school: FlightSchool?
+    /// R11 P0-6: the school's storm has been asked in (its cue played, Core's gap set).
+    private var schoolStormRolled = false
     private var standaloneWingCheck: WingCheckFlow?
     /// The practice sea of the school's steps 3–7 is flying (not recorded, no hints, no storm catch).
     private(set) var schoolSeaRun = false
@@ -1003,6 +1006,8 @@ final class GameController: ObservableObject, SceneDriver {
 
     /// The live filtered hinge angle for the diagram (150° before any reading).
     var hingeAngleForDiagram: Double { hinge.angle ?? 150 }
+    /// R11 P0-4: the wings' tuck the school read this frame (hinge, or touch), which the side-on diagram draws.
+    private(set) var diagramTuck: Double = 0
 
     /// The school's variant: touch on iPhones, a Duo set to touch or tapping, or after the step-0 escape.
     private var schoolTouch: Bool {
@@ -1018,6 +1023,7 @@ final class GameController: ObservableObject, SceneDriver {
                              asksWingCheck: hasHinge && !settings.wingCheckDone)
         s.start(at: step, time: now)
         school = s
+        schoolStormRolled = false
         ghostCuePlayed = nil
         ghostDoneStep = nil
         AppTrace.t("SWOOP-T school \(s.stepNow.key) prompt")
@@ -1156,6 +1162,7 @@ final class GameController: ObservableObject, SceneDriver {
 
     private func endSchool() {
         school = nil
+        schoolStormRolled = false
         schoolStudioPaused = false
         hud.setSchoolStormHUD(false)
         hud.setSchoolStormPushed(false)
@@ -1172,6 +1179,7 @@ final class GameController: ObservableObject, SceneDriver {
     private func stepSchool(now: TimeInterval, tuck: Double, snapshot s: FlightSnapshot, events: [FlightEvent]) {
         guard var sc = school else { return }
         if schoolStudioPaused { return }
+        diagramTuck = tuck.isFinite ? min(max(tuck, 0), 1) : 0
         publishSchoolWorld(sc, snapshot: s, now: now)
         #if DEBUG
         if schoolHeld { return }
@@ -1197,6 +1205,10 @@ final class GameController: ObservableObject, SceneDriver {
             feedback.cue(.stormPushedBack)
             announce("Perfect. Perfect landings push the storm back.", priority: 2)
             AppTrace.t("SWOOP-T school storm pushed")
+            #if DEBUG
+            // R11 P0-7: the push frame's fallback, should Scene's recoil peak not fire (it comes at 0.35 s).
+            if demo?.freezeOn == .recoil && freezePendingAt == nil { freezePendingAt = s.time + 0.6 }
+            #endif
         }
         if out.succeeded {
             feedback.cue(.schoolStep(sc.dotIndex))
@@ -1209,11 +1221,8 @@ final class GameController: ObservableObject, SceneDriver {
             rewindSchoolSea()
         }
         if out.advanced {
-            if sc.stepNow == .storm {
-                feedback.cue(.schoolStorm)
-                session?.practiceStormGap = CoreAdapter.practiceStormGap
-                SceneAdapter.rollInStorm(scene)
-            }
+            // R11 P0-6: the storm itself rolls in from `publishSchoolWorld` (the rhythm step's success, or a school
+            // started at the storm step), so it is on screen from the storm step's first frame.
             AppTrace.t("SWOOP-T school \(sc.stepNow.key) prompt")
             announce("Flight School, step \(sc.dotIndex + 1) of \(sc.stepCount). \(sc.prompt(at: now))", priority: 2)
             if sc.stepNow.isSea && !schoolSeaRun {
@@ -1229,7 +1238,19 @@ final class GameController: ObservableObject, SceneDriver {
     /// the step's start (the same wave, just ahead of the waiting bird) and handed to Scene to draw; Feel's "watch"
     /// whoosh as each demonstration starts. (R9 cut the Faster! bar and the rhythm bar.)
     private func publishSchoolWorld(_ sc: FlightSchool, snapshot s: FlightSnapshot, now: TimeInterval) {
-        hud.setSchoolStormHUD(schoolSeaRun && sc.stepNow == .storm && sc.elapsed(at: now) >= Self.schoolStormHUDAfter)
+        // R11 P0-6 / P0-7: the storm rolls in as the rhythm step succeeds (or at once when the school starts at the
+        // storm step: replays and the demo frames, which R10 never rolled in, so s1-11…13b showed no storm and its
+        // Perfect could not recoil it). `rollInStorm` is idempotent; asking every frame survives a scene reset.
+        if schoolSeaRun && sc.stormRollsIn {
+            if !schoolStormRolled {
+                schoolStormRolled = true
+                feedback.cue(.schoolStorm)
+                session?.practiceStormGap = CoreAdapter.practiceStormGap
+            }
+            SceneAdapter.rollInStorm(scene)
+        }
+        hud.setSchoolStormHUD(schoolSeaRun && sc.stormRollsIn
+                              && (sc.stepNow != .storm || sc.elapsed(at: now) >= Self.schoolStormHUDAfter))
         // Step 6 (Scene): the dotted link from the wall to the meter's storm icon for 1 s as the meter fades in, then
         // Gull Point rising on the far horizon.
         let stormElapsed = sc.stepNow == .storm ? sc.elapsed(at: now) : -1
@@ -1322,7 +1343,9 @@ final class GameController: ObservableObject, SceneDriver {
         if let w = sc.words(at: now) {
             d.words = w.text
             d.wordsAnchor = w.anchor
+            d.wordsSub = sc.subWords(at: now)
         }
+        d.showsDots = sc.showsDots
         d.stepStartedAt = sc.stepStartedAt
         d.frozenElapsed = sc.frozenElapsed
         d.bigWord = sc.bigWord
@@ -1755,7 +1778,7 @@ final class GameController: ObservableObject, SceneDriver {
                 forceHUD = true
                 caughtAt = s.time
                 hud.setCaught(true)
-                announce("Flight over. \(ShareText.distance(s.distanceMeters))", priority: 3)
+                announce("The storm caught you. \(ShareText.distance(s.distanceMeters))", priority: 3)
             case .finished:
                 handleFinished(immediate: false)
             case .tailwindStarted:
@@ -2190,7 +2213,10 @@ final class GameController: ObservableObject, SceneDriver {
             school?.demo(phase: demo.schoolPhase, time: CACurrentMediaTime())
             // R8 P0-2: every demo school frame holds its step (a running machine walked on to later steps, so
             // frames showed "7 of 7" and "Go" out of order), and the practice sea stops where the step is seen.
-            schoolHeld = true
+            // R11 P0-7: except the storm push (`school=storm:turn;freezeOn=recoil`): it runs LIVE, so the frame is the
+            // real Perfect pushing the real storm (R10's held machine never saw the Perfect, so it froze on "Stay
+            // ahead" with the knob unmoved). The recoil peak freezes it well before the step could end.
+            schoolHeld = !(step == .storm && demo.freezeOn == .recoil)
             // A `freezeOn=` school frame freezes on Scene's peak instead (R10 P1-5).
             demoSchoolFreezeX = demo.freezeOn == nil
                 ? Self.demoSchoolFreezeX(step: step, phase: demo.schoolPhase, autopilot: demo.autopilot != nil) : nil
@@ -2288,7 +2314,8 @@ final class GameController: ObservableObject, SceneDriver {
         case .soar: return 1_850
         case .land: return phase == "done" ? 3_850 : 2_650
         case .rhythm: return 7_300
-        case .storm: return 5_000
+        // R11: late enough that the storm's 2 s roll-in has played (a held frame stalls the scene's clock).
+        case .storm: return 6_300
         case .hold, .wings, .wingCheck: return nil
         }
     }

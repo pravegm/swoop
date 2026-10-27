@@ -190,8 +190,11 @@ struct FlightSchool: Equatable {
     static let praiseSeconds: Double = 0.5
     /// R9 step 6: the Perfect in the storm's guided ring passes it; this long passes it anyway.
     static let stormPassAfter: Double = 15
-    /// R10: step 6's words wait for the storm and its meter (they fade in at 1.6 s); the push holds this long.
-    static let stormWordsAfter: Double = 1.8
+    /// R11 P0-6: the storm step is never empty: the storm rolls in during the rhythm step's success (its praise holds
+    /// `FlightSchoolCopy.praiseSeconds(.rhythm)`), so the storm, its meter and "Stay ahead" are there from frame one.
+    static let stormWordsAfter: Double = 0
+    /// R11: "Stay ahead" for this long, then "Land in the gold ring" by the ring.
+    static let stormRingWordsAfter: Double = 3
     static let stormPushHold: Double = 2.4
     static let touchOfferAfter: Double = 10
     static let idleHelpAfter: Double = 6
@@ -249,25 +252,29 @@ struct FlightSchool: Equatable {
         self.asksWingCheck = asksWingCheck && !touch
     }
 
-    /// R9 (UX-ROUND-9 §1.2): 6 dots on a Duo asking the clear-side check, else 5. "Hold" folds into Wings (dot 1) and
-    /// "Up and land" is one dot (soar + land).
-    var stepCount: Int { asksWingCheck ? 6 : 5 }
+    /// R11 P1-12: one count, the same on the Duo and the iPhone: 5 dots. "Hold" folds into Wings (dot 1), "Up and land"
+    /// is one dot (soar + land), and the Duo's clear-side check is a question, not a lesson: it carries no dot (the
+    /// dots hide while it is asked), so they never jump from 1 to 3.
+    var stepCount: Int { 5 }
 
     /// The dot of the current step. Pure; tested.
     var dotIndex: Int {
-        let c = asksWingCheck ? 1 : 0
         switch stepNow {
-        case .hold, .wings: return 0
-        case .wingCheck: return 1
-        case .dive: return 1 + c
-        case .soar, .land: return 2 + c
-        case .rhythm: return 3 + c
-        case .storm: return 4 + c
+        case .hold, .wings, .wingCheck: return 0
+        case .dive: return 1
+        case .soar, .land: return 2
+        case .rhythm: return 3
+        case .storm: return 4
         }
     }
 
-    /// VoiceOver only (R9 cut the visible overline): "Flight School, step 3 of 6".
-    var overline: String { "Flight School, step \(dotIndex + 1) of \(stepCount)" }
+    /// R11 P1-12: the dots show on every lesson step (not during the clear-side check).
+    var showsDots: Bool { stepNow != .wingCheck }
+
+    /// VoiceOver only (R9 cut the visible overline): "Flight School, step 3 of 5".
+    var overline: String {
+        stepNow == .wingCheck ? "Flight School, one quick check" : "Flight School, step \(dotIndex + 1) of \(stepCount)"
+    }
 
     /// R9: the step shows its move first (the ghost, the diagram's dashed pose), for `ghostDemoSeconds`.
     func isGhostDemo(at time: Double) -> Bool {
@@ -297,13 +304,16 @@ struct FlightSchool: Equatable {
         }
     }
 
-    /// R9: the step's in-world words (≤ 3, no full stop) and where they sit; nil = none. Pure; tested.
+    /// R9: the step's in-world words (≤ 4, no full stop; "Land in the gold ring" is the one 5-word name) and where
+    /// they sit; nil = none. R11 P0-3: the rule comes before the miss ("Fold down the wave"), and the diagram's words
+    /// always sit under the diagram. Pure; tested.
     func words(at time: Double) -> (text: String, anchor: SchoolWordsAnchor)? {
         let e = elapsed(at: time)
         guard phase == .prompt else { return nil }
         switch stepNow {
         case .hold:
-            return touch ? nil : ("Hold it open", .diagram)
+            // R11: the iPhone's first step says what to do too (tester 15 thought it had frozen).
+            return (touch ? "Hold it sideways" : "Hold it open", .diagram)
         case .wings:
             if tapping { return (folded ? "Tap again" : "Tap", .diagram) }
             if folded { return (touch ? "Now let go" : "Now open", .diagram) }
@@ -316,23 +326,61 @@ struct FlightSchool: Equatable {
             case .confirm: return nil
             }
         case .dive:
-            // R10: a miss says what happened ("Opened too soon"), then the ghost replays the move.
-            if missedOnce { return (touch ? "Let go too soon" : "Opened too soon", .diagram) }
-            return (tapping ? "Tap" : (touch ? "Hold" : "Fold"), .diagram)
+            // R10: a miss says what happened ("Opened too soon"); R11: its remedy is the muted second line.
+            if missedOnce { return (tapping ? "Tapped too soon" : (touch ? "Let go too soon" : "Opened too soon"), .diagram) }
+            return (tapping ? "Tap at the top" : (touch ? "Hold down the wave" : "Fold down the wave"), .diagram)
         case .soar:
-            return (tapping ? "Tap again" : (touch ? "Let go" : "Open"), .spot)
+            return (tapping ? "Tap again" : (touch ? "Let go" : "Open"), .diagram)
         case .land:
             return ("Land here", .ring)
         case .rhythm:
             // R10: one cue on the rhythm step, in plain words.
             return e < 4 ? (touch ? "One hold per wave" : "One fold per wave", .spot) : nil
         case .storm:
-            // R10 P0-1: nothing before the storm and its meter are on screen; then the rule, stated outright.
+            // R11 P0-6: the storm and its meter are there from the first frame, and so are the words; P0-7: the
+            // Perfect's push is said by the meter it moves; P1-10: never "Stay ahead" twice in a row.
             if pushedAt != nil { return ("Perfect pushes it back", .meter) }
             if e < Self.stormWordsAfter { return nil }
-            return e < 5 ? ("Stay ahead", .meter) : ("Land a Perfect", .spot)
+            return e < Self.stormRingWordsAfter ? ("Stay ahead", .meter) : ("Land in the gold ring", .ring)
         }
     }
+
+    /// R11 P0-3: the muted second line under the words: the rhythm on the first move ("One fold per wave"), when to
+    /// open once the ghost has shown the dive, the remedy after a miss, and what the finger does to land. ≤ 7 words, no
+    /// full stop. Pure; tested.
+    func subWords(at time: Double) -> String? {
+        guard phase == .prompt, words(at: time) != nil else { return nil }
+        let e = elapsed(at: time)
+        switch stepNow {
+        case .wings:
+            if tapping || folded { return nil }
+            return touch ? "One hold per wave" : "One fold per wave"
+        case .dive:
+            if missedOnce {
+                return tapping ? "Tap again at the bottom" : (touch ? "Keep holding to the bottom" : "Stay folded to the bottom")
+            }
+            guard e >= Self.ghostDemoSeconds else { return nil }
+            return tapping ? "Tap again at the bottom" : (touch ? "Let go at the bottom" : "Open at the bottom")
+        case .land:
+            return tapping ? "Tap to come down" : (touch ? "Hold to come down" : "Fold to come down")
+        case .hold, .wingCheck, .soar, .rhythm, .storm:
+            return nil
+        }
+    }
+
+    /// R11 P0-7: the school meter's lead this frame: after step 6's Perfect it jumps away from the storm (Scene's
+    /// recoil while it lasts, the push itself without a scene). Pure; tested (live: a Perfect raises it).
+    func meterLead(_ lead: Double, recoil: Double = 0) -> Double {
+        let pushed = stepNow == .storm && pushedAt != nil
+        return AppRules.schoolMeterLead(lead, pushed: pushed, recoil: stepNow == .storm ? recoil : 0)
+    }
+
+    /// R11 P0-6: the storm is (or is rolling) in: the storm step itself, and the rhythm step's success before it (the
+    /// roll-in plays in the transition). Also true for a school started at the storm step (demo, replays). Pure; tested.
+    var stormRollsIn: Bool { stepNow == .storm || (stepNow == .rhythm && phase == .praise) }
+
+    /// R11 P0-7: the meter's "+" gap pop shows while the push holds. Pure; tested.
+    var showsGapPop: Bool { stepNow == .storm && pushedAt != nil }
 
     /// The live diagram rides the bird until step 3 (Down) has passed (UX-ROUND-9 §1.1 rule 6).
     /// R10 P0-3: the one diagram shows for the moves it can show (hold, wings, dive, soar) and always draws the pose its
@@ -465,9 +513,11 @@ struct FlightSchool: Equatable {
             frozenElapsed = Self.ghostDemoSeconds + 1
             if stepNow == .wings { folded = false }
         case "1", "2", "3":
-            // R7: step 7's three lines as held frames (a 2 s wall-clock capture caught the launch's portrait frame).
-            let k = Double(Int(key) ?? 1)
-            stepStartedAt = time - (k - 1) * Self.stormLineSeconds - (k > 1 ? 1.0 : 0.5)
+            // R7: the storm step's moments as held frames. R11: 1 = its first frame (the storm in, "Stay ahead" by
+            // the meter), 2 = Gull Point risen ("Land in the gold ring" by the ring), 3 = the ring ahead.
+            let k = min(max(Int(key) ?? 1, 1), 3)
+            let at: [Double] = [0.3, Self.stormRingWordsAfter + 0.4, Self.stormRingWordsAfter + 2.4]
+            stepStartedAt = time - at[k - 1]
         default:
             if let p = WingCheckFlow.Phase(rawValue: key) { wingCheck.force(p) }
         }
@@ -760,7 +810,7 @@ enum FlightSchoolCopy {
             if tapping { return "Tap at the bottom. Fly!" }
             return touch ? "Let go at the bottom. Fly!" : "Open at the bottom. Fly!"
         case .land:
-            return "Land in the ring ahead."
+            return "Land in the gold ring."
         case .rhythm:
             if tapping { return "Tap down, tap up, each wave." }
             if elapsed >= FlightSchool.rhythmSwapAfter { return touch ? "Hold down, let go up." : "Fold down, open up." }
@@ -803,8 +853,18 @@ enum FlightSchoolCopy {
     static func praiseLine(_ step: SchoolStep) -> String? { nil }
 
     /// How long the world pauses on a success before the next step (no words).
-    /// R10 P0-1: the land step's Perfect holds long enough to read; others move on.
-    static func praiseSeconds(_ step: SchoolStep) -> Double { step == .land ? 1.4 : FlightSchool.praiseSeconds }
+    /// R10 P0-1: the land step's Perfect holds long enough to read; others move on. R11 P0-6: the rhythm step's success
+    /// holds while the storm rolls in, so the storm step opens with the storm, its meter and its words on screen.
+    static func praiseSeconds(_ step: SchoolStep) -> Double {
+        switch step {
+        case .land: return 1.4
+        case .rhythm: return rhythmToStormSeconds
+        default: return FlightSchool.praiseSeconds
+        }
+    }
+
+    /// The rhythm → storm transition (Scene's roll-in takes 2 s; most of it plays here).
+    static let rhythmToStormSeconds: Double = 1.6
 }
 
 // MARK: - The route and the objective (D3, UX §4)
@@ -940,6 +1000,8 @@ struct ResultsHeadline: Equatable {
         var passed: Int
         var lastPassed: String = ""
         var newLighthouse = false
+        /// R11 P1-10: how many of them were new on the route ("2 new lighthouses"); 0 = unknown (one, if new).
+        var newLighthouses = 0
         var previousBest: Double = 0
         var isNewBest = false
         var firstFlight = false
@@ -971,21 +1033,33 @@ struct ResultsHeadline: Equatable {
             default: what = "\(i.passed) lighthouses, to \(name)"
             }
             headline = "You made it past \(what)" + (i.newLighthouse ? "!" : "")
-            if i.newLighthouse { chip = "New lighthouse" }
+            if i.newLighthouse { chip = Self.newChip(count: i.newLighthouses) }
         } else {
             headline = "You flew \(flown)"
         }
 
+        // R11 P0-2 / P1-10: the one quiet line says WHY the flight ended ("The storm caught you 2.2 km before Kestrel
+        // Head."); the "… is 2.2 km further." line repeated the tracker above it and is gone. A flight ended from the
+        // cover has no cause to tell (the tracker says the rest).
         let next = Lighthouses.next(afterMeters: i.meters)
-        var line = "\(next.name) is \(ShareText.distance(next.metersFurther)) further."
-        if i.firstFlight && i.passed == 0 { line += " You'll get there." }
-        let m = i.meters.isFinite ? max(i.meters, 0) : 0
-        if !i.isNewBest && i.previousBest > 0 && m < i.previousBest && i.previousBest - m <= i.previousBest * 0.10 {
-            line = "Just \(ShareText.distance(i.previousBest - m, roundUp: true)) short of your best."
+        var lines: [String] = []
+        if i.dailyPractice {
+            lines.append("Practice doesn't count for today.")
+        } else if !i.endedEarly {
+            var line = "The storm caught you \(ShareText.distance(next.metersFurther)) before \(next.name)."
+            if i.firstFlight && i.passed == 0 { line += " You'll get there." }
+            let m = i.meters.isFinite ? max(i.meters, 0) : 0
+            if !i.isNewBest && i.previousBest > 0 && m < i.previousBest && i.previousBest - m <= i.previousBest * 0.10 {
+                line = "The storm caught you \(ShareText.distance(i.previousBest - m, roundUp: true)) short of your best."
+            }
+            lines.append(line)
         }
-        if i.dailyPractice { line = "Practice doesn't count for today." }
-        var lines = [line]
         if i.dailyScored { lines.append("New waves tomorrow.") }
         return ResultsHeadline(overline: overline, headline: headline, chip: chip, lines: lines)
+    }
+
+    /// "New lighthouse", or "2 new lighthouses" when more than one was new. Pure; tested.
+    static func newChip(count: Int) -> String {
+        count >= 2 ? "\(count) new lighthouses" : "New lighthouse"
     }
 }

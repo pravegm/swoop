@@ -89,6 +89,10 @@ struct SchoolDisplay: Equatable {
     /// R9: the step's ≤ 3 in-world words and where they sit (nil: none).
     var words: String?
     var wordsAnchor: SchoolWordsAnchor = .diagram
+    /// R11 P0-3: the muted second line under the words ("Open at the bottom", the remedy after a miss).
+    var wordsSub: String?
+    /// R11 P1-12: the dots hide while the clear-side check (a question, not a lesson step) is asked.
+    var showsDots = true
     /// When the step began (the diagram's dashed ghost pose plays from it).
     var stepStartedAt: Double = 0
     /// Demo frames: the step's held moment (overrides the clock).
@@ -894,10 +898,12 @@ enum AppRules {
         }
     }
 
-    /// R10 P0-2: the countdown pill's text: on the first real flight the goal sentence comes first. Pure; tested.
+    /// The countdown pill's text. R10 put the goal sentence over the first flight's countdown; R11 P1-10: Home already
+    /// shows it (testers read it three times, and the iPhone cut it to "lighthouses...."), so the countdown says only
+    /// what the hands do. `firstFlight` is kept for the call site. Pure; tested.
     static func countdownText(touch: Bool, flat: Bool, nudge: Bool, firstFlight: Bool) -> String {
-        let line = countdownLine(touch: touch, flat: flat, nudge: nudge)
-        return firstFlight && !flat && !nudge ? RouteRules.objective + "\n" + line : line
+        _ = firstFlight
+        return countdownLine(touch: touch, flat: flat, nudge: nudge)
     }
 
     /// The countdown's line (UX-A4).

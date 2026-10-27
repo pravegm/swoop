@@ -74,6 +74,8 @@ struct BirdsView: View {
                                         .opacity(dark ? Double(BirdArt.previewHaloAlpha) : 0), radius: 14)
                     }
                     .offset(y: reduceMotion ? 0 : CGFloat(5 * sin(t * 1.7)))
+                    // R11 P0-8: the bird (and its trail) faces the flight's direction.
+                    .scaleEffect(x: info.mirrored ? -1 : 1, y: 1)
                 }
             }
             .frame(height: min(c ? 96 : 150, Self.tileBirdHeight * Self.previewCap))
@@ -85,7 +87,7 @@ struct BirdsView: View {
                     .font(SwoopType.title(c))
                     .foregroundStyle(SwoopTheme.foam)
                     .lineLimit(1)
-                Text(locked ? "Reach rank \(bird.unlockRank + 1) · \(GoalCatalog.rankTitle(bird.unlockRank))" : bird.blurb)
+                Text(locked ? "Reach level \(bird.unlockRank + 1) · \(GoalCatalog.rankTitle(bird.unlockRank))" : bird.blurb)
                     .font(SwoopType.body(c))
                     .foregroundStyle(SwoopTheme.mist)
                     .lineLimit(2)
@@ -147,7 +149,7 @@ struct BirdsView: View {
             if unlocked { controller.chooseBird(bird.id) }
         } label: {
             VStack(spacing: 2) {
-                BirdSideView(bird: bird, tuck: 0.15, flap: 0, silhouette: !unlocked, fill: 0.86)
+                BirdSideView(bird: bird, tuck: 0.15, flap: 0, silhouette: !unlocked, fill: 0.86, facingLeft: info.mirrored)
                     .frame(height: Self.tileBirdHeight)
                     .opacity(unlocked ? 1 : Self.lockedOpacity)
                 tileLabel(unlocked ? bird.name : label, locked: !unlocked)

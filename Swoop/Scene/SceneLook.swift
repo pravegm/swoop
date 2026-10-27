@@ -388,6 +388,14 @@ enum SceneLook {
     static let caughtWet: CGFloat = 0.15
     static let caughtRipples: [Double] = [0.6, 1.1, 1.6]
     static let caughtPushIn: Double = 0.04
+    /// R11 (ROUND-11 P0-1, "no straight edges, ever"): every storm layer ends in a smoothstep ramp, never a sprite
+    /// edge (`SceneStormTint`). The sky shade's ramp is this fraction of the width (≥ 300 pt); once caught it slides
+    /// past the ahead edge, so the shade covers the whole screen.
+    static let skyShadeRamp: CGFloat = 0.55
+    /// The grey sea wash ramps out over this width (pt), ending `stormShadeReach` ahead of the edge.
+    static let stormShadeRamp: CGFloat = 504
+    /// The caught warm strip ramps in over 300 pt starting this far (pt) behind the front.
+    static let caughtStripBehind: CGFloat = 150
 
     // MARK: Props (ART-S13)
 
@@ -458,10 +466,11 @@ enum SceneLook {
     /// The far swells at 70 % (calmer), and the sun higher (0.24 h instead of 0.16 h).
     static let practiceFarAlpha: CGFloat = 0.7
     static let practiceSunLift: CGFloat = 0.24
-    /// Step 7's roll-in: the wall slides in from off screen to `stormEdgeFar` over 2 s, one glow (no bolt, no flash)
-    /// names it at +1.2 s, and the rain comes in last (+1.6 … +2.6 s).
+    /// Step 7's roll-in: the wall slides in to `rollInEdge` over 2 s, one glow (no bolt, no flash) names it at +1.2 s,
+    /// and the rain comes in last (+1.6 … +2.6 s). R11 (ROUND-11 P0-6, "the storm step is never empty"): it starts
+    /// already on screen (its front at u = 40, the dark deck behind it), so the step's first frame shows the storm.
     static let rollInTime: Double = 2.0
-    static let rollInFrom: CGFloat = -260
+    static let rollInFrom: CGFloat = 40
     static let rollInGlowAt: Double = 1.2
     static let rollInRainFrom: Double = 1.6
     static let rollInRainFull: Double = 2.6
@@ -593,6 +602,10 @@ enum SceneLook {
     static let ringBreathHz: Double = 1.2
     static let ringAhead: Double = 200
     static let ringNear: Double = 120
+    /// R11 (ROUND-11 P0-5): the live ring ahead is framed this far (pt) in from the sides and the visible bottom (Skip,
+    /// the step dots), and `ringTopInset` under the visible top (the pause button and the meter).
+    static let ringEdgeInset: CGFloat = 200
+    static let ringTopInset: CGFloat = 120
     /// The drop marker: 3 pt dots every 9 pt from 96 pt above the ring, under a 22 pt down-chevron bobbing ±6 pt at 1 Hz.
     static let dropHeight: CGFloat = 96
     static let dropDotGap: CGFloat = 9

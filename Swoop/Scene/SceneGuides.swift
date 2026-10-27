@@ -189,8 +189,10 @@ final class SceneGuides {
     }
 }
 
-/// One swell's cues: the fold zone band (+ glow), the fold chevrons and book at the crest, the open book and lift
-/// chevrons at the launch, and the done bead.
+/// One swell's cues: the fold zone band (+ glow) with its fold chevrons, the lift chevrons at the launch, and the done
+/// bead. R11 (ROUND-11 P0-4): no book glyphs on the water any more. The fold book at the crest sat on the waiting gull's
+/// back as a second fold diagram (s1-05, s1-06); the App's diagram is the one tuck indicator. (`bookPath` and
+/// `bookAngle` stay as pure art helpers.)
 @MainActor
 final class SceneSwellCue {
     let root: SKNode
@@ -198,8 +200,6 @@ final class SceneSwellCue {
     private var segments: [SKSpriteNode] = []
     private var glows: [SKSpriteNode] = []
     private var foldChevrons: [SKShapeNode] = []
-    private let foldBook: SKShapeNode
-    private let openBook: SKShapeNode
     private var liftChevrons: [SKShapeNode] = []
     private let bead: SKNode
     private(set) var swell = SceneSwell(from: 0, to: 0)
@@ -220,8 +220,6 @@ final class SceneSwellCue {
     init() {
         root = SKNode()
         band = SKNode()
-        foldBook = SKShapeNode()
-        openBook = SKShapeNode()
         bead = SKNode()
         root.addChild(band)
         let tex = SceneTextures.ribbon
@@ -253,15 +251,6 @@ final class SceneSwellCue {
             if i < 3 { foldChevrons.append(n) } else { liftChevrons.append(n) }
         }
         let ink = ScenePaint.ui(ScenePalette.ink, alpha: 0.4)
-        foldBook.fillColor = gold
-        openBook.fillColor = teal
-        for b in [foldBook, openBook] {
-            b.strokeColor = ink
-            b.lineWidth = 1
-            b.lineJoin = .round
-            b.zPosition = 0.4
-            root.addChild(b)
-        }
         let r = SceneLook.beadSize * 0.5
         let disc = SKShapeNode(circleOfRadius: r)
         disc.fillColor = gold
@@ -376,7 +365,7 @@ final class SceneSwellCue {
             }
         }
 
-        // Fold chevrons running down the zone, and the closing book at the crest.
+        // Fold chevrons running down the zone.
         let showFold = fold && a > 0.002 && !done
         let zoneLength = max(zoneEnd - from, 1)
         for (i, c) in foldChevrons.enumerated() {
@@ -395,25 +384,9 @@ final class SceneSwellCue {
             let edge = min(d / (zoneLength * 0.12), (zoneLength - d) / (zoneLength * 0.12), 1)
             c.alpha = SceneLook.cueChevronAlpha * a * CGFloat(max(edge, 0))
         }
-        foldBook.isHidden = !(fold && a > 0.002)
-        if !foldBook.isHidden {
-            foldBook.path = SceneGuides.bookPath(angle: SceneGuides.bookAngle(time: t, closing: true, still: still))
-            foldBook.position = CGPoint(x: CGFloat(from - originX), y: CGFloat(height(from)) + SceneLook.bookLift * r)
-            foldBook.setScale(r)
-            foldBook.alpha = a
-        }
-
-        // The opening book at the launch (just past the trough) and the lift chevrons above it.
+        // The lift chevrons at the launch (just past the trough), where the open book used to stand.
         let showOpen = opens && a > 0.002
-        openBook.isHidden = !showOpen
         let launchX = to + 60
-        if showOpen {
-            openBook.path = SceneGuides.bookPath(angle: SceneGuides.bookAngle(time: t, closing: false, still: still))
-            openBook.position = CGPoint(x: CGFloat(launchX - originX),
-                                        y: CGFloat(height(launchX)) + SceneLook.bookLift * r)
-            openBook.setScale(r)
-            openBook.alpha = a
-        }
         for (i, c) in liftChevrons.enumerated() {
             c.isHidden = !showOpen
             guard showOpen else { continue }

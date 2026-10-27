@@ -211,9 +211,10 @@ enum SceneTextures {
     }
 
     /// A rain sheet hanging from the storm's base: streaks inside a soft column with soft ends (ART §3: α 0 → 1 over
-    /// the top 30 %, back to 0 over the bottom 15 %, never a hard rectangle).
+    /// the top 30 %, back to 0 over the bottom 15 %, never a hard rectangle). R11: its sides feather too (the outer
+    /// 30 % each side), so a sheet never shows a straight edge either.
     static var rainSheet: SKTexture {
-        make("rainsheet2", width: 64, height: 256, scale: 1) { ctx, s in
+        make("rainsheet3", width: 64, height: 256, scale: 1) { ctx, s in
             var rng = SceneRNG(seed: 0x5EE7_0A)
             ctx.saveGState()
             ctx.clip(to: CGRect(x: 8, y: 0, width: s.width - 16, height: s.height))
@@ -231,6 +232,11 @@ enum SceneTextures {
                        to: CGPoint(x: 0, y: y0 + len))
                 ctx.restoreGState()
             }
+            ctx.saveGState()
+            ctx.setBlendMode(.destinationIn)
+            linear(ctx, [white(0), white(1), white(1), white(0)], [0, 0.3, 0.7, 1],
+                   from: CGPoint(x: 0, y: 0), to: CGPoint(x: s.width, y: 0))
+            ctx.restoreGState()
         }
     }
 
@@ -328,25 +334,79 @@ enum SceneTextures {
         return f
     }
 
-    /// The storm cloud tinted for one sky (cached per key).
-    static func stormCloud(key: String, body: RGBA, top: RGBA, rim: RGBA, rain: RGBA) -> SKTexture {
-        let k = "stormcloud6-" + key
-        if let t = cache[k] { return t }
+    /// One sky's storm textures: the cloud, and its backing's body (identical columns) and ramp (R11).
+    struct StormCloudSet {
+        let cloud: SKTexture
+        let backingBody: SKTexture
+        let backingRamp: SKTexture
+    }
+
+    private static var stormSets: [String: StormCloudSet] = [:]
+
+    /// The storm cloud tinted for one sky, with its backing (cached per key). R11: the R10 backing was the cloud's two
+    /// leftmost columns stretched (a clamp-to-edge smear of the anvil's ragged top); now it is the cloud's colour
+    /// averaged across its body and blurred down the rows (`SceneStormCloud.backingProfile`), so stretching it is exact.
+    static func stormCloudSet(key: String, body: RGBA, top: RGBA, rim: RGBA, rain: RGBA) -> StormCloudSet {
+        if let set = stormSets[key] { return set }
         let f = stormCloudField
         let bytes = SceneStormCloud.pixels(f, body: body, top: top, rim: rim, rain: rain)
-        let t = texture(fromPremultiplied: bytes, width: f.w, height: f.h)
+        let cloud = texture(fromPremultiplied: bytes, width: f.w, height: f.h)
+        let profile = SceneStormCloud.backingProfile(bytes, w: f.w, h: f.h)
+        let bodyBytes = SceneStormTint.pixels(profile: profile, rows: f.h, columns: 2, ramp: .flat)
+        let rampBytes = SceneStormTint.pixels(profile: profile, rows: f.h, columns: 64, ramp: .falling)
+        let set = StormCloudSet(cloud: cloud,
+                                backingBody: texture(fromPremultiplied: bodyBytes, width: 2, height: f.h),
+                                backingRamp: texture(fromPremultiplied: rampBytes, width: 64, height: f.h))
+        stormSets[key] = set
+        return set
+    }
+
+    /// The storm cloud tinted for one sky (cached per key).
+    static func stormCloud(key: String, body: RGBA, top: RGBA, rim: RGBA, rain: RGBA) -> SKTexture {
+        stormCloudSet(key: key, body: body, top: top, rim: rim, rain: rain).cloud
+    }
+
+    // MARK: Soft spans (R11, `SceneStormTint`)
+
+    /// White, opaque: the body of a tinted soft span.
+    static var softBody: SKTexture {
+        let k = "softbody"
+        if let t = cache[k] { return t }
+        let bytes = SceneStormTint.pixels(profile: SceneStormTint.whiteProfile(rows: 4), rows: 4, columns: 4, ramp: .flat)
+        let t = texture(fromPremultiplied: bytes, width: 4, height: 4)
         cache[k] = t
         return t
     }
 
-    /// The left two columns of a storm-cloud texture, stretched behind it so the storm runs on off screen.
-    static func stormBacking(key: String, of tex: SKTexture) -> SKTexture {
-        let k = "stormbacking6-" + key
+    /// White, a smoothstep across its width: 1 → 0 (falling) or 0 → 1 (rising).
+    static func softRamp(rising: Bool) -> SKTexture {
+        let k = rising ? "softramp-rise" : "softramp-fall"
         if let t = cache[k] { return t }
-        let f = stormCloudField
-        let cols = 2 / CGFloat(max(f.w, 2))
-        let t = SKTexture(rect: CGRect(x: 0, y: 0, width: cols, height: 1), in: tex)
-        t.filteringMode = .linear
+        let bytes = SceneStormTint.pixels(profile: SceneStormTint.whiteProfile(rows: 2), rows: 2, columns: 256,
+                                          ramp: rising ? .rising : .falling)
+        let t = texture(fromPremultiplied: bytes, width: 256, height: 2)
+        cache[k] = t
+        return t
+    }
+
+    /// The caught warm strip's body: the horizon band (0 → 1 → 0 down the rows), every column the same.
+    static var stripBody: SKTexture {
+        let k = "stripbody"
+        if let t = cache[k] { return t }
+        let bytes = SceneStormTint.pixels(profile: SceneStormTint.bandProfile(rows: 64), rows: 64, columns: 4,
+                                          ramp: .flat)
+        let t = texture(fromPremultiplied: bytes, width: 4, height: 64)
+        cache[k] = t
+        return t
+    }
+
+    /// The caught warm strip's ramp: the same band, rising 0 → 1 across the width.
+    static var stripRamp: SKTexture {
+        let k = "stripramp"
+        if let t = cache[k] { return t }
+        let bytes = SceneStormTint.pixels(profile: SceneStormTint.bandProfile(rows: 64), rows: 64, columns: 128,
+                                          ramp: .rising)
+        let t = texture(fromPremultiplied: bytes, width: 128, height: 64)
         cache[k] = t
         return t
     }
@@ -398,6 +458,35 @@ enum SceneTextures {
             ctx.setBlendMode(.destinationIn)
             linear(ctx, [white(0), white(1), white(1), white(0)], [0, 0.3, 0.7, 1],
                    from: CGPoint(x: 0, y: 0), to: CGPoint(x: 0, y: s.height))
+            ctx.restoreGState()
+        }
+    }
+
+    /// R11 (ROUND-11 P0-9): the lighthouse's headland (`SceneHeadland`), white (the sprite tints it stone): its
+    /// irregular outline filled, the alpha following `SceneHeadland.rockFade` down the rows, so it dissolves under the
+    /// water instead of ending in a slab.
+    static var headland: SKTexture {
+        let box = SceneHeadland.box
+        return make("headland1", width: box.width, height: box.height, scale: 2) { ctx, s in
+            // Node units (y up) → the context (y down, origin top-left).
+            func q(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x - box.minX, y: box.maxY - p.y) }
+            let pts = SceneHeadland.outline.map(q)
+            guard let first = pts.first else { return }
+            ctx.saveGState()
+            ctx.move(to: first)
+            for pt in pts.dropFirst() { ctx.addLine(to: pt) }
+            ctx.closePath()
+            ctx.clip()
+            let n = 14
+            var colors: [UIColor] = []
+            var locations: [CGFloat] = []
+            for k in 0...n {
+                let f = CGFloat(k) / CGFloat(n)
+                let y = box.maxY - box.height * f
+                colors.append(white(SceneHeadland.rockFade(y: y)))
+                locations.append(f)
+            }
+            linear(ctx, colors, locations, from: CGPoint(x: 0, y: 0), to: CGPoint(x: 0, y: s.height))
             ctx.restoreGState()
         }
     }

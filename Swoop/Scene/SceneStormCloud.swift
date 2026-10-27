@@ -32,6 +32,12 @@ enum SceneStormCloud {
     static let baseY: CGFloat = 170
     /// Texture pixels per nominal point (the cloud is drawn at about 0.33 × nominal, so this is ≥ 1 px per screen pt).
     static let pixelsPerPoint: CGFloat = 0.4
+    /// R11 (ROUND-11 P0-1): the cloud's behind (left) edge fades from alpha 0 at x = 0 to full at this nominal x, so the
+    /// sprite never ends in a straight column; `SceneStorm`'s backing (a stretched band with no detail) takes over
+    /// behind it. Together with the empty top, front and base, no edge of the texture ever shows.
+    static let leftFade: CGFloat = 360
+    /// The backing ramps out under the cloud over this nominal width, from `leftFade` on (inside the solid body).
+    static let backingRamp: CGFloat = 260
     /// Where the internal lightning glows sit (nominal), well inside the cloud.
     static let glowSpots: [CGPoint] = [CGPoint(x: 940, y: 400), CGPoint(x: 700, y: 330), CGPoint(x: 800, y: 540)]
 
@@ -115,13 +121,19 @@ enum SceneStormCloud {
         return smooth(0, soft, d)
     }
 
-    /// The final alpha (cloud over rain) of pixel (i, j), row 0 at the top.
+    /// The behind-edge fade at nominal x: 0 at the box's left edge, 1 from `leftFade` on (R11).
+    static func leftFadeK(x: Float) -> Float {
+        smooth(0, Float(leftFade), x)
+    }
+
+    /// The final alpha (cloud over rain, with the behind-edge fade) of pixel (i, j), row 0 at the top.
     static func alpha(_ f: Field, i: Int, j: Int) -> Float {
         guard i >= 0, i < f.w, j >= 0, j < f.h else { return 0 }
         let k = j * f.w + i
         let y = Float(height) - (Float(j) + 0.5) * Float(1 / pixelsPerPoint)
+        let x = (Float(i) + 0.5) * Float(1 / pixelsPerPoint)
         let a = cloudAlpha(depth: f.depth[k], y: y)
-        return a + f.rain[k] * (1 - a)
+        return (a + f.rain[k] * (1 - a)) * leftFadeK(x: x)
     }
 
     // MARK: Tint
@@ -153,6 +165,7 @@ enum SceneStormCloud {
             let v = smooth(base, 690, y)
             for i in 0..<w {
                 let k = j * w + i
+                let fade = leftFadeK(x: (Float(i) + 0.5) * px)
                 let d = f.depth[k]
                 let a = cloudAlpha(depth: d, y: y)
                 var c: (Float, Float, Float) = (0, 0, 0)
@@ -173,10 +186,11 @@ enum SceneStormCloud {
                 }
                 let ra = f.rain[k] * (1 - a)
                 let alpha = min(max(a + ra, 0), 1)
-                out[k * 4] = byte(c.0 * a + rainC.0 * ra)
-                out[k * 4 + 1] = byte(c.1 * a + rainC.1 * ra)
-                out[k * 4 + 2] = byte(c.2 * a + rainC.2 * ra)
-                out[k * 4 + 3] = byte(alpha)
+                // Premultiplied, so the behind-edge fade scales all four channels.
+                out[k * 4] = byte((c.0 * a + rainC.0 * ra) * fade)
+                out[k * 4 + 1] = byte((c.1 * a + rainC.1 * ra) * fade)
+                out[k * 4 + 2] = byte((c.2 * a + rainC.2 * ra) * fade)
+                out[k * 4 + 3] = byte(alpha * fade)
             }
         }
         return out
@@ -199,7 +213,7 @@ enum SceneStormCloud {
                 let dx = x - Float(spot.x), dy = y - Float(spot.y)
                 let g = exp(-(dx * dx + dy * dy) / (2 * sigma * sigma))
                 let fk = min(fj, f.h - 1) * f.w + min(fi, f.w - 1)
-                let a = cloudAlpha(depth: f.depth[fk], y: y) * g
+                let a = cloudAlpha(depth: f.depth[fk], y: y) * g * leftFadeK(x: x)
                 let b = byte(a)
                 let k = (j * w + i) * 4
                 out[k] = b
@@ -209,6 +223,58 @@ enum SceneStormCloud {
             }
         }
         return (w, h, out)
+    }
+
+    // MARK: The backing (R11)
+
+    /// The storm's backing, one premultiplied RGBA8 colour per row (row 0 at the top, `h` rows): the tinted cloud
+    /// `px` (`w` × `h`) averaged across its body (nominal x from `leftFade` + 40 to `leftFade` + 300), then blurred
+    /// down the rows (two box passes of ±10 rows, ≈ ±25 pt). It has no fine detail, so stretching it to any width (the
+    /// storm running on off screen behind the cloud, at any catch sweep or recoil) can never streak or smear.
+    static func backingProfile(_ px: [UInt8], w: Int, h: Int) -> [UInt8] {
+        guard w > 1, h > 0, px.count >= w * h * 4 else { return [UInt8](repeating: 0, count: max(h, 0) * 4) }
+        let ppp = Float(pixelsPerPoint)
+        let i0 = min(max(Int((Float(leftFade) + 40) * ppp), 0), w - 1)
+        let i1 = min(max(Int((Float(leftFade) + 300) * ppp), i0 + 1), w)
+        let n = Float(i1 - i0)
+        var rows = [Float](repeating: 0, count: h * 4)
+        for j in 0..<h {
+            for i in i0..<i1 {
+                let k = (j * w + i) * 4
+                for c in 0..<4 { rows[j * 4 + c] += Float(px[k + c]) }
+            }
+            for c in 0..<4 { rows[j * 4 + c] /= n }
+        }
+        // Rows outside the texture count as empty, so nothing is pulled up into its top or bottom.
+        let r = 10
+        let window = Float(2 * r + 1)
+        for _ in 0..<2 {
+            var next = rows
+            for j in 0..<h {
+                var sum: [Float] = [0, 0, 0, 0]
+                for jj in max(j - r, 0)...min(j + r, h - 1) {
+                    for c in 0..<4 { sum[c] += rows[jj * 4 + c] }
+                }
+                for c in 0..<4 { next[j * 4 + c] = sum[c] / window }
+            }
+            rows = next
+        }
+        // And a taper over the top 24 rows and the bottom 12, so the sprite's top and bottom rows are always empty.
+        for j in 0..<h {
+            let k = smooth(0, 24, Float(j)) * smooth(0, 12, Float(h - 1 - j))
+            for c in 0..<4 { rows[j * 4 + c] *= k }
+        }
+        var out = [UInt8](repeating: 0, count: h * 4)
+        for j in 0..<h {
+            let a = min(max(rows[j * 4 + 3], 0), 255)
+            out[j * 4 + 3] = UInt8(a + 0.5 > 255 ? 255 : a + 0.5)
+            for c in 0..<3 {
+                // Premultiplied: a colour channel never exceeds the alpha.
+                let v = min(max(rows[j * 4 + c], 0), a)
+                out[j * 4 + c] = UInt8(v + 0.5 > 255 ? 255 : v + 0.5)
+            }
+        }
+        return out
     }
 
     // MARK: Noise

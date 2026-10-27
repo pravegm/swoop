@@ -104,6 +104,8 @@ enum SceneAdapter {
         case .some(.land): return .landing(at: practiceLandingX)
         // R10 P0-3: one cue on the rhythm step (the fold zone on each swell; no books, no ghost, no diagram).
         case .some(.rhythm): return .foldPathAhead
+        // R11 P1-10: "Land in the gold ring" names a ring that is there (R10's storm step had none).
+        case .some(.storm): return .landingAhead
         default: return SceneGuide.none
         }
     }

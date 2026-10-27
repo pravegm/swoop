@@ -34,11 +34,13 @@ enum ShareText {
     }
 
     /// The HUD distance: whole metres below 1 km ("842" "m"), then kilometres with ONE decimal ("12.8" "km", R9 UX
-    /// §4.2: the HUD ticks every 100 m), rounded down, whatever the locale.
+    /// §4.2: the HUD ticks every 100 m), rounded down, whatever the locale. R11 P1-10: one format everywhere, so a
+    /// whole kilometre drops its ".0" ("4 km", never "4.0 km").
     static func hudDistance(_ meters: Double) -> (value: String, unit: String) {
         let m = meters.isFinite ? max(meters, 0) : 0
         if m < 1000 { return (String(Int(m.rounded(.down))), "m") }
         let tenths = Int((m / 100).rounded(.down))
+        if tenths % 10 == 0 { return (grouped(tenths / 10), "km") }
         return ("\(grouped(tenths / 10)).\(tenths % 10)", "km")
     }
 

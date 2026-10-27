@@ -75,7 +75,10 @@ import UIKit
 // Round 7 keys
 // - `session=first:home|school|run|results|home2|route|goals`: one coherent first session (fresh install; the school
 //                                 done from `run` on; run 1 recorded from `results` on). Logs `SWOOP-T session first <x>`.
-// - `school=storm:1|2|3`          step 7 held on its 1st / 2nd / 3rd line.
+// - `school=storm:1|2|3`          the storm step held at a moment (R11: 1 = its first frame, the storm in and
+//                                 "Stay ahead"; 2 = "Land in the gold ring" by the ring; 3 = the ring ahead). R11:
+//                                 `school=storm:turn;freezeOn=recoil` runs the step LIVE (not held) and freezes on
+//                                 Scene's recoil peak, so the frame is the real Perfect pushing the real storm.
 // - `school=wingcheck:<phase>`    the Settings Wing check (R7: no longer in the school) at that phase.
 // - `settingsWhy`                 Settings with the Bird side "Why?" explainer open.
 // - `shortCountdown`              the run uses the 1.5 s "Ready · Go" restart countdown (with `freezeOn=countdown`

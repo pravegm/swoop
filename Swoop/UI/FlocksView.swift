@@ -38,7 +38,8 @@ struct FlocksView: View {
     /// R10 P0-4: what level `r` opens, each reward named for what it is ("New bird: Tern · New trail: Coral"); level 1
     /// is what you start with. Pure; tested.
     nonisolated static func rewardLine(level r: Int) -> String {
-        if r <= 0 { return "You start with the Gull and Golden Hour" }
+        // R11 P1-10: a noun phrase like every other level (it was the sentence "You start with …").
+        if r <= 0 { return "Starter bird: Gull · Sky: Golden Hour" }
         let opened = ProgressRules.unlocks(from: r - 1, to: r)
         let line = RankUpBanner.unlockLine(birds: opened.birds.map { BirdCatalog.bird($0).name },
                                            skies: opened.skies.map { SkyCatalog.sky($0).name },
@@ -47,11 +48,22 @@ struct FlocksView: View {
         return line.isEmpty ? "A new title" : line
     }
 
-    /// The plain progress line (ROUND-10 P0-4): "Level 2 of 15 · next: New bird: Tern". Pure; tested.
+    /// R11 P1-10: what level `r` opens as a phrase with no colon, for the progress line ("Tern", "Coral trail",
+    /// "Rose Dusk sky"). Pure; tested.
+    nonisolated static func rewardPhrase(level r: Int) -> String {
+        guard r > 0 else { return "Gull and Golden Hour" }
+        let opened = ProgressRules.unlocks(from: r - 1, to: r)
+        var parts = opened.birds.map { BirdCatalog.bird($0).name }
+        parts += opened.skies.map { "\(SkyCatalog.sky($0).name) sky" }
+        parts += ProgressRules.trailUnlocks(from: r - 1, to: r).map { "\(ProgressRules.trailName($0)) trail" }
+        return parts.isEmpty ? "a new title" : parts.joined(separator: " and ")
+    }
+
+    /// The plain progress line (ROUND-10 P0-4): "Level 2 of 15 · next: Coral trail" (R11: one colon). Pure; tested.
     nonisolated static func progressLine(rank: Int, maxRank: Int = GoalCatalog.maxRank) -> String {
         let level = rankLine(rank: rank, maxRank: maxRank)
         guard rank < maxRank else { return level }
-        return level + " · next: " + rewardLine(level: rank + 1)
+        return level + " · next: " + rewardPhrase(level: rank + 1)
     }
 
     private var leftPage: some View {

@@ -566,8 +566,9 @@ struct RoundTwoTests {
         let short = ShareText.hudDistance(842.9)
         #expect(short.value == "842" && short.unit == "m")
         let one = ShareText.hudDistance(1_000)
-        #expect(one.value == "1.0" && one.unit == "km")
-        #expect(ShareText.hudDistance(4_068).value == "4.0")
+        #expect(one.value == "1" && one.unit == "km")    // R11 P1-10: never "1.0 km"
+        #expect(ShareText.hudDistance(4_068).value == "4")
+        #expect(ShareText.hudDistance(4_168).value == "4.1")
         #expect(ShareText.hudDistance(12_345).value == "12.3")
         #expect(AppRules.touchWording(input: .touch, hasHinge: true))
         #expect(!AppRules.touchWording(input: .hinge, hasHinge: true))
@@ -1065,7 +1066,7 @@ struct RoundFourTests {
         let deck = ResultsPlan.make(rankUp, canvas: deckCanvas(669, 447.5), cardHeight: 423.5, dailyRowAllowed: true)
         #expect(!deck.twoPages && deck.deckSummary && deck.compact)
         // R9: the level-up moment in plain words.
-        #expect(ResultsView.deckSummary(rankUp) == "New bird: Tern · Level 2")
+        #expect(ResultsView.deckSummary(rankUp) == "New bird: Tern · Level 2 reward")
         var two = resultsVariants()[2]
         two.outcome.rankUp = nil
         #expect(ResultsView.deckSummary(two)?.hasPrefix("1 of 3 goals · next: ") == true)
@@ -1078,7 +1079,8 @@ struct RoundFourTests {
         #expect(ShareText.distance(.nan) == "0 m")
         #expect(ShareText.distance(11_885) == "11.8 km")
         #expect(ShareText.distance(541, roundUp: true) == "550 m")
-        #expect(ShareText.distance(996, roundUp: true) == "1.0 km")
+        #expect(ShareText.distance(996, roundUp: true) == "1 km")
+        #expect(ShareText.distance(4_000) == "4 km")
         #expect(ShareText.distance(2_170, roundUp: true) == "2.2 km")
         #expect(ShareText.distance(341, roundUp: true) == "350 m")
         #expect(ShareText.distance(12_830) == "12.8 km")
@@ -1597,7 +1599,7 @@ struct RoundSixTests {
         #expect(!touch.asksWingCheck)
         #expect(touch.stepCount == 5)
         // R9: 6 dots with the clear-side check, 5 without; "Hold" shares Wings' dot, soar and land share one.
-        #expect(FlightSchool(touch: false, asksWingCheck: true).stepCount == 6)
+        #expect(FlightSchool(touch: false, asksWingCheck: true).stepCount == 5)    // R11 P1-12: one count
         var duo = FlightSchool(touch: false, asksWingCheck: false)
         #expect(duo.stepCount == 5)
         duo.start(at: .dive, time: 0)
@@ -1761,7 +1763,7 @@ struct RoundSixTests {
     @Test func schoolGuidesOnThePracticeSea() {
         #expect(SceneAdapter.guide(for: .dive) == .foldPath(from: Tuning.practiceCrestAX, to: Tuning.practiceTroughX))
         #expect(SceneAdapter.guide(for: .soar) == .openMark(at: Tuning.practiceTroughX))
-        #expect(SceneAdapter.guide(for: .storm) == SceneGuide.none)
+        #expect(SceneAdapter.guide(for: .storm) == .landingAhead)    // R11: the gold ring it names
         #expect(SceneAdapter.guide(for: nil) == SceneGuide.none)
     }
 
@@ -1954,14 +1956,20 @@ struct RoundEightTests {
         #expect(line.contains("✓ Fly 3 km"))
     }
 
-    /// R9 (UX-ROUND-9 §2.2): every case of the Results table, as progress ("Caught" appears nowhere).
+    /// R9 (UX-ROUND-9 §2.2): every case of the Results table, as progress. R11 P0-2 / P1-10: the one quiet line says
+    /// why the flight ended ("The storm caught you 2.2 km before Kestrel Head."), replacing "… is 2.2 km further."
+    /// (the tracker already says it); the headline never says "Caught"; "2 new lighthouses" when two were new.
     @Test func resultsTellOneStory() {
         var i = ResultsHeadline.Input(meters: 12_830, passed: 2, lastPassed: "Saltlight", newLighthouse: true)
         var h = ResultsHeadline.make(i)
         #expect(h.overline == "Flight over")
         #expect(h.headline == "You made it past Gull Point and Saltlight!")
         #expect(h.chip == "New lighthouse")
-        #expect(h.lines == ["Kestrel Head is 2.2 km further."])
+        #expect(h.lines == ["The storm caught you 2.2 km before Kestrel Head."])
+        i.newLighthouses = 2
+        #expect(ResultsHeadline.make(i).chip == "2 new lighthouses")
+        #expect(ResultsHeadline.newChip(count: 1) == "New lighthouse")
+        i.newLighthouses = 0
         i.newLighthouse = false
         h = ResultsHeadline.make(i)
         #expect(h.headline == "You made it past Gull Point and Saltlight" && h.chip == nil)
@@ -1972,23 +1980,23 @@ struct RoundEightTests {
                 == "You made it past Gull Point")
         h = ResultsHeadline.make(ResultsHeadline.Input(meters: 2_100, passed: 0))
         #expect(h.headline == "You flew 2.1 km")
-        #expect(h.lines == ["Gull Point is 1.9 km further."])
+        #expect(h.lines == ["The storm caught you 1.9 km before Gull Point."])
         var first = ResultsHeadline.Input(meters: 2_100, passed: 0)
         first.firstFlight = true
         h = ResultsHeadline.make(first)
         #expect(h.overline == "Your first flight")
-        #expect(h.lines == ["Gull Point is 1.9 km further. You'll get there."])
+        #expect(h.lines == ["The storm caught you 1.9 km before Gull Point. You'll get there."])
         var near = ResultsHeadline.Input(meters: 9_600, passed: 2, lastPassed: "Saltlight")
         near.previousBest = 10_000
-        #expect(ResultsHeadline.make(near).lines == ["Just 400 m short of your best."])
+        #expect(ResultsHeadline.make(near).lines == ["The storm caught you 400 m short of your best."])
         near.isNewBest = true
-        #expect(ResultsHeadline.make(near).lines == ["Kestrel Head is 5.4 km further."])
+        #expect(ResultsHeadline.make(near).lines == ["The storm caught you 5.4 km before Kestrel Head."])
         var daily = ResultsHeadline.Input(meters: 3_650, passed: 0)
         daily.dailyTag = "27 Oct"
         daily.dailyScored = true
         h = ResultsHeadline.make(daily)
         #expect(h.overline == "Daily Flight · 27 Oct")
-        #expect(h.lines == ["Gull Point is 350 m further.", "New waves tomorrow."])
+        #expect(h.lines == ["The storm caught you 350 m before Gull Point.", "New waves tomorrow."])
         daily.dailyScored = false
         daily.dailyPractice = true
         h = ResultsHeadline.make(daily)
@@ -1998,9 +2006,11 @@ struct RoundEightTests {
         ended.endedEarly = true
         h = ResultsHeadline.make(ended)
         #expect(h.overline == "Flight ended" && h.headline == "You stopped at 4.2 km")
+        // Ended from the cover: no cause to tell (and no line repeating the tracker).
+        #expect(h.lines.isEmpty)
         for c in [h, ResultsHeadline.make(i), ResultsHeadline.make(near)] {
-            #expect(!(c.headline + c.lines.joined()).contains("Caught"))
-            #expect(!(c.headline + c.lines.joined()).contains("caught"))
+            #expect(!c.headline.lowercased().contains("caught"))
+            #expect(!c.lines.contains { $0.hasSuffix("further.") })
         }
     }
 
@@ -2013,7 +2023,8 @@ struct RoundEightTests {
                 for best in [0, RouteRules.meters(max(reached - 1, 0)) + 2_500, RouteRules.meters(reached) - 300] {
                     let edge = max(c.insets.leading, c.insets.trailing)
                     let l = RouteLayout.make(viewWidth: c.size.width, compact: c.isCompact, routeReached: reached,
-                                             best: best, edge: edge, fold: c.hasFold ? 447...503 : nil)
+                                             best: best, edge: edge, fold: c.hasFold ? 447...503 : nil,
+                                             mirrored: c.mirrored)
                     var rects = l.nodes.map(\.labelRect) + [l.tailRect]
                     if let b = l.bestLabelRect { rects.append(b) }
                     for a in 0..<rects.count {
@@ -2052,6 +2063,40 @@ struct RoundEightTests {
         let nextOnScreen = l.nodes[6].x - l.openOffset
         #expect(nextOnScreen > 300 && nextOnScreen < 951)
         #expect(!(425...525).contains(nextOnScreen))
+    }
+
+    /// R11 P0-8: the map and the Results tracker run the way the bird flies: a mirrored flight (the Duo's default, the
+    /// bird on the right flying left) has the harbour and the storm at the right and the lighthouses leading left; the
+    /// iPhone is unchanged.
+    @Test func routeFollowsTheFlightDirection() {
+        for reached in [0, 2, 6] {
+            for compact in [false, true] {
+                let ltr = RouteLayout.make(viewWidth: 951, compact: compact, routeReached: reached, best: 12_830)
+                let l = RouteLayout.make(viewWidth: 951, compact: compact, routeReached: reached, best: 12_830,
+                                         mirrored: true)
+                #expect(l.mirrored && !ltr.mirrored)
+                let xs = l.nodes.map(\.x)
+                #expect(xs == xs.sorted(by: >))
+                #expect(l.harbourX > (xs.first ?? 0))
+                #expect(l.tailRect.maxX < (xs.last ?? 0))
+                #expect(l.tailRect.minX >= 0)
+                if let pin = l.bestPin { #expect(pin.x < l.harbourX) }
+                // The same map, reflected: each lighthouse keeps its headland (the coast and the line agree).
+                #expect(abs(l.contentWidth - ltr.contentWidth) < 0.01)
+                for (a, b) in zip(l.nodes, ltr.nodes) {
+                    #expect(abs(a.x - (ltr.contentWidth - b.x)) < 0.01)
+                    #expect(abs(l.coastY(a.x) - ltr.coastY(b.x)) < 0.01)
+                    #expect(abs(l.lineY(a.x) - ltr.lineY(b.x)) < 0.01)
+                }
+                let reachedPage = l.nodes.indices.contains(reached) ? l.nodes[reached].x - l.openOffset : 0
+                #expect(reachedPage >= 0 && reachedPage <= 951)
+            }
+        }
+        // The Results tracker: the passed lighthouse at the right, the next at the left, mirrored.
+        let e = MiniRouteStrip.ends(width: 400, mirrored: true)
+        #expect(e.from > e.to)
+        let f = MiniRouteStrip.ends(width: 400, mirrored: false)
+        #expect(f.from < f.to)
     }
 
     /// P0-5: at most one "New" badge, on the most relevant place.
@@ -2148,9 +2193,16 @@ struct RoundNineTests {
                 for step in SchoolStep.allCases {
                     s.start(at: step, time: 0)
                     guard let w = s.words(at: 0.5) else { continue }
-                    // R10: at most 3 words, 4 only for the two rules that must be said ("One fold per wave",
-                    // "Perfect pushes it back").
-                    #expect(w.text.split(separator: " ").count <= 4, "\(w.text)")
+                    // R10: at most 4 words ("One fold per wave", "Fold down the wave"); R11: 5 only for the ring's
+                    // name, "Land in the gold ring".
+                    let limit = w.text == "Land in the gold ring" ? 5 : 4
+                    #expect(w.text.split(separator: " ").count <= limit, "\(w.text)")
+                    if let sub = s.subWords(at: 0.5) {
+                        #expect(sub.split(separator: " ").count <= 7, "\(sub)")
+                        #expect(!sub.hasSuffix("."), "\(sub)")
+                        for banned in ["tuck", "dive", "drop", "soar", "flap"] { #expect(!sub.lowercased().contains(banned)) }
+                        if touch && !tapping { #expect(!sub.lowercased().contains("fold")) }
+                    }
                     #expect(!w.text.hasSuffix("."), "\(w.text)")
                     for banned in ["tuck", "dive", "drop", "soar", "flap"] { #expect(!w.text.lowercased().contains(banned)) }
                     if touch && !tapping { #expect(!w.text.lowercased().contains("fold") || step == .wings) }
@@ -2159,15 +2211,22 @@ struct RoundNineTests {
         }
         var d = FlightSchool(touch: false, asksWingCheck: false)
         d.start(at: .dive, time: 0)
-        #expect(d.words(at: 0.1)?.text == "Fold")
+        // R11 P0-3: the rule before the miss: "Fold down the wave", then (once the ghost has shown it) when to open.
+        #expect(d.words(at: 0.1)?.text == "Fold down the wave")
+        #expect(d.subWords(at: 0.1) == nil)
+        #expect(d.subWords(at: FlightSchool.ghostDemoSeconds + 0.1) == "Open at the bottom")
         _ = d.step(SchoolInput(time: 2, landscape: true, flying: true, practice: true,
                                signals: [.diveDone(heldFraction: 0.2)]))
         #expect(d.words(at: 2.1)?.text == "Opened too soon")
+        #expect(d.subWords(at: 2.1) == "Stay folded to the bottom")
         var st = FlightSchool(touch: false, asksWingCheck: false)
         st.start(at: .storm, time: 0)
-        // R10: nothing before the storm and its meter show; then "Stay ahead"; after the Perfect, the rule.
-        #expect(st.words(at: 1) == nil)
+        // R11 P0-6: the storm step is never empty: "Stay ahead" by the meter from its first frame, then the words by
+        // the gold ring; after the Perfect, the rule.
+        #expect(st.words(at: 0)?.text == "Stay ahead")
         #expect(st.words(at: 2.5)?.text == "Stay ahead")
+        #expect(st.words(at: 3.5)?.text == "Land in the gold ring")
+        #expect(st.words(at: 3.5)?.anchor == .ring)
         #expect(st.words(at: 2.5)?.anchor == .meter)
         let pushed = st.step(SchoolInput(time: 3, landscape: true, flying: true, practice: true,
                                          signals: [.landed(.perfect)]))
@@ -2210,27 +2269,53 @@ struct RoundNineTests {
         #expect(abs(WingDiagram.displayAngle(hinge: 122) * 180 / Double.pi - 46.4) < 0.5)
         #expect(WingDiagram.displayAngle(hinge: 180) == 0)
         #expect(WingDiagram.displayAngle(hinge: 100) * 180 / Double.pi <= 60.0001)
-        #expect(WingDiagram.hinge(forTuck: 1) == 118 && WingDiagram.hinge(forTuck: 0) == 150)
+        // R11 P0-4: the side-on hinge's targets: open 174°, "fold a little" 135°, a visibly narrower wedge.
+        #expect(WingDiagram.hinge(forTuck: 1) == WingDiagram.foldHinge && WingDiagram.hinge(forTuck: 0) == WingDiagram.openHinge)
+        #expect(WingDiagram.openHinge >= 170 && abs(WingDiagram.foldHinge - 135) < 5)
+        let box = WingDiagram.size(compact: false)
+        let open = WingDiagram.plates(phi: WingDiagram.displayAngle(hinge: WingDiagram.openHinge), size: box)
+        let fold = WingDiagram.plates(phi: WingDiagram.displayAngle(hinge: WingDiagram.foldHinge), size: box)
+        let openRise = open.hinge.y - open.left.y
+        let foldRise = fold.hinge.y - fold.left.y
+        #expect(foldRise - openRise > 20, "the fold wedge reads: \(foldRise) vs \(openRise)")
+        #expect(fold.left.y > 0 && fold.left.x > 0 && fold.right.x < box.width)
+        #expect(abs((fold.hinge.x - fold.left.x) - (fold.right.x - fold.hinge.x)) < 0.01)
         for c in testCanvases {
             let l = SchoolLayout.make(c)
+            let s = WingDiagram.size(compact: c.isCompact)
             for bird in [CGPoint(x: c.birdPage.midX, y: c.size.height * 0.5),
                          CGPoint(x: c.birdPage.midX, y: c.size.height * 0.15),
                          CGPoint(x: c.birdPage.minX + 30, y: c.size.height * 0.7)] {
-                let d = SchoolRig.diagramCenter(bird: bird, canvas: c)
-                #expect(c.isFoldClear(CGRect(x: d.x - 48, y: d.y - 32, width: 96, height: 64)))
-                for anchor in [SchoolWordsAnchor.diagram, .spot, .ring] {
-                    let w = SchoolRig.wordsCenter(anchor: anchor, bird: bird, canvas: c, layout: l, showsDiagram: true)
-                    let words = CGRect(x: w.x - 90, y: w.y - 15, width: 180, height: 30)
-                    #expect(c.isFoldClear(words), "\(anchor) on \(c.size)")
-                    let birdRect = CGRect(x: bird.x - 44, y: bird.y - 44, width: 88, height: 88)
-                    let gap = max(words.minY - birdRect.maxY, birdRect.minY - words.maxY,
-                                  words.minX - birdRect.maxX, birdRect.minX - words.maxX)
-                    #expect(gap >= 79, "words \(gap) pt from the bird on \(c.size)")
+                for wantsSub in [false, true] {
+                    // The muted second line shows where it fits (the smallest iPhone, bird mid-height: one line).
+                    let hasSub = wantsSub && SchoolRig.showsSub(bird: bird, canvas: c, anchor: .diagram)
+                    #expect(SchoolRig.placement(bird: bird, canvas: c, hasSub: hasSub).fits, "no room on \(c.size)")
+                    let d = SchoolRig.diagramCenter(bird: bird, canvas: c, hasSub: hasSub)
+                    let diagram = CGRect(x: d.x - s.width / 2, y: d.y - s.height / 2, width: s.width, height: s.height)
+                    #expect(c.isFoldClear(diagram))
+                    let size = SchoolRig.wordsSize(compact: c.isCompact, hasSub: hasSub)
+                    for anchor in [SchoolWordsAnchor.diagram, .spot, .ring] {
+                        let w = SchoolRig.wordsCenter(anchor: anchor, bird: bird, canvas: c, layout: l,
+                                                      showsDiagram: true, hasSub: hasSub)
+                        let words = CGRect(x: w.x - size.width / 2, y: w.y - size.height / 2, width: size.width,
+                                           height: size.height)
+                        #expect(c.isFoldClear(words), "\(anchor) on \(c.size)")
+                        let birdRect = CGRect(x: bird.x - 44, y: bird.y - 44, width: 88, height: 88)
+                        let gap = max(words.minY - birdRect.maxY, birdRect.minY - words.maxY,
+                                      words.minX - birdRect.maxX, birdRect.minX - words.maxX)
+                        #expect(gap >= 79, "words \(gap) pt from the bird on \(c.size)")
+                        if anchor == .diagram {
+                            // R11 P0-4: the label always sits UNDER the diagram, never on it.
+                            #expect(words.minY >= diagram.maxY - 0.5, "words above the diagram on \(c.size)")
+                        }
+                    }
                 }
             }
-            // Dots at the bottom of the bird page; never under the meter.
+            // R11: the dots sit beside Skip on the sea page (one chrome corner), never under the meter or on Skip.
             #expect(l.dots.minY > PlayLayout.make(c).meter.maxY + 100)
-            #expect(c.birdPage.contains(CGPoint(x: l.dots.midX, y: l.dots.midY)))
+            #expect(c.farPage.contains(CGPoint(x: l.dots.midX, y: l.dots.midY)))
+            #expect(!l.dots.intersects(l.skip))
+            #expect(abs(l.dots.midY - l.skip.midY) < 0.5)
         }
     }
 
@@ -2248,7 +2333,7 @@ struct RoundNineTests {
         let line = CaughtLine.center(bird: CGPoint(x: 720, y: 400), canvas: c)
         #expect(c.birdPage.contains(line))
         #expect(line.y < 400)
-        #expect(CaughtLine.text == "Flight over")
+        #expect(CaughtLine.text == "The storm caught you")    // R11 P0-2: failure says why
     }
 
     /// UX §2.3: the level-up is one moment ("New bird: Tern", "Level 2"); new goals shown are the unmet ones only.
@@ -2260,7 +2345,7 @@ struct RoundNineTests {
         s.outcome.rankUp = AppRankUp(from: 0, to: 1, birds: [.tern], skies: [], trails: [])
         let m = ResultsView.unlockMoment(s)
         #expect(m?.title == "New bird: Tern")
-        #expect(m?.level == "Level 2")
+        #expect(m?.level == "Level 2 reward")
         #expect(m?.bird == .tern)
         let met = Goal(id: "a", kind: .reachMeters, target: 3_000, text: "Fly 3 km in one flight")
         let open = Goal(id: "b", kind: .perfectsInRun, target: 15, text: "15 perfect landings in one flight")
@@ -2311,8 +2396,11 @@ struct RoundTenTests {
 
     /// P0-2: the goal sentence on the first flight's countdown (one pill) and on Home before the first flight.
     @Test func goalSentenceEarly() {
+        // R11 P1-10: Home shows the goal sentence; the countdown no longer repeats it (it was cut on the iPhone).
         #expect(AppRules.countdownText(touch: false, flat: false, nudge: false, firstFlight: true)
-                == RouteRules.objective + "\nWings open, hold steady")
+                == "Wings open, hold steady")
+        #expect(!AppRules.countdownText(touch: true, flat: false, nudge: false, firstFlight: true)
+                .contains(RouteRules.objective))
         #expect(AppRules.countdownText(touch: true, flat: false, nudge: false, firstFlight: false)
                 == "Hold going down · let go going up")
         #expect(AppRules.countdownText(touch: false, flat: true, nudge: false, firstFlight: true)
@@ -2354,7 +2442,8 @@ struct RoundTenTests {
         }
         #expect(HomeView.tilePlan(width: 70, height: 58, title: "Birds", detail: "", compact: true, badge: true).stacked)
         #expect(HomeView.newestBird(rank: 0) == nil)
-        #expect(FlocksView.rewardLine(level: 0).hasPrefix("You start with"))
+        #expect(FlocksView.rewardLine(level: 0) == "Starter bird: Gull · Sky: Golden Hour")
+        #expect(FlocksView.progressLine(rank: 1).components(separatedBy: ":").count == 2)    // R11: no double colon
         #expect(FlocksView.progressLine(rank: 1).hasPrefix("Level 2 of "))
         #expect(FlocksView.progressLine(rank: 1).contains(" · next: "))
         #expect(!FlocksView.progressLine(rank: 1).lowercased().contains("rank"))

@@ -529,3 +529,85 @@ gutter, so ART-S15's `SceneDriver.hasFold` isn't needed. Please wire these `Flig
 - **Wired from "Scene → App (Round 10)":** `stormRecoil` drives the school meter's knob (`AppRules.schoolMeterLead`);
   `onPeak` freezes the `freezeOn=perfect|caught|recoil` frames and, in school, shows the big "Perfect" / "Perfect
   pushes it back" on that frame.
+## Scene → App (Round 11)
+Scene's side of ROUND-11 is in `design/notes/scene-R11.md`. Most of it needs no call; the asks are marked **Ask**.
+- **P0-1, the storm's edges:** nothing to call. Every storm layer (the sky shade, the sea wash, the caught warm strip,
+  the cloud's backing) is now a soft span that ends only in a smoothstep ramp (≥ 300 pt for the tints) and runs off the
+  canvas edge behind it, and the cloud texture is empty on all four borders. Test hooks: `scene.stormTintSpans`,
+  `stormSkySpan`, `stormBackingSpan`, `stormCloudFadeEndU`.
+- **P0-2, the meter through the catch:** `scene.stormMeterFill` (the same `SceneStormMap.meterFill(gap:)`) reads 0 as
+  soon as the gap is ≤ 0, so a meter kept on screen through `.caught` at that fill has the storm end on the bird knob.
+  **Ask:** keep the meter up through the caught phase and drive it from that fill; `onPeak(.caught)` stays the frame
+  for the "The storm caught you" freeze.
+- **P0-4, one fold indicator:** the gold "fold" book at the crest (the one standing on the waiting gull's back in
+  s1-05/s1-06) and the teal "open" book are gone from the water. The fold band, its chevrons, the lift chevrons and the
+  done bead stay. Your diagram is the only tuck indicator now; nothing to call.
+- **P0-5, the ring:** while a landing ring is live ahead in school, the camera frames it ≥ 200 pt in from the sides and
+  the visible bottom and 120 pt under the visible top (the bird rides higher in its band, then the zoom comes out if
+  needed), so it is never under Skip, the step dots or the pause button. `scene.ringSafeRect()` is that rect (canvas,
+  y up); `ringScreenRect` still reports the ring and its drop marker in view points. The ring's own drop marker is the
+  s1-09 chevron + dotted line, drawn from the ring's first frame. **Ask:** put "Land here" beside `ringScreenRect` from
+  the step's start (as for s1-09), not at a fixed spot.
+- **P0-6, the storm step's first frame:** `rollInStorm()` now starts the wall on screen (front at u = 40, its dark deck
+  behind it) and slides it to 0.20 w over 2 s, so the first frame after the call already shows the storm. Your
+  every-frame `rollInStorm()` (idempotent) is the right shape: it survives the `scene.reset()` that a session rebuild
+  does. Call it on or before the storm step's first frame (you do: from the rhythm step's success).
+- **P0-7, why s1-13b had no push:** the storm was never on screen. R10 called `rollInStorm()` only on `out.advanced`
+  into the storm step, so a school started at that step (replays, the CI frames) never rolled it in, and any
+  `scene.reset()` after the call (`startSchoolSea()` → `buildSession()` runs right after it when the sea isn't up yet)
+  clears it. No storm meant no recoil (the scene only recoils a rolled-in storm), so `onPeak(.recoil)` never fired and
+  the knob never jumped. With the roll-in asked every frame it works live and in the demo: a Perfect shoves the
+  wall from 0.20 w to ≈ 40 pt (still on screen), `stormRecoil` rises to 1 by 0.35 s and `.recoil` fires there
+  (`schoolStormShowsFromTheFirstFrameAndRecoilsInView`).
+- **P0-9, the slab:** Gull Point now stands on an irregular headland whose underwater part fades out; nothing to call.
+- **P1-11, Home:** the attract trail is trimmed so it never rises above the bird's ceiling + 36 pt (24 pt under the
+  text). **Ask:** pass every Home text rect in `homeTextRects` (the wordmark, the "TUCK & SOAR" rule and both tagline
+  lines), since the ceiling is the lowest rect's bottom.
+- **P1-14, "Perfect ×N" lettering (App-owned, `Swoop/UI/PlayHUD.swift` `PerfectCalloutText.label`).** The speckle is
+  the two translucent (45 %) ink copies offset ±1.5 pt under a gradient fill: where they overlap and where they don't
+  the outline alternates between 45 % and 70 % ink, which at 3× and after downscaling reads as a mottled texture.
+  **Ask:** an opaque outline and a flat gold fill, composited once:
+  ```swift
+  static func label(_ text: String, compact: Bool) -> some View {
+      let font = SwoopType.callout(compact)
+      let ink = SwoopTheme.ink
+      return ZStack {
+          // A solid 2 pt outline: eight opaque copies (no partial-alpha overlaps, so no mottling).
+          ForEach(0..<8, id: \.self) { i in
+              let a = Double(i) * Double.pi / 4
+              Text(text).font(font).foregroundStyle(ink)
+                  .offset(x: CGFloat(2 * cos(a)), y: CGFloat(2 * sin(a)))
+          }
+          Text(text).font(font).foregroundStyle(Color(swoopHex: 0xFFD45E))   // the reward gold, flat
+      }
+      .compositingGroup()
+      .shadow(color: ink.opacity(0.35), radius: 3, y: 1)
+      .lineLimit(1)
+      .minimumScaleFactor(0.6)
+      .accessibilityHidden(true)
+  }
+  ```
+
+## App status (Round 11): every "Scene → App (Round 11)" ask is wired
+- **Storm roll-in (P0-6 / P0-7):** `SceneAdapter.rollInStorm(scene)` is asked EVERY frame while the school's storm is
+  in or arriving (`FlightSchool.stormRollsIn`: the rhythm step's success, held 1.6 s for the roll, and the storm step
+  itself, including a school started there). The push frame `school=storm:turn;freezeOn=recoil` now runs the step live,
+  so `onPeak(.recoil)` freezes the real push; `stormRecoil` drives the knob and a "+" pops ahead of it.
+- **The meter through the catch (P0-2):** the HUD meter no longer fades at the catch; it shows `hud.lead`, which is
+  `AppRules.meterLead(gap:)` = `SceneStormMap.meterFill(gap:)` (the same value as `scene.stormMeterFill`), forced to 0
+  once caught, so the storm end sits on the knob. "The storm caught you" (52 / 40 pt) comes 0.5 s in.
+- **"Land here" (P0-5):** beside `ringScreenRect` from the step's start (just above its drop marker); a dotted gold
+  pointer joins them if the words had to move. The storm step's "Land in the gold ring" uses the same anchor, and the
+  storm step now asks for `.landingAhead` so the ring it names is there.
+- **Home text (P1-11):** `homeTextRects` = the wordmark (with its rule) and the text block, which now runs to the
+  bottom of BOTH tagline lines (the caption allowance grew 110 → 150 pt on the Duo, 70 → 100 on iPhone). The Studio
+  passes its diagram + words rect too, so the attract gull behind steps 1–2 keeps under them (s1-03's wing on "Hold
+  anywhere").
+- **"Perfect ×N" lettering (P1-14):** Scene's drop-in replacement is in `PerfectCalloutText.label` as given.
+- **The book on the gull's back (P0-4):** nothing to call; the App's side-on diagram is the one indicator.
+
+## App → Scene (Round 11, nothing blocking)
+- The step dots moved beside Skip, on the sea page's bottom corner (`SchoolLayout.dots`, `skip`). Your ≥ 200 pt inboard
+  ring rule already keeps the ring off both; nothing to change.
+- Held demo frames stall the scene's clock (`fxDt` = 0 once frozen), so the held storm frames now freeze at sea x 6300
+  (was 5000) to let the 2 s roll-in play first. If you'd rather the roll-in ran on wall time, the App could go back.

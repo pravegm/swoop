@@ -214,6 +214,9 @@ struct HomeLayout: Equatable {
     /// The scrim's feather (blur) and its clearance from the fold band.
     static let scrimFeather: CGFloat = 32
     static let scrimFoldClear: CGFloat = 28
+    /// R11 P1-13: the labelled corner pills.
+    static func settingsWidth(_ compact: Bool) -> CGFloat { compact ? 116 : 128 }
+    static func scoresWidth(_ compact: Bool) -> CGFloat { compact ? 104 : 116 }
 
     static func make(_ c: AppCanvas) -> HomeLayout {
         let w = c.size.width
@@ -267,20 +270,25 @@ struct HomeLayout: Equatable {
         let cornerY = bottom - minTap
         let settings: CGRect
         let gameCenter: CGRect
+        // R11 P1-13: the corner buttons carry their names ("Settings", "Scores"), so they are labelled pills.
+        let setW = min(settingsWidth(c.isCompact), max((bp.width - gap) / 2, minTap))
+        let gcW = min(scoresWidth(c.isCompact), max((bp.width - gap) / 2, minTap))
         if c.mirrored {
-            settings = CGRect(x: bp.maxX - minTap, y: cornerY, width: minTap, height: minTap)
-            gameCenter = CGRect(x: settings.minX - gap - minTap, y: cornerY, width: minTap, height: minTap)
+            settings = CGRect(x: bp.maxX - setW, y: cornerY, width: setW, height: minTap)
+            gameCenter = CGRect(x: settings.minX - gap - gcW, y: cornerY, width: gcW, height: minTap)
         } else {
-            settings = CGRect(x: bp.minX, y: cornerY, width: minTap, height: minTap)
-            gameCenter = CGRect(x: settings.maxX + gap, y: cornerY, width: minTap, height: minTap)
+            settings = CGRect(x: bp.minX, y: cornerY, width: setW, height: minTap)
+            gameCenter = CGRect(x: settings.maxX + gap, y: cornerY, width: gcW, height: minTap)
         }
         // The wordmark: 72 pt type on the Duo, 52 on iPhone (ART §6), on the bird page under the title bird.
         let wordH: CGFloat = c.isCompact ? 70 : 96
         let wordmark = CGRect(x: bp.minX, y: menuTop, width: bp.width, height: wordH)
         let captionTop = wordmark.maxY + 2
         let caption = CGRect(x: bp.minX, y: captionTop, width: bp.width, height: max(cornerY - 8 - captionTop, 0))
+        // R11 P1-11: the block the attract gull keeps under covers the whole caption, the goal sentence under it
+        // included (s1-01: the gull's trail ran through "lighthouses.").
         let textBlock = CGRect(x: bp.minX, y: wordmark.minY, width: bp.width,
-                               height: wordH + 2 + min(caption.height, c.isCompact ? 70 : 110))
+                               height: wordH + 2 + min(caption.height, c.isCompact ? 100 : 150))
         var scrim = textBlock.insetBy(dx: -16, dy: -12)
         if c.mirrored {
             let minX = c.foldMaxX + scrimFoldClear + scrimFeather
@@ -460,6 +468,14 @@ enum ResultsLayout {
         let w = min(page.width, maxWidth)
         let x = c.mirrored ? page.maxX - w : page.minX
         return CGRect(x: x, y: c.top, width: w, height: max(c.bottom - c.top, 0))
+    }
+
+    /// R11 P1-15: the bird-page card has the far card's height and bottom (taller only when its content needs it, never
+    /// past its page). Pure; tested.
+    static func sideRect(side: CGRect, far: CGRect, need: CGFloat) -> CGRect {
+        let bottom = min(far.maxY, side.maxY)
+        let h = min(max(far.height, need), max(bottom - side.minY, 0))
+        return CGRect(x: side.minX, y: bottom - h, width: side.width, height: h)
     }
 }
 

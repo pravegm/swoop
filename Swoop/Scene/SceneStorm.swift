@@ -38,6 +38,218 @@ enum SceneStormMap {
     }
 }
 
+/// R11 (ROUND-11 P0-1, "the storm has no straight edges, ever"): the geometry of every soft storm layer, in u-space.
+///
+/// A layer is a `Span`: a **body** of identical columns (so stretching it to any width can't smear) and a smoothstep
+/// **ramp** sharing one edge with it. A falling span is covered behind its ramp and clear ahead of it (the sky shade,
+/// the sea wash, the cloud's backing); a rising one is clear behind and covered ahead (the caught warm strip). The body
+/// always runs `overscan` past the canvas edge it reaches toward, so on screen a layer only ever ends in its ramp, at
+/// any storm x, catch sweep, school recoil or orientation (the roots flip u-space when mirrored).
+///
+/// The R10 defects this replaces: the caught warm strip started at a hard vertical line just behind the front (s1-15b,
+/// s1-15c), and the backing stretched the cloud's two leftmost texture columns, which smeared the anvil's ragged top into
+/// horizontal streaks (s1-15c; the phone's s1-15b). Pure and nonisolated; unit-tested.
+enum SceneStormTint {
+    /// The narrowest ramp a tint may have (pt).
+    static let minRamp: CGFloat = 300
+    /// How far every body runs past the canvas edge (pt).
+    static let overscan: CGFloat = 160
+
+    struct Span: Equatable {
+        /// Fully covered from `bodyLo` to `bodyHi` (empty when they meet).
+        var bodyLo: CGFloat
+        var bodyHi: CGFloat
+        /// The ramp: falling 1 → 0 from `rampLo` to `rampHi` (the body behind it), or rising 0 → 1 (the body ahead).
+        var rampLo: CGFloat
+        var rampHi: CGFloat
+        var rising: Bool
+
+        var rampWidth: CGFloat { rampHi - rampLo }
+        var bodyWidth: CGFloat { bodyHi - bodyLo }
+
+        /// The coverage 0…1 at `u`.
+        func coverage(atU u: CGFloat) -> CGFloat {
+            if u >= rampLo && u <= rampHi {
+                let t = (u - rampLo) / max(rampHi - rampLo, 0.0001)
+                return rising ? SceneStormTint.rise(t) : 1 - SceneStormTint.rise(t)
+            }
+            if u >= bodyLo && u <= bodyHi { return 1 }
+            return 0
+        }
+    }
+
+    /// Smoothstep, 0 → 1 over t 0 … 1.
+    static func rise(_ t: CGFloat) -> CGFloat {
+        let x = min(max(t, 0), 1)
+        return x * x * (3 - 2 * x)
+    }
+
+    /// Covered behind `clearAt − ramp`, ramping to clear at `clearAt` (ramp ≥ `minimum`), the body reaching back to
+    /// at least −`overscan`.
+    static func falling(clearAt c: CGFloat, ramp: CGFloat, minimum: CGFloat = SceneStormTint.minRamp) -> Span {
+        let r = max(ramp, minimum, 1)
+        let seam = c - r
+        return Span(bodyLo: min(-overscan, seam), bodyHi: seam, rampLo: seam, rampHi: c, rising: false)
+    }
+
+    /// Clear behind `startAt`, ramping to covered at `startAt + ramp` (ramp ≥ `minRamp`), the body reaching on to at
+    /// least `width + overscan`.
+    static func rising(startAt a: CGFloat, ramp: CGFloat, width: CGFloat) -> Span {
+        let r = max(ramp, minRamp)
+        let seam = a + r
+        return Span(bodyLo: seam, bodyHi: max(width + overscan, seam), rampLo: a, rampHi: seam, rising: true)
+    }
+
+    /// The largest jump in coverage between samples `step` pt apart over `lo … hi` (tests: no edge on screen).
+    static func maxStep(_ s: Span, from lo: CGFloat, to hi: CGFloat, step: CGFloat = 1) -> CGFloat {
+        var worst: CGFloat = 0
+        var u = lo
+        var last = s.coverage(atU: u)
+        let d = max(step, 0.01)
+        while u < hi {
+            u += d
+            let c = s.coverage(atU: u)
+            worst = max(worst, abs(c - last))
+            last = c
+        }
+        return worst
+    }
+
+    enum Ramp { case flat, falling, rising }
+
+    /// A column's factor in a `columns`-wide ramp texture (sampled at pixel centres).
+    static func columnFactor(_ i: Int, of columns: Int, _ ramp: Ramp) -> Float {
+        let t = CGFloat((Double(i) + 0.5) / Double(max(columns, 1)))
+        switch ramp {
+        case .flat: return 1
+        case .falling: return Float(1 - rise(t))
+        case .rising: return Float(rise(t))
+        }
+    }
+
+    /// Premultiplied RGBA8 pixels (`columns` × `rows`, row 0 at the top): each row's colour `profile[row]`
+    /// (premultiplied RGBA8, `rows` × 4 bytes) times the column's ramp factor. A layer's body and ramp come from one
+    /// profile, so they match exactly at their shared edge.
+    static func pixels(profile: [UInt8], rows: Int, columns: Int, ramp: Ramp) -> [UInt8] {
+        let r = max(rows, 1), w = max(columns, 1)
+        var out = [UInt8](repeating: 0, count: r * w * 4)
+        guard profile.count >= r * 4 else { return out }
+        for i in 0..<w {
+            let k = columnFactor(i, of: w, ramp)
+            for j in 0..<r {
+                let o = (j * w + i) * 4
+                for c in 0..<4 {
+                    let v = Float(profile[j * 4 + c]) * k + 0.5
+                    out[o + c] = UInt8(min(max(v, 0), 255))
+                }
+            }
+        }
+        return out
+    }
+
+    /// A white premultiplied profile, opaque in every row.
+    static func whiteProfile(rows: Int) -> [UInt8] {
+        [UInt8](repeating: 255, count: max(rows, 1) * 4)
+    }
+
+    /// A white premultiplied band: 0 at the top and bottom, 1 in the middle (the horizon haze's profile).
+    static func bandProfile(rows: Int) -> [UInt8] {
+        let r = max(rows, 1)
+        var out = [UInt8](repeating: 0, count: r * 4)
+        for j in 0..<r {
+            let t = (Double(j) + 0.5) / Double(r)
+            let a = UInt8(min(max((1 - abs(2 * t - 1)) * 255 + 0.5, 0), 255))
+            for c in 0..<4 { out[j * 4 + c] = a }
+        }
+        return out
+    }
+}
+
+/// One `SceneStormTint.Span` on screen: two abutting sprites (body and ramp) whose shared edge is the same float, so
+/// there is no gap and no overlap between them.
+@MainActor
+final class SceneSoftSpan {
+    let body: SKSpriteNode
+    let ramp: SKSpriteNode
+    /// The span drawn this frame (nil when hidden; tests).
+    private(set) var span: SceneStormTint.Span?
+
+    init(z: CGFloat) {
+        body = SKSpriteNode(color: .white, size: CGSize(width: 4, height: 4))
+        ramp = SKSpriteNode(color: .white, size: CGSize(width: 4, height: 4))
+        for n in [body, ramp] {
+            n.zPosition = z
+            n.colorBlendFactor = 0
+            n.isHidden = true
+        }
+    }
+
+    func add(to parent: SKNode) {
+        parent.addChild(body)
+        parent.addChild(ramp)
+    }
+
+    func setTextures(body b: SKTexture, ramp r: SKTexture) {
+        body.texture = b
+        ramp.texture = r
+    }
+
+    /// White textures tinted `color` (colour blend 1), or the textures' own colours (nil).
+    func tint(_ color: UIColor?) {
+        for n in [body, ramp] {
+            n.color = color ?? .white
+            n.colorBlendFactor = color == nil ? 0 : 1
+        }
+    }
+
+    func setBlendMode(_ m: SKBlendMode) {
+        body.blendMode = m
+        ramp.blendMode = m
+    }
+
+    func hide() {
+        span = nil
+        if !body.isHidden { body.isHidden = true }
+        if !ramp.isHidden { ramp.isHidden = true }
+    }
+
+    func show(_ s: SceneStormTint.Span, y: CGFloat, height: CGFloat, alpha: CGFloat) {
+        guard alpha > 0.001 else {
+            hide()
+            return
+        }
+        span = s
+        let h = max(height, 1)
+        let bodyOn = s.bodyWidth >= 0.5
+        if body.isHidden == bodyOn { body.isHidden = !bodyOn }
+        if bodyOn {
+            // The body's anchor is its seam edge, so that edge is exactly the ramp's (no rounding between them).
+            if s.rising {
+                body.anchorPoint = CGPoint(x: 0, y: 0)
+                body.position = CGPoint(x: s.bodyLo, y: y)
+            } else {
+                body.anchorPoint = CGPoint(x: 1, y: 0)
+                body.position = CGPoint(x: s.bodyHi, y: y)
+            }
+            body.size = CGSize(width: s.bodyWidth, height: h)
+            body.alpha = alpha
+        }
+        let rampOn = s.rampWidth >= 0.5
+        if ramp.isHidden == rampOn { ramp.isHidden = !rampOn }
+        if rampOn {
+            if s.rising {
+                ramp.anchorPoint = CGPoint(x: 1, y: 0)
+                ramp.position = CGPoint(x: s.rampHi, y: y)
+            } else {
+                ramp.anchorPoint = CGPoint(x: 0, y: 0)
+                ramp.position = CGPoint(x: s.rampLo, y: y)
+            }
+            ramp.size = CGSize(width: s.rampWidth, height: h)
+            ramp.alpha = alpha
+        }
+    }
+}
+
 /// The storm front chasing the bird (GAME-DESIGN §6, ART-DIRECTION §3), in canvas u-space (u = 0 at the behind edge;
 /// the scene flips the roots when mirrored, so it always comes from the bird page's outer edge).
 ///
@@ -67,16 +279,17 @@ final class SceneStorm {
 
     private let wallRoot: SKNode
     private let cloud: SKSpriteNode
-    private let backing: SKSpriteNode
+    /// R11: the storm running on off screen behind the cloud (a detail-free band, ramping out under its body).
+    private let backing: SceneSoftSpan
     private var glows: [SKSpriteNode] = []
-    private let skyShade: SKSpriteNode
+    private let skyShade: SceneSoftSpan
     private let bolt: SKShapeNode
     private let boltHalo: SKShapeNode
-    private let shade: SKSpriteNode
+    private let shade: SceneSoftSpan
     private let flash: SKSpriteNode
     private let calm: SKSpriteNode
-    /// R9 caught: the warm horizon strip ahead of the front.
-    private let strip: SKSpriteNode
+    /// R9 caught: the warm horizon strip ahead of the front (R11: it ramps in, never starts at a line).
+    private let strip: SceneSoftSpan
     private var sheets: [SKSpriteNode] = []
     private var drops: [SKSpriteNode] = []
     private var dropPos: [CGPoint] = []
@@ -109,6 +322,14 @@ final class SceneStorm {
     private(set) var drawnRightU: CGFloat = -.greatestFiniteMagnitude
     /// Whether any of the storm is drawn this frame (Flight School hides it).
     private(set) var isShown = true
+    /// R11 (tests): the soft layers drawn this frame (nil = hidden), the cloud's left edge and where its behind-edge
+    /// fade ends (u-space).
+    var skySpan: SceneStormTint.Span? { skyShade.span }
+    var seaSpan: SceneStormTint.Span? { shade.span }
+    var stripSpan: SceneStormTint.Span? { strip.span }
+    var backingSpan: SceneStormTint.Span? { backing.span }
+    private(set) var cloudLeftU: CGFloat = 0
+    private(set) var cloudFadeEndU: CGFloat = 0
 
     init() {
         backRoot = SKNode()
@@ -116,27 +337,25 @@ final class SceneStorm {
         frontRoot = SKNode()
         wallRoot = SKNode()
         cloud = SKSpriteNode(color: .clear, size: CGSize(width: 10, height: 10))
-        backing = SKSpriteNode(color: .clear, size: CGSize(width: 10, height: 10))
-        skyShade = SKSpriteNode(color: .clear, size: CGSize(width: 600, height: 670))
+        backing = SceneSoftSpan(z: 0)
+        skyShade = SceneSoftSpan(z: 0.1)
         bolt = SKShapeNode()
         boltHalo = SKShapeNode()
-        shade = SKSpriteNode(color: .clear, size: CGSize(width: 1800, height: 670))
+        shade = SceneSoftSpan(z: 0)
         flash = SKSpriteNode(color: .white, size: CGSize(width: 952, height: 670))
         calm = SKSpriteNode(color: .clear, size: CGSize(width: 952, height: 670))
-        strip = SKSpriteNode(texture: SceneTextures.band)
+        strip = SceneSoftSpan(z: 1.5)
 
-        skyShade.anchorPoint = .zero
-        skyShade.zPosition = 0.1
-        backRoot.addChild(skyShade)
+        let white = SceneTextures.softBody
+        skyShade.setTextures(body: white, ramp: SceneTextures.softRamp(rising: false))
+        skyShade.add(to: backRoot)
         wallRoot.zPosition = 0.5
         backRoot.addChild(wallRoot)
-        for n in [backing, cloud] {
-            n.anchorPoint = .zero
-            n.colorBlendFactor = 0
-            n.color = .white
-            wallRoot.addChild(n)
-        }
-        backing.zPosition = 0
+        backing.add(to: wallRoot)
+        cloud.anchorPoint = .zero
+        cloud.colorBlendFactor = 0
+        cloud.color = .white
+        wallRoot.addChild(cloud)
         cloud.zPosition = 0.1
         let glowColor = UIColor(red: 0.78, green: 0.84, blue: 1.0, alpha: 1)
         for i in 0..<SceneStormCloud.glowSpots.count {
@@ -164,9 +383,8 @@ final class SceneStorm {
         bolt.zPosition = 1.5
         for n in [boltHalo, bolt] as [SKNode] { backRoot.addChild(n) }
 
-        shade.anchorPoint = CGPoint(x: 1, y: 0)
-        shade.zPosition = 0
-        shadeRoot.addChild(shade)
+        shade.setTextures(body: white, ramp: SceneTextures.softRamp(rising: false))
+        shade.add(to: shadeRoot)
         let sheetTexture = SceneTextures.rainSheet
         for _ in 0..<SceneLook.rainSheetCount {
             let s = SKSpriteNode(texture: sheetTexture)
@@ -189,12 +407,9 @@ final class SceneStorm {
         calm.zPosition = 1
         frontRoot.addChild(calm)
         frontRoot.addChild(flash)
-        strip.anchorPoint = CGPoint(x: 0, y: 0.5)
-        strip.colorBlendFactor = 1
-        strip.blendMode = .add
-        strip.zPosition = 1.5
-        strip.isHidden = true
-        frontRoot.addChild(strip)
+        strip.setTextures(body: SceneTextures.stripBody, ramp: SceneTextures.stripRamp)
+        strip.setBlendMode(.add)
+        strip.add(to: frontRoot)
 
         // Rain moves +u (away from the storm, toward the bird): it is u-space, so mirrored it moves left on screen.
         let streak = SceneTextures.streak
@@ -217,21 +432,13 @@ final class SceneStorm {
     func apply(palette p: ScenePalette, sky id: SkyID) {
         let top = ScenePaint.ui(p.stormTop)
         let rain = ScenePaint.ui(p.rain)
-        let tex = SceneTextures.stormCloud(key: id.rawValue, body: p.stormBody, top: p.stormTop, rim: p.stormRim,
-                                           rain: p.rain)
-        cloud.texture = tex
-        backing.texture = SceneTextures.stormBacking(key: id.rawValue, of: tex)
-        skyShade.texture = SceneTextures.horizontalGradient(
-            key: "skyshade-\(id.rawValue)", colors: [top, top.withAlphaComponent(0.7), top.withAlphaComponent(0)],
-            locations: [0, 0.5, 1])
-        skyShade.color = .white
-        skyShade.colorBlendFactor = 0
-        let wash = ScenePaint.ui(p.stormBody)
-        shade.texture = SceneTextures.horizontalGradient(
-            key: "stormshade3-\(id.rawValue)",
-            colors: [wash, wash, wash.withAlphaComponent(0.55), wash.withAlphaComponent(0)], locations: [0, 0.72, 0.88, 1])
-        shade.color = .white
-        shade.colorBlendFactor = 0
+        let set = SceneTextures.stormCloudSet(key: id.rawValue, body: p.stormBody, top: p.stormTop, rim: p.stormRim,
+                                              rain: p.rain)
+        cloud.texture = set.cloud
+        backing.setTextures(body: set.backingBody, ramp: set.backingRamp)
+        backing.tint(nil)
+        skyShade.tint(top)
+        shade.tint(ScenePaint.ui(p.stormBody))
         for s in sheets { s.color = rain }
         let lum = ScenePaint.luminance(p.low)
         let grey = UIColor(white: CGFloat(lum), alpha: 1)
@@ -241,7 +448,7 @@ final class SceneStorm {
         calm.color = .white
         calm.colorBlendFactor = 0
         for d in drops { d.color = rain }
-        strip.color = ScenePaint.ui(p.sunline)
+        strip.tint(ScenePaint.ui(p.sunline))
     }
 
     func clear() {
@@ -276,7 +483,11 @@ final class SceneStorm {
         canvas = size
         horizon = horizonY
         isShown = pr > 0.005
-        for n in [wallRoot, skyShade, shade] as [SKNode] where n.isHidden == isShown { n.isHidden = !isShown }
+        if wallRoot.isHidden == isShown { wallRoot.isHidden = !isShown }
+        if !isShown {
+            skyShade.hide()
+            shade.hide()
+        }
 
         // The wall: its base under the horizon (the far sea covers the rain curtain's foot), its height a fraction of
         // the *visible* sky but never into the HUD band, the shelf's front at `e`.
@@ -297,31 +508,34 @@ final class SceneStorm {
             g.position = cloud.position
             g.size = cloud.size
         }
-        // The storm runs on off screen behind its texture: its left columns, stretched.
-        let backingWidth = left + 42
-        backing.isHidden = backingWidth <= 0 || !isShown
-        if !backing.isHidden {
-            backing.position = CGPoint(x: -40, y: baseY)
-            backing.size = CGSize(width: backingWidth + 2, height: wallH * breathe)
-        }
+        // R11: the storm runs on off screen behind the cloud. The cloud fades out over its first `leftFade` (nominal);
+        // the backing (a band of the cloud's averaged colour, no detail) is solid from beyond the behind edge up to
+        // where that fade ends, then ramps out under the cloud's body. Nothing is ever stretched past its texture.
+        let fadeEnd = left + SceneStormCloud.leftFade * s
+        cloudLeftU = left
+        cloudFadeEndU = fadeEnd
+        let backRamp = SceneStormCloud.backingRamp * s
+        backing.show(SceneStormTint.falling(clearAt: fadeEnd + backRamp, ramp: backRamp, minimum: 1), y: baseY,
+                     height: wallH * breathe, alpha: 1)
         wallRoot.alpha = (SceneLook.stormAlphaFar + (SceneLook.stormAlphaNear - SceneLook.stormAlphaFar) * c) * pr
         let reachRight = (SceneStormCloud.drawnRight - SceneStormCloud.edgeX) * s + abs(sway)
         drawnRightU = isShown ? e + reachRight : -CGFloat.greatestFiniteMagnitude
 
-        // The sky shade: the sky darkens before the sea does; never more than 0.5 at the bird.
-        let reach = max(e + SceneLook.skyShadeReach * size.width, 10)
-        skyShade.position = .zero
-        skyShade.size = CGSize(width: reach, height: size.height)
+        // The sky shade: the sky darkens before the sea does; never more than 0.5 at the bird. R11: a soft ramp
+        // ≥ 300 pt ending 0.45 w ahead of the edge; caught, it slides off the ahead edge, so it covers the whole screen.
+        let skyRamp = max(SceneStormTint.minRamp, SceneLook.skyShadeRamp * size.width)
+        let skyClear = e + SceneLook.skyShadeReach * size.width + caughtness * (size.width + skyRamp)
+        let sky = SceneStormTint.falling(clearAt: skyClear, ramp: skyRamp)
         var shadeAlpha = SceneLook.skyShadeBase + SceneLook.skyShadeClose * c
-        let atBird = max(0, 1 - birdU / reach)
+        let atBird = sky.coverage(atU: birdU)
         if shadeAlpha * atBird > SceneLook.skyShadeCapAtBird { shadeAlpha = SceneLook.skyShadeCapAtBird / atBird }
-        skyShade.alpha = shadeAlpha * pr
         skyShadeAtBird = shadeAlpha * atBird * pr
+        if isShown { skyShade.show(sky, y: -4, height: size.height + 8, alpha: shadeAlpha * pr) }
 
-        // The grey wash over the sea under it.
-        shade.position = CGPoint(x: e + SceneLook.stormShadeReach, y: 0)
-        shade.size = CGSize(width: 1800, height: size.height)
-        shade.alpha = (SceneLook.stormShadeFar + (SceneLook.stormShadeNear - SceneLook.stormShadeFar) * c) * pr
+        // The grey wash over the sea under it (full height, so it greys the sky too).
+        let sea = SceneStormTint.falling(clearAt: e + SceneLook.stormShadeReach, ramp: SceneLook.stormShadeRamp)
+        let seaAlpha = (SceneLook.stormShadeFar + (SceneLook.stormShadeNear - SceneLook.stormShadeFar) * c) * pr
+        if isShown { shade.show(sea, y: -4, height: size.height + 8, alpha: seaAlpha) }
 
         // Rain sheets hanging from the cloud's base down past the bottom of the screen: constant under the wall.
         let cloudBase = baseY + SceneStormCloud.baseY * s
@@ -400,17 +614,19 @@ final class SceneStorm {
 
         calm.isHidden = caughtness < 0.01
         if !calm.isHidden {
-            calm.size = CGSize(width: size.width + 4, height: size.height + 4)
-            calm.position = CGPoint(x: -2, y: -2)
+            let o = SceneStormTint.overscan
+            calm.size = CGSize(width: size.width + 2 * o, height: size.height + 8)
+            calm.position = CGPoint(x: -o, y: -4)
             calm.alpha = caughtness * SceneLook.caughtWashAlpha
         }
-        // Ahead of the caught front, the light is still out there: a warm strip on the horizon.
-        let stripW = size.width - e + 40
-        strip.isHidden = caughtness < 0.01 || stripW < 4
-        if !strip.isHidden {
-            strip.position = CGPoint(x: e - 20, y: horizonY + 24)
-            strip.size = CGSize(width: max(stripW, SceneLook.caughtHorizonStrip * size.width), height: 200)
-            strip.alpha = caughtness * SceneLook.caughtHorizonAlpha
+        // Ahead of the caught front, the light is still out there: a warm strip on the horizon. R11: it ramps in over
+        // 300 pt from 150 pt behind the front (R10 started it at a hard line 20 pt behind it: s1-15b, s1-15c).
+        if caughtness >= 0.01 && isShown {
+            let st = SceneStormTint.rising(startAt: e - SceneLook.caughtStripBehind, ramp: SceneStormTint.minRamp,
+                                           width: size.width)
+            strip.show(st, y: horizonY + 24 - 100, height: 200, alpha: caughtness * SceneLook.caughtHorizonAlpha)
+        } else {
+            strip.hide()
         }
     }
 

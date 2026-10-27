@@ -104,7 +104,7 @@ s1-01-home|session=first:home|5
 s1-02-school-hold|session=first:school;school=hold|5
 s1-03-school-wings|session=first:school;school=wings|5
 s1-04-school-wings-done|session=first:school;school=wings:done|5
-s1-05-school-dive|session=first:school;school=dive|6
+s1-05-school-dive|session=first:school;school=dive:turn|6
 s1-06-school-dive-fail|session=first:school;school=dive:fail|6
 s1-07-school-soar|session=first:school;school=soar|6
 s1-08-school-land|session=first:school;school=land|6
