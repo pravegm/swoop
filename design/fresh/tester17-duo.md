@@ -1,0 +1,55 @@
+# Swoop: Tuck & Soar - first session (tester 17, iPhone Duo)
+
+47, accountant and parent, last played Candy Crush years ago; kid recommended it, paid £1.99, playing on an iPhone Duo held open like a book.
+
+## Screen by screen
+
+- **s1-01-home**: It's lovely. There's a big gull from above with its wings across both halves, a sunset, and a storm on the right. "Hold it like a book. These are your wings." is clear and I got it straight away. "Stay ahead of the storm. Reach the lighthouses." is in pale grey-blue over a busy sky and is the hardest line to read on the screen. "Next: Gull Point · 4 km" on the Fly button means nothing to me yet. There is also a second, side-on gull skimming the water at bottom right. Which one is me?
+- **s1-02-school-hold**: "Hold it open", with a small flat hinge drawing. Fine. Now there are definitely two birds: the big top-down one and the small side-on one in the water. Nothing says the top bird shows my wings and the small bird is the one flying. The first of 5 dots is lit, so I know it's a short lesson. Good.
+- **s1-03-school-wings**: "Fold a little / One fold per wave". The drawing shows dashed yellow lines at a fairly steep angle, which doesn't look like "a little". "One fold per wave" arrives before I know what waves have to do with anything. I couldn't act on it yet.
+- **s1-04-school-wings-done**: The top gull tucked its wings into a dart shape when I folded, and that felt good: the phone really is the wings. But the hinge drawing with the yellow tick is a deep V, nothing like "a little". So how far did I actually have to fold? The progress dots still show step 1 even though I got a tick. The small gull hasn't moved across s1-02 to s1-04. Is it paused or playing?
+- **s1-05-school-dive**: The scene changes to a bright blue sky and the bird is on the top of a wave. "Fold down the wave / Open at the bottom". The yellow "<" arrows on the wave help. The hinge drawing is a faint dashed grey line plus a yellow V, both low contrast on a pale sky, and I had to squint.
+- **s1-06-school-dive-fail**: "Opened too soon / Stay folded to the bottom." To be fair, I'd just been told to open at the bottom. But the bird is in exactly the same spot as in s1-05, on the crest, so it looks like I failed before the dive started. I can't see where I opened or where the bottom was. It feels like being marked wrong with no working shown. It doesn't show a retry either. I just had to hope.
+- **s1-07-school-soar**: "Open", with a tiny dotted flat hinge. The text is grey-white on a pale peach sky and barely readable. Spray and speed look good. A strange yellow outline of a bird is cut off at the far left edge, and I don't know what it is (a ghost? a target?). It looks like a bug.
+- **s1-08-school-land**: "Land here / Fold to come down", with a gold ring on the water at bottom left, a dotted arrow to it, and another gold ring around my bird. This is clear. The target ring is cut off by the left edge and sits right next to the Skip button.
+- **s1-09-school-perfect**: A big yellow "Perfect". Satisfying. The landing ring is still drawn behind the bird. Did I land in it or past it? I'll take the word for it.
+- **s1-10-school-rhythm**: "One fold per wave" again, alone, with no picture. I read this as "don't fold twice on one wave", but it doesn't say what goes wrong if I do.
+- **s1-11-school-storm-1**: A bar appears at the top, with my bird icon in the middle, a storm cloud labelled "Storm" at the right end, and a dark empty stretch on the left. "Stay ahead". I understand the storm is behind me. But the left end of the bar has nothing on it, so the bar doesn't show where I'm going.
+- **s1-12-school-storm-2**: "Gull Point" with a lighthouse at top left. Nice: an actual place to reach. "Land in the gold ring" with a dotted yellow line running off the right edge, but **there is no gold ring anywhere on screen**. I'm told to land in something I can't see.
+- **s1-13-school-storm-3**: Almost the same as s1-12. Still no ring. It felt stuck.
+- **s1-13b-school-storm-push**: "Perfect" and "Perfect pushes it back", with a little "+" and my bird icon sliding left, away from the storm. That clicked: perfect landings buy me distance from the storm. "it" is vague, though. Say "the storm".
+- **s1-14-run-countdown**: A "2" countdown with "Wings open, hold steady". Clear. The "Storm" label under the cloud icon has gone (it's back in s1-15). Small, but sloppy.
+- **s1-15-run**: "66 m", "NEXT Gull Point · 4 km", and a bird diving with a pink trail. Clear and nice. The storm bar still has no lighthouse marker, so "next" and "how close is the storm" are two separate gauges I have to put together myself.
+- **s1-15b-caught**: "The storm caught you" at 12.8 km. The bird bobs in grey water, a ring around it, rain. Clear. The "Next" pill has vanished from the top left, so I can't see what I was nearly at.
+- **s1-15c-flight-over**: The same message while everything turns grey. Fine and moody, but it's a second near-identical screen of the same news.
+- **s1-16-results**: "YOUR FIRST FLIGHT · You made it past Gull Point and Saltlight! · 2 NEW LIGHTHOUSES · 12.8 km · The storm caught you 2.2 km before Kestrel Head." Nice and specific, and the maths agrees with the Fly button later (15 km). But Saltlight was never mentioned before, and I never saw it during the run in these screens. The right card says "New bird: Tern · Level 2 reward · Choose Tern". What levels? Nobody mentioned levels, and I don't know how I got to level 2. The top third of that card is empty navy. "Or fold and open to fly again" is a nice touch.
+- **s1-17-home**: Home now has Daily Flight ("Same waves for everyone · 1 try"; clear), Goals, Route and Birds (with a yellow dot). The Fly button now says "Next: Kestrel Head · 15 km". Good continuity. The little side-on gull is half hidden behind the Scores button.
+- **s1-18-route**: A strip of lighthouses read **right to left**, with the start (a pier) on the right and "and on..." on the left. Backwards for me at first, though it matches the bird flying left. Gull Point and Saltlight are ticked and Kestrel Head is "Next". The solid yellow line stops at Saltlight (9 km), but my best was 12.8 km, and the bird icon floats on the dashed part. The **bottom 60% of the screen is empty dark blue**. The storm icon at top right is cut off by the edge. It looks unfinished.
+- **s1-19-goals**: "Level 2 of 15 · next: Coral trail · Puddle Hopper · 2 of 3 goals done", with goals "Fly 3 km in one flight ✓, 3 Perfects in one flight ✓, Fly 15 km in total (12.8 of 15)". This is the first time I learn goals and levels exist, after my run. What's a "trail"? What's "Puddle Hopper", "Spray Chaser", "Gull Wing"? These titles are never explained. The unlock list is cut off at the bottom (the Level 8 subtitle is clipped) and nothing shows that it scrolls.
+
+## The four questions
+
+1. **What do my hands do (and do I flap repeatedly or not)?** I don't flap. I hold the phone open, which is gliding. When the bird is at the top of a wave I fold it partly shut, which is diving, and keep it folded down the slope. At the bottom I open it again, which is soaring up the next wave. I fold to come down and land in a gold ring. One fold per wave, not repeated pumping. I got this. What I'm not sure of is *how far* to fold: "a little" (s1-03), but the drawing shows a deep V (s1-04).
+2. **What is the storm?** A storm cloud chasing me from behind (right side). The bar at the top shows how close it is. Perfect landings push it back (s1-13b). If it reaches me, the flight ends (s1-15b).
+3. **Where am I going?** Left, along the coast, past a row of lighthouses (Gull Point 4 km, Saltlight 9 km, Kestrel Head 15 km, then Old Harry, Wren Ness, "and on..."). I only fully understood this from the Route screen (s1-18) *after* playing. During play it's a "Next" pill and one lighthouse I glimpsed in the lesson.
+4. **What is success and failure?** Success is getting further and passing lighthouses before the storm catches you, landing "Perfect" in the gold rings to keep ahead of it, and ticking off goals to earn birds and skies. Failure is the storm catching you, which always happens eventually: the run ends and you get a distance.
+
+## Verdicts
+
+- **Finished and premium?** Mostly. The art, sunset, wing-tuck animation and results card feel like a real paid app, not a toy. Leaving it short of "finished": no ring where I was told to land (s1-12/13), a clipped ghost bird (s1-07), faint unreadable hints (s1-05, s1-07), a half-empty Route screen (s1-18), a half-empty reward card (s1-16), a list cut off on Goals (s1-19), and labels that come and go (s1-14, s1-15b).
+- **Would you keep playing?** I'd play a few more and probably try the Daily Flight. 12.8 km on my first go and two lighthouses felt like progress. Whether I'm still playing next week depends on whether the folding feels reliable. The "Opened too soon" moment, where I couldn't tell what I'd done wrong, is exactly what makes someone like me put a game down.
+- **Single most confusing moment?** s1-12/s1-13: "Land in the gold ring" with no gold ring on screen. Close second: two birds on screen from s1-01 to s1-04, with nothing saying which one is me.
+- **Was anything ever shown as a mistake before you'd been told how to do it?** Not strictly. "Opened too soon" (s1-06) came after "Open at the bottom" (s1-05). But it fired with the bird still on the crest, before any visible dive, so it *felt* like being marked wrong before I'd started. Separately, the goals I was being scored on (3 km, 3 Perfects, 15 km total) and the levels were only revealed after the run (s1-16, s1-19). That's not a mistake, but it was hidden scoring.
+
+**Top 5 things to fix, most important first:**
+1. **s1-12 / s1-13**: Show the gold ring *before* or *with* "Land in the gold ring". Right now the instruction points off-screen at nothing.
+2. **s1-06**: Make "Opened too soon" show what happened: mark where I opened and where the bottom was, and visibly replay or retry. The bird in s1-05 and s1-06 is frozen on the crest, so the failure looks unfair.
+3. **s1-02 to s1-04**: Say which bird is which ("These are your wings" over the top gull, "This is you" over the small one), and make the "Fold a little" drawing match the fold it actually wants. The tick shows a deep V.
+4. **s1-16 / s1-19**: Introduce levels, goals and "trails" before or during the first run, not as a surprise afterwards. Explain or drop the rank titles (Puddle Hopper, Spray Chaser). Name Saltlight before you congratulate me on passing it.
+5. **s1-18** (and s1-11/s1-15): Put lighthouses on the storm bar so I see where I'm going while I'm playing. Fix the Route screen: fill or shrink the empty bottom 60%, run the yellow progress line to 12.8 km rather than stopping at 9 km, and stop the storm icon being cut off. Also remove the clipped ghost bird at the left edge in s1-07 and raise the contrast of the hint text in s1-05 and s1-07.
+
+## Scores
+
+- Understood: 7/10
+- Feels finished: 6/10
+- Keep playing: 6/10

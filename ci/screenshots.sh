@@ -209,6 +209,23 @@ while IFS='|' read -r -u 3 name args wait _caption _expect; do
     to 60 xcrun simctl io "$UDID" screenshot "$OUT_ABS/$name.png" >/dev/null 2>&1 && { shot=1; break; }
     sleep 2
   done
+  # R11: a shot taken while the app is still launching or rotating out of portrait is a blank navy (~60 KB) or a
+  # portrait frame. Every iPhone scenario plays in landscape (unless it asks orient=portrait), so re-shoot (up to 3
+  # times, 4 s apart) instead of shipping it.
+  for retry in 1 2 3; do
+    (( shot )) || break
+    dims=$(png_dims "$OUT_ABS/$name.png"); w=${dims%x*}; h=${dims#*x}
+    bytes=$(wc -c < "$OUT_ABS/$name.png" | tr -d ' ')
+    [[ "$w" =~ ^[0-9]+$ && "$h" =~ ^[0-9]+$ ]] || break
+    portrait=0; [[ "$args" != *orient=portrait* ]] && (( h > w )) && portrait=1
+    if (( portrait || bytes < 100000 )); then
+      echo "warning: $name looks unsettled ($dims, $bytes bytes); re-shooting ($retry/3)"
+      sleep 4
+      to 60 xcrun simctl io "$UDID" screenshot "$OUT_ABS/$name.png" >/dev/null 2>&1 || break
+    else
+      break
+    fi
+  done
   cp "$applog" "$OUT_ABS/logs/$name.at-capture.txt" 2>/dev/null || : > "$OUT_ABS/logs/$name.at-capture.txt"
   if (( shot )); then
     dims=$(png_dims "$OUT_ABS/$name.png")
