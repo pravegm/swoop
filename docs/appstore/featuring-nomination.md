@@ -1,16 +1,16 @@
 # Swoop: Featuring nomination (App Launch)
 
-*Final copy, Mon 26 Oct 2026, ready to paste. The founder submits it (needs an App Store Connect login: Account Holder, Admin, App Manager or Marketing role).*
+*Final copy, Mon 26 Oct 2026; last edited Tue 27 Oct. **The App Store Connect tool creates and submits it** (`asc.yml`, step `nomination`, `"submit": true`, from `docs/appstore/asc-metadata.json`); nobody pastes it. Change the text here, run `node tools/appstore/build-metadata.js`, and push the `nomination` step again.*
 
 ## Timing
 
-**Launch date: Tue 24 Nov 2026.** Brim launches on Tue 17 Nov, so Swoop takes the next Tuesday and the two games never share a week. (Squish's original 24 Nov date no longer applies: Squish was submitted on 26 Oct to go live on approval.)
+**Launch date: on approval, expected about Thu 29 – Fri 30 Oct 2026** (the founder's decision, 27 Oct: Swoop goes live as soon as Apple approves it). Swoop now launches before Brim, which still launches on Tue 17 Nov, so the two games never share a week.
 
-Apple asks for nominations as early as possible, **at least 3 weeks before** the date. For Tue 24 Nov that means **submit by Tue 3 Nov 2026**, and sooner is better. It needs only the app record (runbook §1), not a build.
+Apple asks for nominations as early as possible, ideally **at least 3 weeks before** the date. Swoop can't give that: the tool submits the nomination together with the listing, about 3 days before the expected launch, with the publish date **Fri 30 Oct 2026**. Shorter notice makes a launch feature less likely, but it still puts Swoop in front of the editors, and it can stay in place for later editorial picks. It needs only the app record (created), not a build.
 
-Where: App Store Connect → Apps → Swoop → **Featuring** → **Nominations** → **Create Nomination**. A saved draft is not a nomination: press **Submit**.
+Where to see it: App Store Connect → Apps → Swoop → **Featuring** → **Nominations**. A saved draft is not a nomination, which is why the tool submits it.
 
-If the launch moves to the fallback date (**Tue 8 Dec**, runbook timeline), edit the nomination's Publish Date the same day.
+If approval comes much later than 30 Oct (for example after a rejection), tell Claude: the Publish Date changes in `build-metadata.js` and the tool pushes it (or edit it by hand on the same page).
 
 ## Fields
 
@@ -18,14 +18,14 @@ If the launch moves to the fallback date (**Tue 8 Dec**, runbook timeline), edit
 |---|---|---|
 | Nomination Name | `Swoop - App Launch - iPhone Duo fold-to-dive flyer` | 50 / 60 |
 | Nomination Type | **App Launch** | — |
-| Description | the block below | **987 / 1,000** |
-| Publish Date | **Specific day: 2026-11-24** | — |
+| Description | the block below | **986 / 1,000** |
+| Publish Date | **Specific day: 2026-10-30** | — |
 | Related Apps | Swoop only (auto-filled). Don't add Brim or Squish: they have their own nominations | up to 10 |
 | Platforms | iOS | — |
 | Countries or Regions | leave the auto-selection (every territory the app is in) | — |
 | Localizations | leave the auto-selection (English (U.K.), English (U.S.)) | — |
 | In-App Events | none | — |
-| Supplemental Materials | 1. `https://pravegm.github.io/swoop/` 2. the teaser post URL (once posted, Wed 11 Nov; add it by editing the nomination) 3. the TestFlight public link (only if you open external testing) | up to 5 URLs |
+| Supplemental Materials | 1. `https://pravegm.github.io/swoop/` 2. the launch post URL (once posted, on the day it goes live; add it by editing the nomination) 3. the TestFlight public link (only if you open external testing) | up to 5 URLs |
 | Helpful Details | the block below | **463 / 500** |
 
 ### Description
@@ -34,7 +34,7 @@ Swoop turns iPhone Duo into a pair of wings. Hold the Duo open like a book, one 
 
 The hinge is an analogue control, not a switch: how far you fold sets how heavy the bird is, so the skill is rhythm, one fold per wave. Land on the way down of the next wave for a Perfect; three in a row is a golden Tailwind. A storm chases you out to sea, and the goal is always the next lighthouse on a fixed route of named headlands.
 
-A short Flight School teaches by showing: a guide gull does each move, then you copy it. The bird flies on the half of the screen that stays sharp when a fold starts from flat. A Daily Flight with the same waves for everyone, 15 levels of goals that unlock birds and skies, Game Center. Any iPhone can play by pressing and holding. No ads, no in-app purchases, no data collected.
+A short Flight School teaches by showing: a guide gull does each move, then you copy it. The bird flies on the half of the screen that stays sharp when a fold starts from flat. A Daily Flight with the same waves for everyone, 15 levels of goals that unlock birds and skies, Game Center. Other iPhones play by pressing and holding. No ads, no in-app purchases, no data collected.
 ```
 
 ### Helpful Details
@@ -49,7 +49,7 @@ Optimized for iPhone Duo: built for book pose on the inner display. The bird sta
 - **Built for the real device (updated 27 Oct, after the founder's real-Duo test):** the bird stays on the half that doesn't blur, and a Flight School that teaches by showing. Editors look for apps that handle the Duo's quirks, not just its hinge.
 - **A clear goal:** the next lighthouse on a fixed route, in the app's own plain words (`design/UX-ROUND-9.md` §3).
 - **Replayability:** endless flights, the Daily Flight, 15 levels of goals and unlocks, Game Center.
-- **Accessibility and reach:** press and hold, or tap, on every iPhone. No VoiceOver claim, because that label isn't earned (`accessibility.md`).
+- **Accessibility and reach:** press and hold, or tap, on other iPhones (iOS 18 or later). No VoiceOver claim, because that label isn't earned (`accessibility.md`).
 - **Kind to the hardware:** answers the wear question before an editor asks it.
 - **No ads:** the last line.
 

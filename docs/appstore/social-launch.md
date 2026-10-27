@@ -2,37 +2,38 @@
 
 *For the founder to post by hand from their own accounts. Tone: warm, airy, a little proud of the bird ("one more go"). Never suggest closing the phone fast, flapping it, slamming it or "breaking your hinge". Never compare with or name Tiny Wings, Alto or Valley Run.*
 
-**Links to fill in:** `[App Store link]` = `https://apps.apple.com/app/id<Apple ID>` (App Store Connect → App Information → Apple ID; exists once the record is created, live on launch day). `[site]` = `https://pravegm.github.io/swoop/`. `[clip]` = the 15 s teaser (§3A).
+**Links to fill in:** `[App Store link]` = `https://apps.apple.com/app/id<Apple ID>` (App Store Connect → App Information → Apple ID; the record exists, and the link works from the moment Apple approves Swoop and it goes live). `[site]` = `https://pravegm.github.io/swoop/`. `[clip]` = the 15 s teaser (§3A).
 
 ---
 
-## 1. Schedule (fits around Brim, so the two launches never share a day)
+## 1. Schedule (from the day it goes live; no date announced in advance)
 
-Brim posts on Fri 6, Tue 10, Thu 12, Sat 14, Mon 16 Nov, launches **Tue 17 Nov**, then posts Daily rows on Wed 18, Fri 20 and Sun 22 Nov (`C:\Users\59527\Fold\docs\appstore\social-launch.md` §1). Swoop posts go on the days in between. Squish goes live on approval in late October and runs its own calendar from that day (`C:\Users\59527\Squish\docs\marketing\PLAN.md`); if a Squish post lands on a Swoop day, move the Swoop post by one day, never the launch.
+Swoop goes live **the moment Apple approves it** (the founder's decision, 27 Oct), expected about Thu 29 – Fri 30 Oct. Nobody knows the exact day in advance, so **no post or email names a date**: before approval say "coming to the App Store this week", and from the day it's live say "out now". **Day 0** below is the day Apple's approval email arrives and the App Store page shows **Get** with the price.
 
-| Date | What | Where |
+Swoop now launches before Brim. Brim posts on Fri 6, Tue 10, Thu 12, Sat 14, Mon 16 Nov, launches **Tue 17 Nov**, then posts Daily rows on Wed 18, Fri 20 and Sun 22 Nov (`C:\Users\59527\Fold\docs\appstore\social-launch.md` §1): keep Swoop's later posts off those days. Squish runs its own calendar (`C:\Users\59527\Squish\docs\marketing\PLAN.md`); if a Squish post lands on a Swoop day, move the Swoop post by one day, never the launch.
+
+| When | What | Where |
 |---|---|---|
-| Wed 11 Nov | Teaser (only once the Duo feel check in runbook §3 is a "yes") | X, Bluesky, Mastodon, Threads; r/iPhoneDuo if the rules allow |
-| Fri 13 Nov | Clip: the storm close behind, perfect landings pushing it back | X, Bluesky, Mastodon, Threads |
-| Sun 15 Nov | Clip: Flight School, the guide gull showing the move and the player copying it | same |
+| After you submit (optional) | Teaser (§2, "Teaser"): "coming to the App Store this week", with the site link | X, Bluesky, Mastodon, Threads |
+| **Day 0** | **Launch posts** (§2), once the App Store page shows **Get** with the price, then your first Daily Flight result. The outreach emails of §4 go out the same day | all, plus r/iPhoneDuo if the rules allow |
+| Day 1 | Clip: Flight School, the guide gull showing the move and the player copying it | X, Bluesky, Mastodon, Threads |
+| Day 2 | Clip: the storm close behind, perfect landings pushing it back | same |
+| Day 3 | Your own Daily Flight result ("beat this") | X, Bluesky, Mastodon |
+| Day 4 | Clip: "Gull Point!", the beam and the bell, then the Route lighting up | same |
+| Day 6 | Clip: three in a row, the Tailwind | same |
+| After that | A Daily Flight result a few times a week, on days Brim doesn't post, if it's fun; stop if it isn't | — |
 | Tue 17 Nov | **Nothing for Swoop** (Brim launch day) | — |
-| Thu 19 Nov | Clip: "Gull Point!", the beam and the bell, then the Route lighting up | same |
-| Sat 21 Nov | Clip: three in a row, the Tailwind | same |
-| Mon 23 Nov | "Out tomorrow" with the site link (there's no pre-order, so the App Store link only works from launch morning) | same |
-| **Tue 24 Nov** | **Launch posts** (§2), after you press Release (runbook §7) and the page shows **Get** with the price, then your first Daily Flight result | all, plus r/iPhoneDuo if the rules allow |
-| Wed 25, Fri 27, Sun 29 Nov | Your own Daily Flight result ("beat this") | X, Bluesky, Mastodon |
-| From Tue 1 Dec | A Daily Flight result a few times a week, on days Brim doesn't post, if it's fun; stop if it isn't | — |
 
-## 2. Launch-day posts (Tue 24 Nov)
+## 2. Launch-day posts (Day 0, the day it goes live)
 
-Counted with Node, with the link as 23 characters on X and Mastodon and as 40 on Bluesky and Threads: X 228 / 280, Bluesky 268 / 300, Mastodon 493 / 500, Threads 171 / 500. Recount with the real link. Paste the text inside the quote blocks exactly, and always add the alt text. The words follow the app's glossary (`design/UX-ROUND-9.md` §3): fold / open, hold / let go, "stay ahead of the storm", "the next lighthouse".
+Counted with Node, with the link as 23 characters on X and Mastodon and as 40 on Bluesky and Threads: X 233 / 280, Bluesky 268 / 300, Mastodon 493 / 500, Threads 171 / 500. Recount with the real link. Paste the text inside the quote blocks exactly, and always add the alt text. The words follow the app's glossary (`design/UX-ROUND-9.md` §3): fold / open, hold / let go, "stay ahead of the storm", "the next lighthouse".
 
 ### X (attach the 15 s clip)
 > Swoop is out.
 >
 > Hold your iPhone Duo like a book. The two halves are a bird's wings: fold going down a wave, open going up. Stay ahead of the storm.
 >
-> £1.99 / $1.99 · no ads · no IAP · plays on every iPhone
+> £1.99 / $1.99 · no ads · no IAP · plays on other iPhones too
 > [App Store link]
 
 *Alt text:* Two hands hold an iPhone Duo open like a book. On its screens a white seabird flies over golden ocean waves on the right half, a dark storm cloud close behind it, and clear sky ahead on the left half. The hands fold the phone in slightly and the bird folds its wings and dives down a wave; they open it and the bird flies off the top, and the word PERFECT appears with a white ring on the water.
@@ -75,14 +76,14 @@ Counted with Node, with the link as 23 characters on X and Mastodon and as 40 on
 > [the exact text the app's Share button produces]
 > [App Store link]
 
-The result line is whatever Share produces (`UI/ShareText.swift`, for example `Swoop Daily #3 7.4 km 🕊️ 23 perfect landings · past Gull Point 🌅 🔥3`; #1 is launch day, 24 Nov); never type one by hand.
+The result line is whatever Share produces (`UI/ShareText.swift`, for example `Swoop Daily #3 7.4 km 🕊️ 23 perfect landings · past Gull Point 🌅 🔥3`; #1 is 28 Oct); never type one by hand.
 
-### Teaser (Wed 11 Nov)
+### Teaser (optional, after you submit and before it's live)
 > I made a game where the two halves of your iPhone Duo are a bird's wings.
 >
 > Fold a little: it dives. Open: it flies.
 >
-> Swoop, out 24 Nov. [site]
+> Swoop, coming to the App Store this week. [site]
 
 ---
 
@@ -99,15 +100,15 @@ The result line is whatever Share produces (`UI/ShareText.swift`, for example `S
 | 4.0–6.5 | Open at the bottom: off the top of the wave, spray burst, the camera pulls out | **Open going up.** | a "whump", then quiet wind |
 | 6.5–9.0 | Land on the way down: white ring, PERFECT, chime; twice more, chimes climbing, then the golden Tailwind trail | **Perfect. Perfect. Tailwind!** | three rising chimes, a chord swell |
 | 9.0–12.0 | Cut wider: the storm wall behind (right half), rain, the meter low; a Perfect pushes it back; the NEXT chip counts down to Gull Point | **Stay ahead of the storm.** | low rumble under the wind |
-| 12.0–15.0 | "Gull Point!" and the beam; end card over Home: "Swoop" wordmark, "Tuck & Soar", "Out 24 Nov" (launch day: "Out now") | **Swoop · out 24 Nov** | the lighthouse bell |
+| 12.0–15.0 | "Gull Point!" and the beam; end card over Home: "Swoop" wordmark, "Tuck & Soar", "Out now on the App Store" (for the optional teaser before launch: "Coming soon") | **Swoop · out now** | the lighthouse bell |
 
 Rules: no price in the video (it goes in the post text), no fast or repeated folding, never closed or slammed, folds small and at the pace of the waves. Export H.264, ≤ 60 MB (fits X, Bluesky, Mastodon, Threads, TikTok).
 
-### 3B. App Preview: "Fold going down" (optional for 1.0; 25 s, landscape 1920 × 886, 30 fps)
+### 3B. App Preview: "Fold going down" (not in 1.0; for 1.0.1. 25 s, landscape 1920 × 886, 30 fps)
 
 Apple's rules: 15–30 s; captures of the app only (**no hands, no people, no device frame**); no prices; autoplays muted, so every beat has a caption on screen ≥ 1.5 s; poster frame chosen by us. The Duo's book canvas (aspect 1.42) doesn't fill 1920 × 886 (2.17), so scale the inner screen to 886 px tall (about 1,260 px wide), centre it, and put captions in the dusk bands left and right. Never crop into the game. The Duo capture is mirrored (bird on the right half), as the player sees it.
 
-**Ships in 1.0 only if** it's recorded and checked by code freeze (Mon 16 Nov). Previews lock with the version, so a late one waits for 1.0.1. It needs a screen-recording step in CI (Squish has `preview.yml`; Swoop doesn't yet: `DECISIONS.md` §2).
+**Not in 1.0:** Swoop is submitted as soon as the release candidate is ready, with no time to record one. Previews lock with the version, so this waits for 1.0.1. It needs a screen-recording step in CI (Squish has `preview.yml`; Swoop doesn't yet: `DECISIONS.md` §2).
 
 | Time | Picture (app capture, Duo inner display, book pose) | Caption |
 |---|---|---|
@@ -117,7 +118,7 @@ Apple's rules: 15–30 s; captures of the app only (**no hands, no people, no de
 | 10.0–14.0 | Three perfect landings, the Tailwind | **Land on the way down: *Perfect*** |
 | 14.0–18.0 | The storm close behind, pushed back | **Stay ahead of the *storm*** |
 | 18.0–21.0 | "Gull Point!": beam, bell; the NEXT chip switches to Saltlight | **Reach the next *lighthouse*** |
-| 21.0–25.0 | "Flight over"; the result card with the route strip | **One more *flight*?** |
+| 21.0–25.0 | "The storm caught you"; the result card with the route strip | **One more *flight*?** |
 
 **6.9" version:** the same beats captured on the iPhone 18 Pro Max (touch control, bird on the left), full-bleed 1920 × 886; change the third caption to **Hold going down. *Let go* going up.**
 
@@ -125,19 +126,19 @@ Apple's rules: 15–30 s; captures of the app only (**no hands, no people, no de
 
 ## 4. Outreach list (from `research/01-market.md` and Brim's list)
 
-Send dates follow §1 and keep clear of Brim's sends (Brim emails on Fri 6, Sun 8, Tue 10 and Thu 12 Nov). Email texts are in `press-kit.md` (numbers below). **Verify every address on the outlet's own site before sending.**
+Send dates follow §1 (Day 0 = the day it goes live) and keep clear of Brim's sends (Brim emails on Fri 6, Sun 8, Tue 10 and Thu 12 Nov). Every email goes out once Swoop is live, with the App Store link. Email texts are in `press-kit.md` (numbers below). **Verify every address on the outlet's own site before sending.**
 
 | When | Outlet | Why them | Email |
 |---|---|---|---|
-| Wed 11 Nov | **FoldHunt** (foldhunt.com/iphone-duo) | The main Duo directory; it lists no glide, bird-flight or surf game | #2 |
-| Wed 11 Nov | **DuoDiscover** (duodiscover.com) | Hand-reviewed Duo directory; its only flying game has no hinge control | #2 |
-| Wed 18 Nov | **MacRumors**, **9to5Mac**, **TechCrunch** (tips) | Duo app roundups and developer stories; the "third Duo game from one studio" angle, the day after Brim's launch | #1 |
-| Thu 19 Nov | **PocketGamer**, **TouchArcade** | Premium iOS games; momentum-flyer fans | #3 |
-| Fri 20 Nov | **Digital Trends** (Vikhyaat Vivek), **Chonky Corgo blog**, **Fix Gaming Channel** | Covered Duo games and hinge input. Brim emails them on Thu 12 Nov, so Swoop goes a week later and mentions Brim in one line | #4 |
-| Fri 20 Nov | **TechRadar**, **MacStories**, **PhoneArena**, **Stuff** | Duo reviews and app roundups | #1 |
-| Sat 21 – Mon 23 Nov | 15–25 **Duo creators** (TikTok, YouTube Shorts) who already own a Duo and post "apps for your Duo" videos | Hands folding a phone and a bird folding with it is very watchable | #5 (needs promo codes, so after approval) |
-| Tue 24 Nov | Everyone above who was emailed | Launch note, in the same thread | #6 |
-| Tue 24 Nov | **r/iPhoneDuo**, **r/iPhoneduoapp** | Owners hunting for hinge apps; post only within the subs' rules, say you're the developer, reply to every comment for 2 hours | §2 |
+| Day 0 | **FoldHunt** (foldhunt.com/iphone-duo) | The main Duo directory; it lists no glide, bird-flight or surf game | #2 |
+| Day 0 | **DuoDiscover** (duodiscover.com) | Hand-reviewed Duo directory; its only flying game has no hinge control | #2 |
+| Day 0 | **MacRumors**, **9to5Mac**, **TechCrunch** (tips) | Duo app roundups and developer stories; "a Duo game out now", with Brim to follow from the same studio | #1 |
+| Day 1 | **PocketGamer**, **TouchArcade** | Premium iOS games; momentum-flyer fans | #3 |
+| Day 2 | **Digital Trends** (Vikhyaat Vivek), **Chonky Corgo blog**, **Fix Gaming Channel** | Covered Duo games and hinge input. Swoop now reaches them before Brim's email (Thu 12 Nov), so it mentions Brim (17 Nov) in one line | #4 |
+| Day 2 | **TechRadar**, **MacStories**, **PhoneArena**, **Stuff** | Duo reviews and app roundups | #1 |
+| Days 1–5 | 15–25 **Duo creators** (TikTok, YouTube Shorts) who already own a Duo and post "apps for your Duo" videos | Hands folding a phone and a bird folding with it is very watchable | #5 (needs promo codes, so after approval) |
+| Day 0 | Anyone you told about Swoop before it went live | Launch note, in the same thread | #6 |
+| Day 0 | **r/iPhoneDuo**, **r/iPhoneduoapp** | Owners hunting for hinge apps; post only within the subs' rules, say you're the developer, reply to every comment for 2 hours | §2 |
 
 ## 5. Don'ts
 

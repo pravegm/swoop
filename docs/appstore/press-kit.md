@@ -1,14 +1,14 @@
 # Swoop: Press kit
 
-*Updated Tue 27 Oct 2026 for the Round 6–9 build (Flight School, the lighthouse route, the bird on the sharp half, the app's plain words from `design/UX-ROUND-9.md` §3–4). Everything here is **embargo-free**: anyone may write about Swoop from the day they receive it. The public version of the fact sheet is the Press section of `docs/site/index.html`; keep the two in step. The founder sends every email by hand; nothing is automated.*
+*Updated Tue 27 Oct 2026 for the Round 6–9 build (Flight School, the lighthouse route, the bird on the sharp half, the app's plain words from `design/UX-ROUND-9.md` §3–4). Everything here is **embargo-free**: anyone may write about Swoop from the day they receive it. The public version of the fact sheet is the Press section of `docs/site/index.html`; keep the two in step. The founder sends every email by hand; nothing is automated. Swoop goes live the moment Apple approves it (expected about Thu 29 – Fri 30 Oct 2026), so no email names a launch date: send them once it's live, with the App Store link.*
 
-**Links to fill in:** `[App Store link]` = `https://apps.apple.com/app/id<Apple ID>` (App Store Connect → App Information → Apple ID, which exists once the record is created in runbook §1; it works from launch morning). `[clip link]`, `[press folder]`, `[TestFlight link]`, `[promo code]`, `[expiry]`, `[your name]`.
+**Links to fill in:** `[App Store link]` = `https://apps.apple.com/app/id<Apple ID>` (App Store Connect → App Information → Apple ID, the app record already exists; the link works from the moment Swoop goes live). `[clip link]`, `[press folder]`, `[TestFlight link]`, `[promo code]`, `[expiry]`, `[your name]`.
 
 ---
 
 ## The pitch (one paragraph)
 
-**Swoop turns the iPhone Duo into a pair of wings.** Hold the Duo open like a book, one hand on each half. Fold it a little and the bird folds its wings and dives down the face of an ocean wave, picking up speed; open it at the bottom and it flies off the top. One fold per wave: you never flap. Land on the way down of the next wave for a Perfect, get three in a row for a golden Tailwind, and stay ahead of the storm that chases you out to sea, faster the longer you fly. The goal is always the next lighthouse on a fixed route: Gull Point at 4 km, Saltlight at 9 km, Kestrel Head at 15 km, and on. A short Flight School on the first flight has a guide gull show each move before you try it. There's also a Daily Flight with the same waves for everyone, and goals that take you up 15 levels and unlock eight birds, five skies and coloured trails. It plays on every other iPhone too: press and hold going down, let go going up. £1.99 / $1.99, no ads, no in-app purchases, no data collected, rated 4+.
+**Swoop turns the iPhone Duo into a pair of wings.** Hold the Duo open like a book, one hand on each half. Fold it a little and the bird folds its wings and dives down the face of an ocean wave, picking up speed; open it at the bottom and it flies off the top. One fold per wave: you never flap. Land on the way down of the next wave for a Perfect, get three in a row for a golden Tailwind, and stay ahead of the storm that chases you out to sea, faster the longer you fly. The goal is always the next lighthouse on a fixed route: Gull Point at 4 km, Saltlight at 9 km, Kestrel Head at 15 km, and on. A short Flight School on the first flight has a guide gull show each move before you try it. There's also a Daily Flight with the same waves for everyone, and goals that take you up 15 levels, with eight birds, five skies and coloured trails to unlock. It plays on other iPhones too: press and hold going down, let go going up. £1.99 / $1.99, no ads, no in-app purchases, no data collected, rated 4+.
 
 **One-liner:** *The two halves of your iPhone Duo are a bird's wings: fold going down a wave, open going up, and stay ahead of the storm.*
 
@@ -23,8 +23,8 @@
 | **Name** | Swoop (App Store: "Swoop: Tuck & Soar") |
 | **Developer** | An independent studio (GitHub `pravegm`), also making Squish and Brim |
 | **Founder** | [Founder name] (left off the live page unless the founder chooses) |
-| **Release** | **Tue 24 Nov 2026**, worldwide (except China mainland) |
-| **Platform** | iPhone. Designed for iPhone Duo held like a book (the hinge is the control); press and hold on every other iPhone. Requires iOS 18 or later; hinge play uses iOS 27.1, which the Duo ships with |
+| **Release** | **Out now** (from the day Apple approves it; expected about Thu 29 – Fri 30 Oct 2026), worldwide except China mainland and Vietnam |
+| **Platform** | iPhone. Designed for iPhone Duo held like a book (the hinge is the control); press and hold on other iPhones. Requires iOS 18 or later; hinge play uses iOS 27.1, which the Duo ships with |
 | **Price** | £1.99 / $1.99 / €1.99 one-off. No ads, no in-app purchases. Family Sharing on |
 | **Age rating** | 4+ |
 | **Modes** | Flight (endless, along a route of named lighthouses) · Daily Flight (same waves for everyone, one try that counts, shareable) · Goals (15 levels) · Flight School (the first-flight lesson, replayable) |
@@ -46,7 +46,7 @@
 - **Taught by showing.** Flight School, on the first flight, is a calm practice sea with no storm and no score. A guide gull does each move first, then waits for you to copy it. On a Duo it also asks, with one tap, which half of the screen stayed clear.
 - **It works around the Duo's blur.** iPhone Duo softens one half of the screen for a moment when a fold starts from flat. Swoop keeps the bird on the half that stays sharp (the right half by default, flying right to left), and Settings → Bird side changes it.
 - **A goal you can see.** The next lighthouse is always on screen with the distance to go. Pass one and its beam sweeps, a bell rings and it lights up on your Route. Results lead with how far you got: "You made it past Saltlight".
-- **A storm with a face.** Slate cloud and slanting rain behind you, clear gold sky ahead across the fold. Perfect landings push it back; lighthouses buy you a lead. When it catches up, it's "Flight over" and one more go.
+- **A storm with a face.** Slate cloud and slanting rain behind you, clear gold sky ahead across the fold. Perfect landings push it back; lighthouses buy you a lead. When it catches up, it's "The storm caught you" and one more go.
 - **One more go.** The Daily Flight has the same waves for everyone, one try that counts, and a streak.
 - **Kind to the hinge.** Easy folds of about 30° from a relaxed book pose, roughly one per wave. It never asks you to close the phone, lay it flat or fold fast.
 
@@ -91,11 +91,11 @@ Plain text, under 150 words, clip link in the first two lines, never attach vide
 >
 > 15-second clip, sound on: [clip link]
 >
-> I'm launching Swoop on Tue 24 Nov. Hold the iPhone Duo open like a book and the two halves are a bird's wings: fold a little and it dives down an ocean wave, open and it flies off the top. A storm chases you out to sea; the goal is the next lighthouse on the route.
+> Swoop is out now on the App Store: [App Store link]. Hold the iPhone Duo open like a book and the two halves are a bird's wings: fold a little and it dives down an ocean wave, open and it flies off the top. A storm chases you out to sea; the goal is the next lighthouse on the route.
 >
 > - Endless flights, a Daily Flight with the same waves for everyone, Game Center top scores.
 > - It keeps the bird on the half of the Duo's screen that doesn't blur when you fold.
-> - Plays on every iPhone (press and hold); £1.99/$1.99, no ads, no IAP, no data collected, 4+.
+> - Plays on other iPhones too (press and hold, iOS 18 or later); £1.99/$1.99, no ads, no IAP, no data collected, 4+.
 >
 > TestFlight, more clips or a promo code on request. No embargo.
 >
@@ -112,10 +112,8 @@ Plain text, under 150 words, clip link in the first two lines, never attach vide
 >
 > - Uses the hinge angle continuously (easy folds of about 30° from a relaxed, self-calibrating book pose), never needs closing or flat; the bird flies on the half that stays sharp when a fold starts from flat.
 > - A first-flight lesson, a route of named lighthouses, Game Center and a Daily Flight.
-> - £1.99/$1.99, no ads, no IAP. Out Tue 24 Nov.
+> - £1.99/$1.99, no ads, no IAP. Out now: [App Store link]
 > - Clip: [clip link] · Screenshots and icon: [press folder]
->
-> I'll send the App Store link the day it's live.
 >
 > Thanks,
 > [your name], Swoop
@@ -130,13 +128,13 @@ Plain text, under 150 words, clip link in the first two lines, never attach vide
 >
 > - Momentum physics on endless ocean waves; land on the way down for a Perfect, three in a row for a Tailwind.
 > - A storm chasing you out to sea and a fixed route of named lighthouses to reach, plus a Daily Flight that's the same for everyone.
-> - Goals that unlock eight birds, five skies and trails; Game Center; press and hold on any iPhone.
+> - Goals that unlock eight birds, five skies and trails; Game Center; press and hold on other iPhones.
 >
-> Out Tue 24 Nov. Clip: [clip link] · TestFlight: [TestFlight link] · promo code on request after approval.
+> Out now: [App Store link]. Clip: [clip link] · promo code on request.
 >
 > [your name], Swoop
 
-*TouchArcade: also start a thread in its forums' upcoming-games section, saying you're the developer.*
+*TouchArcade: also start a thread in its forums' release section, saying you're the developer.*
 
 ### 4. Writers who covered Duo games (Digital Trends' Vikhyaat Vivek; Chonky Corgo blog; Fix Gaming Channel)
 
@@ -146,9 +144,9 @@ Plain text, under 150 words, clip link in the first two lines, never attach vide
 >
 > I read your piece on [their article]. I liked [one specific thing they said]. Swoop is a game where the hinge is the whole control: hold the Duo like a book, fold it a little and the bird dives down a wave, open it and the bird flies. It's analogue (the angle sets how heavy the bird is), so it's a rhythm game rather than a fold-to-flap toy, and it keeps the bird on the half of the screen that stays sharp when you fold.
 >
-> 15 s clip: [clip link] · TestFlight: [TestFlight link]
+> 15 s clip: [clip link] · App Store: [App Store link]
 >
-> £1.99/$1.99, no ads, out Tue 24 Nov. It's from the studio behind Brim (17 Nov). Happy to explain how the angle maps to the fold.
+> £1.99/$1.99, no ads, out now. Brim, from the same studio, follows on 17 Nov. Happy to explain how the angle maps to the fold.
 >
 > [your name], Swoop
 
@@ -165,7 +163,7 @@ Plain text, under 150 words, clip link in the first two lines, never attach vide
 > Thanks either way!
 > [your name], Swoop
 
-### 6. Launch-day note (reply in each earlier thread)
+### 6. Launch-day note (only to anyone you told about Swoop before it went live; reply in that thread)
 
 > Swoop is out today: [App Store link]. The iPhone Duo's two halves are the wings; on other iPhones you press and hold. £1.99/$1.99, no ads, no IAP, no data collected. Everything in [press folder] is free to use. Promo code on request.
 >

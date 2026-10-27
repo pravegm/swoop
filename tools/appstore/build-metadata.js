@@ -46,14 +46,14 @@ const site = 'https://pravegm.github.io/swoop/';
 for (const u of [site, site + 'support.html', site + 'privacy.html']) need(md, '`' + u + '`', 'metadata.md §9');
 need(md, '**United Kingdom, £1.99**', 'metadata.md §9');
 need(md, '**except China mainland and Vietnam**', 'metadata.md §9');
-need(md, '**Automatically release this version after App Review approval, no earlier than**', 'metadata.md §9');
+need(md, '**Automatically release this version after App Review approval**', 'metadata.md §9');
 const copyrightLine = (md.match(/^\| Copyright \| `([^`]+)` \|$/m) || [])[1];
 if (!copyrightLine) problems.push('metadata.md §9: Copyright row not found');
 
-// DECISIONS #12 (changed 27 Oct, as Brim did): SCHEDULED release, no earlier than Tue 24 Nov 2026 08:00 UTC, so
+// DECISIONS #12 (founder, 27 Oct): release automatically as soon as Apple approves (AFTER_APPROVAL), so
 // launch morning needs no click.
-const RELEASE = { type: 'SCHEDULED', earliestReleaseDate: '2026-11-24T08:00:00Z' };
-const LAUNCH = '2026-11-24T08:00:00Z';   // DECISIONS #13; nomination publish date (featuring-nomination.md)
+const RELEASE = { type: 'AFTER_APPROVAL', earliestReleaseDate: null };
+const LAUNCH = '2026-10-30T08:00:00Z';   // DECISIONS #13: the expected go-live (approval ~24-48 h after submission); nomination publish date
 
 // ---- review-notes.md, featuring-nomination.md -----------------------------------------------------------------------
 const rn = rd('docs/appstore/review-notes.md');
@@ -62,7 +62,7 @@ const fn = rd('docs/appstore/featuring-nomination.md');
 const nomDesc = blockAfter(fn, '### Description');
 const nomNotes = blockAfter(fn, '### Helpful Details');
 const nomName = (fn.match(/\| Nomination Name \| `([^`]+)`/) || [])[1];
-need(fn, 'Specific day: 2026-11-24', 'featuring-nomination.md');
+need(fn, 'Specific day: 2026-10-30', 'featuring-nomination.md');
 
 // ---- achievements.md ------------------------------------------------------------------------------------------------
 // | # | Achievement ID | Title | Pre-earned description | Earned description | Points | Hidden | Trigger |
@@ -79,16 +79,16 @@ const achievements = rows.map(r => {
     localizations: { 'en-GB': loc(tGB, bGB, aGB), 'en-US': loc(tUS, bUS, aUS) }, image: `tools/appstore/badges/${id}.png` };
 });
 // Leaderboards: achievements.md "Leaderboards (2)" and DECISIONS #18 (whole metres, suffix " m" singular and plural,
-// High to Low, best score, range 0–1,000,000; swoop.daily recurring daily from Sun 1 Nov 2026 00:00 UTC).
+// High to Low, best score, range 0–1,000,000; swoop.daily recurring daily from Wed 28 Oct 2026 00:00 UTC).
 for (const s of ['`swoop.longest`', '`swoop.daily`', '`Longest flight`', '`Daily Flight`', '`Longest Flight`', '` m` / ` m`',
-                 '0 – 1,000,000', 'Start **Sun 1 Nov 2026, 00:00 UTC**; duration **1 day**; repeats every **1 day**']) need(ach, s, 'achievements.md');
+                 '0 – 1,000,000', 'Start **Wed 28 Oct 2026, 00:00 UTC**; duration **1 day**; repeats every **1 day**']) need(ach, s, 'achievements.md');
 const lbLoc = (n) => ({ name: n, formatterSuffix: ' m', formatterSuffixSingular: ' m' });
 const leaderboards = [
   { vendorIdentifier: 'swoop.longest', referenceName: 'Longest flight', defaultFormatter: 'INTEGER', scoreSortType: 'DESC', submissionType: 'BEST_SCORE',
     scoreRangeStart: 0, scoreRangeEnd: 1000000, recurrence: null, localizations: { 'en-GB': lbLoc('Longest Flight'), 'en-US': lbLoc('Longest Flight') } },
   { vendorIdentifier: 'swoop.daily', referenceName: 'Daily Flight', defaultFormatter: 'INTEGER', scoreSortType: 'DESC', submissionType: 'BEST_SCORE',
     scoreRangeStart: 0, scoreRangeEnd: 1000000,
-    recurrence: { startDate: '2026-11-01T00:00:00Z', duration: 'PT24H', rule: 'FREQ=DAILY;INTERVAL=1' },
+    recurrence: { startDate: '2026-10-28T00:00:00Z', duration: 'PT24H', rule: 'FREQ=DAILY;INTERVAL=1' },
     localizations: { 'en-GB': lbLoc('Daily Flight'), 'en-US': lbLoc('Daily Flight') } }
 ];
 
@@ -141,14 +141,14 @@ const meta = {
     ageRatingOverrideV2: 'NONE', koreaAgeRatingOverride: 'NONE'
   },
   review: { notes, demoAccountRequired: false, contact: { firstName: null, lastName: null, phone: null, email: null } },
-  release: { _comment: 'DECISIONS #12 (27 Oct): scheduled release, no earlier than Tue 24 Nov 2026 08:00 UTC; nothing to press on launch day. The tool never releases or submits.', ...RELEASE },
+  release: { _comment: 'DECISIONS #12 (founder, 27 Oct): released automatically as soon as App Review approves it. The tool never releases or submits.', ...RELEASE },
   price: { baseTerritory: 'GBR', customerPrice: '1.99' },
   availability: { _comment: 'DECISIONS #10 (27 Oct): every territory except China mainland and Vietnam (both need a local game licence; Brim excludes both). Mac and Vision Pro availability has no public API: the tool prints the clicks.', excludedTerritories: ['CHN', 'VNM'], availableInNewTerritories: true },
   achievements,
   leaderboards,
   screenshots,
   nomination: {
-    _comment: 'docs/appstore/featuring-nomination.md (DECISIONS #26). notes = Helpful Details. submit: true presses Submit (a saved draft is not a nomination). Submit by Tue 3 Nov 2026 (3 weeks before 24 Nov).',
+    _comment: 'docs/appstore/featuring-nomination.md (DECISIONS #26). notes = Helpful Details. submit: true presses Submit (a saved draft is not a nomination). Submitted with the listing, ahead of release on approval.',
     name: nomName, type: 'APP_LAUNCH', description: nomDesc, notes: nomNotes, publishStartDate: LAUNCH,
     deviceFamilies: ['IPHONE'], locales: ['en-GB', 'en-US'], supplementalMaterialsUris: [site],
     hasInAppEvents: false, launchInSelectMarketsFirst: false, preOrderEnabled: false, submit: true

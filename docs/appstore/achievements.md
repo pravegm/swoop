@@ -6,7 +6,7 @@
 - ≤ 100 points per achievement, ≤ 1,000 points per app, ≤ 100 achievements.
 - IDs ≤ 100 characters: letters, digits, `.` and `_`. Permanent.
 - Each achievement needs a **1024 × 1024** image (PNG or JPEG, RGB, no transparency, ≥ 72 dpi). Leaderboard images are optional.
-- Achievements and leaderboards only go live attached to a version that includes them (runbook §4c).
+- Achievements and leaderboards only go live attached to a version that includes them. The App Store Connect tool creates all of them and attaches them to the 1.0 review submission (`asc.yml` steps `gamecenter` and `attach`, `tools/appstore/README.md`); nobody types them in.
 
 ## Leaderboards (2)
 
@@ -20,14 +20,14 @@
 | Sort order | High to Low | High to Low |
 | Score submission | Best score | Best score (the app submits only the day's one scored try) |
 | Score range (optional) | 0 – 1,000,000 | 0 – 1,000,000 |
-| Recurring settings | — | Start **Sun 1 Nov 2026, 00:00 UTC**; duration **1 day**; repeats every **1 day** |
+| Recurring settings | — | Start **Wed 28 Oct 2026, 00:00 UTC**; duration **1 day**; repeats every **1 day** |
 | What the app submits | the run's **distance in whole metres** (`RunResult.meters`, rounded down), any Flight or Daily run | the distance in whole metres of the **first scored Daily Flight** of the (UTC) day |
 
 **Why distance, not the style score:** the boards are named for distance, the brief says "in metres", and the bible says "distance is the headline". The style bonus (Perfect 25 m, Tailwind 100 m) stays an in-game number. If the build makes the style-inclusive score the result card's headline instead, tell the launch lead before the leaderboards are created: the format suffix and display names would change (`DECISIONS.md` #18).
 
-**Why the Daily starts on 1 Nov, not launch day:** TestFlight testers (Game Center sandbox) can then see the board before launch. It costs nothing.
+**Why the Daily starts on Wed 28 Oct:** it is the game's Daily #1 (`DailySeed.launchDay`), so the board and the Daily numbering start on the same day, a day or two before the expected launch on approval. TestFlight testers (Game Center sandbox) can see the board before launch. Create it (`asc.yml`, step `gamecenter`) before 28 Oct if possible; whether App Store Connect accepts a start date already in the past is unconfirmed.
 
-**One engineering point (must be settled before 1.0):** a recurring leaderboard resets at the same UTC moment for everyone, but the contract keys the Daily seed to the player's local calendar (`DailySeed.dayNumber(for:calendar: .current)`). That would mix two days' seas on one board around midnight. Brim hit the same problem and switched to UTC (`Brim/Core/LevelCatalog.swift`). Recommendation: key the Daily Flight to the **UTC date**, so it changes at 00:00 UTC (midnight in the UK in winter, 4 pm Pacific). See `DECISIONS.md` #19.
+**Settled (27 Oct): the Daily Flight runs on the UTC date** (`DailySeed.utc`, `DECISIONS.md` #19 and §2 #1). The reason, for the record: a recurring leaderboard resets at the same UTC moment for everyone, but the contract keys the Daily seed to the player's local calendar (`DailySeed.dayNumber(for:calendar: .current)`). That would mix two days' seas on one board around midnight. Brim hit the same problem and switched to UTC (`Brim/Core/LevelCatalog.swift`). Recommendation: key the Daily Flight to the **UTC date**, so it changes at 00:00 UTC (midnight in the UK in winter, 4 pm Pacific). See `DECISIONS.md` #19.
 
 ## Achievements (12, 625 points)
 
@@ -72,15 +72,15 @@ If the harness shows a step is far off (for example casual players never reachin
 
 Twelve 1024 × 1024 PNGs, one per achievement, opaque (no alpha channel), in the app icon's style: a golden-hour sky over a dark swell with the fold crease as a faint vertical glint, a medallion whose ring shows the tier (sea-green for 10–25 points, deep teal with gold studs for 50–75, gold for 100) and one motif: wings spread (First Flight), a wake line with 1 / 5 / 10 km, a skipping stone with 5 / 10 rings (chains), a golden trail (Tailwind), a lighthouse beam, three beams, a cloud, three suns rising (Three Dawns), eight small silhouettes (Whole Flock). No words, only short numerals.
 
-**Where they come from:** the app draws them itself, the way Brim does (`Brim/UI/AchievementArt.swift`, `AchievementBadge(id:)`). The demo key `screen=badges` (`design/ROUND-1.md`) renders all twelve into the app's Documents/badges/, and CI copies them into the `screenshots` artifact, folder `screenshots/badges/`, one file per achievement named by its ID (e.g. `swoop.ach.first.png`). Claude sends the founder the link to the latest green run; the founder uploads each file to its achievement in App Store Connect.
+**Where they come from:** the app draws them itself, the way Brim does (`Brim/UI/AchievementArt.swift`, `AchievementBadge(id:)`). The demo key `screen=badges` (`design/ROUND-1.md`) renders all twelve into the app's Documents/badges/, and CI copies them into the `screenshots` artifact, folder `screenshots/badges/`, one file per achievement named by its ID (e.g. `swoop.ach.first.png`). `tools/appstore/badges.swift` checks and flattens them, and the App Store Connect tool uploads each one with its achievement (`gamecenter` step). Nothing to upload by hand.
 
 ## Implementation checklist (App engineer)
-- [ ] IDs in code match this file exactly (one constant per ID), including the two leaderboard IDs.
+- [x] IDs in code match this file exactly (one constant per ID), including the two leaderboard IDs (QA-FINAL-release: `ProgressStore.swift`, `GameCenterManager.swift`).
 - [ ] Authenticate once at launch; if the player declines, never show the sign-in sheet again uninvited.
-- [ ] Progress reported with `percentComplete` for #2–#4 (best distance / target), #5–#6 (best chain / target), #9 (lighthouses / 3), #11 (streak / 3), #12 (birds unlocked / 8).
-- [ ] Banners never appear mid-flight: queue them until the result card.
+- Not in 1.0 (founder's decision, `design/qa/FINAL-FIXES.md`): partial progress. Achievements report only when earned (`percentComplete` 100), and every earned one is re-sent on each Game Center sign-in.
+- [ ] Banners never appear mid-flight: queue them until the result card. (Not guaranteed in 1.0: a Game Center sign-in that completes mid-flight can flush a banner then; QA-FINAL-release P2-7.)
 - [ ] Daily: submit only the first scored run of the (UTC) day.
-- [ ] Touch play (hold to tuck) can earn every achievement.
+- [ ] Touch play (hold / let go) can earn every achievement.
 
 ## Sources
 - App Store Connect Help, *Achievements* (limits, hidden, images): https://developer.apple.com/help/app-store-connect/reference/game-center/achievements

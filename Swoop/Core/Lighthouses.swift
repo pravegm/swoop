@@ -114,14 +114,15 @@ public enum DailySeed {
         return calendar.dateComponents([.day], from: a, to: b).day ?? 0
     }
 
-    /// Launch day, 2026-11-24 (UTC): Daily Flight #1 (REVIEW-3, ROUND-4 #13). Day 327 since 2026-01-01.
+    /// Daily Flight #1: 2026-10-28 (UTC), day 300 since 2026-01-01. The founder releases on approval (27 Oct), so #1 is
+    /// the first day the build can be live and the number counts up from there (was 24 Nov, day 327).
     public static let launchDay: Int = {
         var comps = DateComponents()
         comps.year = 2026
-        comps.month = 11
-        comps.day = 24
+        comps.month = 10
+        comps.day = 28
         comps.hour = 12
-        guard let d = utc.date(from: comps) else { return 327 }
+        guard let d = utc.date(from: comps) else { return 300 }
         return dayNumber(for: d, calendar: utc)
     }()
 

@@ -21,8 +21,8 @@ reuse their lessons and code by copying.
 
 ## Working rules
 - Push straight to `main` (solo project, the founder's standing rule). No PRs.
-- Repo: https://github.com/pravegm/swoop. It was created **private**, because the permission guard blocks creating
-  public repos. Making it public is the founder's call (free Mac CI minutes; Brim and Squish are public).
+- Repo: https://github.com/pravegm/swoop. It is **public** (since 26 Oct 2026: private-repo Actions are blocked by
+  this account's billing; Brim and Squish are public too). Nothing personal goes in it.
 - **No Mac on the Claude side. CI is the compiler.** A Swift change is unverified until a GitHub Actions run passes.
 - On this Windows host Bash ignores `cd`. Use absolute paths and `git -C`. There is no Python; use Node
   (`tools/balance-sim.js` is a JS port of the flight physics for tuning).

@@ -1,9 +1,9 @@
 # Swoop: Accessibility Nutrition Labels (v1.0)
 
-*Decided Mon 26 Oct 2026; **updated Tue 27 Oct for the Round 6–9 build** (Flight School, the bird side, the "Wings by: Tapping" control, the route HUD, the glossary of `design/UX-ROUND-9.md`). The rule, the same as Squish and Brim: **claim a label only when the build earns it across every common task**, and verify on the release build first. Labels are voluntary, per device, and can only be published once a version is live, so this happens on **launch day, Tue 24 Nov** (runbook §7).*
+*Decided Mon 26 Oct 2026; **updated Tue 27 Oct for the Round 6–9 build** (Flight School, the bird side, the "Wings by: Tapping" control, the route HUD, the glossary of `design/UX-ROUND-9.md`). The rule, the same as Squish and Brim: **claim a label only when the build earns it across every common task**, and verify on the release build first. Labels are voluntary, per device, and can only be published once a version is live, so this happens on **the day Swoop goes live** (on approval; runbook step 7, "Launch day"). The App Store Connect tool doesn't set labels: the founder ticks them by hand.*
 
 Common tasks for Swoop:
-1. the first launch: get through **Flight School** (or skip it), including the one-tap clear-side check on a Duo;
+1. the first launch: get through **Flight School** (or skip it), including the one-tap clear-side check on a Duo (a side, or "Not sure");
 2. start a flight or the Daily Flight from Home;
 3. fly (fold / open on a Duo; hold / let go, or tap, elsewhere) and read the HUD: distance, the storm meter, the "×3 in a row" chip, the NEXT lighthouse chip;
 4. read the result card (route strip, "You made it past…", distance) and share the Daily result;
@@ -17,7 +17,7 @@ Common tasks for Swoop:
 - **Reduce Motion:** Swoop follows the iOS setting (Settings shows it as an info row: "no camera shake or screen bloom when on").
 - **Sound and haptics:** Sound on/off, Haptics Off · Normal · Strong, and "Respect silent switch".
 - **Bird side** (Sharp side (auto) · Left · Right on a Duo; Left · Right elsewhere) lets a player put the bird where they can see it best.
-- **Words in the world:** Perfect is shown as a word on the water, lighthouse passes as "Gull Point!", the end as "Flight over", and the goal as text ("NEXT · Gull Point · 1.2 km").
+- **Words in the world:** Perfect is shown as a word on the water, lighthouse passes as "Gull Point!", the end as "The storm caught you" (and "Flight over" on the Results card), and the goal as text ("NEXT · Gull Point · 1.2 km").
 
 ## The answer, at a glance
 
@@ -25,7 +25,7 @@ Common tasks for Swoop:
 |---|---|---|---|
 | VoiceOver | **No** | Decided | Menus are labelled, Flight School is spoken and tapping mode works with VoiceOver, but flying (task 3) depends on seeing the shape of the waves ahead. Apple's bar is all common tasks |
 | Voice Control | **No** | Decided | Flying needs timing on every wave; there's no spoken alternative. (Tapping mode serves Switch Control, which has no label of its own) |
-| Larger Text | **No** | Decided | Menus may scale, but the in-flight HUD, the in-world words and the result card aren't designed to reach 200% |
+| Larger Text | **No** | Decided | Swoop 1.0 has no Dynamic Type support (founder's decision, `design/qa/FINAL-FIXES.md`): text doesn't follow the iOS text size. Never tick it |
 | Dark Interface | **No** (unless check D passes) | **Verify** | The system style is forced dark and the menus sit on navy surfaces, but the default play screen is a bright Golden Hour sky |
 | Differentiate Without Color Alone | **Yes**, if check A passes | **Verify** | Perfect, Tailwind, lighthouses and the goal are words; the storm meter is a position on a bar; done goals have a ✓; Route uses ✓ and solid vs dashed line |
 | Sufficient Contrast | **Yes**, if check B passes | **Verify** | HUD text and in-world words sit over a changing sky and sea; they need the soft navy glow or a backing plate everywhere |
@@ -48,7 +48,7 @@ Common tasks for Swoop:
 
 ### B. Sufficient Contrast
 Apple's bar: about 4.5:1 for text, 3:1 for large text, controls and state indicators.
-- [ ] HUD text (distance, NEXT chip, "Best in…", "×3 in a row") and the in-world words (Flight School's ≤ 3-word cues on their soft navy glow, "Perfect", "Gull Point!", "Flight over") keep ≥ 4.5:1 (3:1 for the large ones) against **every** sky (Golden Hour, Rose Dusk, Northern Lights, Monsoon, Moonrise), the practice sky and under the storm. Plain white on a golden sky won't pass.
+- [ ] HUD text (distance, NEXT chip, "Best in…", "×3 in a row") and the in-world words (Flight School's ≤ 3-word cues on their soft navy glow, "Perfect", "Gull Point!", "The storm caught you") keep ≥ 4.5:1 (3:1 for the large ones) against **every** sky (Golden Hour, Rose Dusk, Northern Lights, Monsoon, Moonrise), the practice sky and under the storm. Plain white on a golden sky won't pass.
 - [ ] Menu, Route and result-card text ≥ 4.5:1 on its panel; the quiet "mist" lines included.
 - [ ] The storm meter, the pause button and Flight School's Skip reach 3:1 against what's behind them.
 - [ ] Check with Increase Contrast and Bold Text on.

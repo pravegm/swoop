@@ -1,6 +1,6 @@
 # Swoop: App Store metadata (v1.0)
 
-*Written Mon 26 Oct 2026 by the launch lead; **rewritten Tue 27 Oct for the Round 6–9 build** (Flight School, the lighthouse route, the bird on the sharp half, and the plain words of `design/UX-ROUND-9.md` §3–4). Paste from the code blocks exactly. Counts are Unicode characters (counted with Node), except keywords, which Apple counts in bytes (all ASCII here, so the same). Each choice has a one-line reason in `DECISIONS.md`. Every feature claim was checked against the code on 27 Oct (§10); re-tick §10 on the release-candidate build before submission.*
+*Written Mon 26 Oct 2026 by the launch lead; **rewritten Tue 27 Oct for the Round 6–9 build** (Flight School, the lighthouse route, the bird on the sharp half, and the plain words of `design/UX-ROUND-9.md` §3–4). Nobody pastes these any more: `node tools/appstore/build-metadata.js` turns the code blocks into `docs/appstore/asc-metadata.json`, and the App Store Connect tool (`asc.yml`, `tools/appstore/README.md`) pushes them, together with §7–§9. Change the text here, then regenerate. Counts are Unicode characters (counted with Node), except keywords, which Apple counts in bytes (all ASCII here, so the same). Each choice has a one-line reason in `DECISIONS.md`. Every feature claim was checked against the code on 27 Oct (§10); re-tick §10 on the release-candidate build before submission.*
 
 **Words the copy uses** (the app's glossary, `UX-ROUND-9.md` §3–4): *fold / open* on the Duo and *hold / let go* on other iPhones (never "tuck" as an instruction; "Tuck & Soar" stays only in the name), *flight*, *the way down / the way up*, *Perfect* and *perfect landings*, *in a row*, *stay ahead of the storm*, *the next lighthouse*, *Route*, *Level n*, *Goals*, *top scores*, *same waves for everyone*. Never "Outfly", "downslope", "crest", "chain", "rank", "Flocks".
 
@@ -47,7 +47,7 @@ Rotation ideas for later (count before pasting):
 
 ## 4. Description (limit 4,000)
 
-**en-GB 3,435 / 4,000; en-US 3,434 / 4,000.**
+**en-GB 3,458 / 4,000; en-US 3,457 / 4,000.**
 
 ### en-GB (English U.K.)
 
@@ -61,7 +61,7 @@ No ads. No in-app purchases. No accounts. No data collected. Pay once and it's y
 FLIGHT SCHOOL
 Your first flight starts with a short lesson on a calm practice sea. A guide gull shows each move first, then you copy it: fold, open, land, and how the storm works. Skip it if you like, and replay it from Settings any time.
 
-MADE FOR THE FOLD. PLAYS ON EVERY iPhone.
+MADE FOR THE FOLD. PLAYS ON OTHER iPhone MODELS TOO.
 On iPhone Duo, the hinge is the control: easy folds of about 30° from a relaxed book pose, roughly one per wave. You never need to close the phone, lay it flat or fold fast. iPhone Duo softens one half of the screen for a moment when a fold starts from flat, so your bird flies on the half that stays sharp, and Settings lets you pick the side. On any other iPhone, press and hold anywhere on the way down and let go on the way up. Same sea, same top scores, but the fold is the best way to fly.
 
 ONE MOVE, A LOT OF SKILL
@@ -81,7 +81,7 @@ DAILY FLIGHT
 Same waves for everyone, every day, and one try that counts. Then practise as much as you like. Keep your streak going and share your result.
 
 GOALS, BIRDS AND SKIES
-Three goals at a time take you up 15 levels. Levels unlock eight birds, from Gull and Puffin to Albatross and Golden Gannet, five skies, from Golden Hour to Northern Lights and Moonrise, and coloured trails. Every bird flies exactly the same; only the look changes.
+Three goals at a time take you up 15 levels. Eight birds, from Gull and Puffin to Albatross and Golden Gannet, five skies, from Golden Hour to Northern Lights and Moonrise, and coloured trails, unlocked as you level up. Every bird flies exactly the same; only the look changes.
 
 SOUND AND FEEL
 The wind, the hiss of the water, the chimes that climb with every perfect landing and the splash are all synthesised live in the app as you fly, and the haptics rise with your speed. Sound plays with the silent switch on; a setting makes Swoop respect it instead. Sound switches off, and haptics can be Off, Normal or Strong. Swoop follows Reduce Motion: no camera shake or screen bloom. Rather tap than hold? One tap folds the wings, the next opens them.
@@ -107,7 +107,7 @@ No ads. No in-app purchases. No accounts. No data collected. Pay once and it's y
 FLIGHT SCHOOL
 Your first flight starts with a short lesson on a calm practice sea. A guide gull shows each move first, then you copy it: fold, open, land, and how the storm works. Skip it if you like, and replay it from Settings any time.
 
-MADE FOR THE FOLD. PLAYS ON EVERY iPhone.
+MADE FOR THE FOLD. PLAYS ON OTHER iPhone MODELS TOO.
 On iPhone Duo, the hinge is the control: easy folds of about 30° from a relaxed book pose, roughly one per wave. You never need to close the phone, lay it flat or fold fast. iPhone Duo softens one half of the screen for a moment when a fold starts from flat, so your bird flies on the half that stays sharp, and Settings lets you pick the side. On any other iPhone, press and hold anywhere on the way down and let go on the way up. Same sea, same top scores, but the fold is the best way to fly.
 
 ONE MOVE, A LOT OF SKILL
@@ -127,7 +127,7 @@ DAILY FLIGHT
 Same waves for everyone, every day, and one try that counts. Then practice as much as you like. Keep your streak going and share your result.
 
 GOALS, BIRDS AND SKIES
-Three goals at a time take you up 15 levels. Levels unlock eight birds, from Gull and Puffin to Albatross and Golden Gannet, five skies, from Golden Hour to Northern Lights and Moonrise, and colored trails. Every bird flies exactly the same; only the look changes.
+Three goals at a time take you up 15 levels. Eight birds, from Gull and Puffin to Albatross and Golden Gannet, five skies, from Golden Hour to Northern Lights and Moonrise, and colored trails, unlocked as you level up. Every bird flies exactly the same; only the look changes.
 
 SOUND AND FEEL
 The wind, the hiss of the water, the chimes that climb with every perfect landing and the splash are all synthesized live in the app as you fly, and the haptics rise with your speed. Sound plays with the silent switch on; a setting makes Swoop respect it instead. Sound switches off, and haptics can be Off, Normal or Strong. Swoop follows Reduce Motion: no camera shake or screen bloom. Rather tap than hold? One tap folds the wings, the next opens them.
@@ -140,7 +140,7 @@ No accounts, no tracking, no data collected. Your progress stays on your iPhone.
 ```
 
 Copy rules this text keeps:
-- **Duo first, then "plays on every iPhone"**. The touch way is described honestly ("press and hold anywhere on the way down and let go on the way up") and not oversold ("the fold is the best way to fly"). The store page may talk about the Duo; the *app* never shows a Duo line on a non-Duo iPhone, and nothing here promises that it does.
+- **Duo first, then "plays on other iPhone models too"** (not "every iPhone": the deployment target is iOS 18, so iPhone XS / XR and later). The touch way is described honestly ("press and hold anywhere on the way down and let go on the way up") and not oversold ("the fold is the best way to fly"). The store page may talk about the Duo; the *app* never shows a Duo line on a non-Duo iPhone, and nothing here promises that it does.
 - **The blur is explained once, plainly** ("softens one half of the screen for a moment when a fold starts from flat"), as an iOS behaviour Swoop works around, never as a Swoop fault.
 - **The app's glossary** (see the top of this file).
 - **"iPhone Duo" is used only referentially**, never in the name, subtitle or keywords, and "iPhone" keeps its exact form even in a capitalised heading (Apple trademark guidelines).
@@ -216,7 +216,7 @@ Answer the questionnaire exactly like this (App Store Connect → the app → Ap
 **Expected result: 4+.** If the form you see has extra or renamed items, the honest answer to each is None or No.
 
 Why each risky item is None:
-- **Horror/Fear:** the storm is weather, not a monster: slate cloud, rain and a distant rumble, with an occasional soft lightning flicker. Nothing jumps out. Being caught is calm: the storm passes over and "Flight over" appears.
+- **Horror/Fear:** the storm is weather, not a monster: slate cloud, rain and a distant rumble, with an occasional soft lightning flicker. Nothing jumps out. Being caught is calm: the storm passes over, "The storm caught you" appears, and the Results card follows.
 - **Violence:** a splash is a splash. The bird is never hurt, never falls, never dies.
 - **Simulated gambling / loot boxes:** no chance-based rewards and nothing to buy. Birds, skies and trails unlock by level, and the Daily Flight is the same fixed waves for everyone, not a prize draw.
 - **Contests:** Game Center leaderboards are not prize contests.
@@ -229,7 +229,7 @@ Why each risky item is None:
 | Price | Base country **United Kingdom, £1.99**; Apple equalises every other storefront (check the US shows **$1.99**). No launch discount |
 | Availability | Every country or region **except China mainland and Vietnam** (paid games there need a government game licence) |
 | Pre-order | **No** |
-| Release | **Automatically release this version after App Review approval, no earlier than** Tue 24 Nov 2026, 08:00 UTC (a scheduled release: nothing to press on launch day) |
+| Release | **Automatically release this version after App Review approval** (live as soon as Apple approves; nothing to press. Founder's decision, 27 Oct, DECISIONS #12) |
 | Family Sharing | **On** (permanent once on) |
 | Small Business Program | Account-level; already enrolled for Squish (just confirm it shows Active) |
 | Copyright | `© 2026 pravegm` |
@@ -237,18 +237,18 @@ Why each risky item is None:
 | Marketing URL | `https://pravegm.github.io/swoop/` |
 | Privacy Policy URL | `https://pravegm.github.io/swoop/privacy.html` |
 | App Privacy | **Data Not Collected** (`privacy.md`) |
-| Accessibility Nutrition Labels | **Reduced Motion**, **Sufficient Contrast**, **Differentiate Without Color Alone**, each only after its check passes, published on launch day (`accessibility.md`) |
+| Accessibility Nutrition Labels | **Reduced Motion**, **Sufficient Contrast**, **Differentiate Without Color Alone**, each only after its check passes, published on the day Swoop goes live (`accessibility.md`) |
 | Content Rights | "Does your app contain, show, or access third-party content?" **No** (all art drawn in code, all sound synthesised, system fonts only) |
 | Export compliance | Nothing to answer: `ITSAppUsesNonExemptEncryption` is `false` in `project.yml` |
 | Game Center | On; 2 leaderboards and 12 achievements, 625 points (`achievements.md`) |
 | Sign-in required | No |
 | Version | 1.0 (`MARKETING_VERSION` in `project.yml`) |
 
-**About the three web addresses.** GitHub Pages serves the repo's `docs/` folder at `https://pravegm.github.io/swoop/` (runbook §0b). The real pages are in `docs/site/`. `docs/index.html`, `docs/support.html` and `docs/privacy.html` are tiny forwarding pages, so the short addresses above work. If a reviewer or tool ever objects to the forward, use the direct addresses instead: `https://pravegm.github.io/swoop/site/`, `…/site/support.html`, `…/site/privacy.html`.
+**About the three web addresses.** GitHub Pages serves the repo's `docs/` folder at `https://pravegm.github.io/swoop/` once Pages is on (runbook step 1). The real pages are in `docs/site/`. `docs/index.html`, `docs/support.html` and `docs/privacy.html` are tiny forwarding pages, so the short addresses above work. If a reviewer or tool ever objects to the forward, use the direct addresses instead: `https://pravegm.github.io/swoop/site/`, `…/site/support.html`, `…/site/privacy.html`.
 
 ## 10. Claims to check against the release-candidate build
 
-Checked against the code on Tue 27 Oct (commit `a036bc4`, Round 9 + R9b). Before submission, Claude (or whoever cuts the release candidate) re-ticks each line on that build ("RC") or changes the copy, never the other way round.
+Checked against the release candidate on 27 Oct by QA-FINAL (commit `RC_COMMIT`). Before submission, Claude (or whoever cuts the release candidate) re-ticks each line on that build ("RC") or changes the copy, never the other way round.
 
 | Claim (where) | Source in the code (27 Oct) | Code | RC |
 |---|---|---|---|
@@ -259,12 +259,12 @@ Checked against the code on Tue 27 Oct (commit `a036bc4`, Round 9 + R9b). Before
 | Never needs closing, flat or fast folds; folds of about 30°, roughly one per wave | `Core/Tuning.swift`, stroke-rate fix 98595e2 | [x] | [ ] |
 | The bird flies on the half that stays sharp; Settings → Bird side (Sharp side (auto) · Left · Right on a Duo) | `Input/SharpHalf.swift`, `UI/SettingsView.swift` `birdSideRow` | [x] | [ ] |
 | Perfect = a little extra speed (`perfectBoost` 6 %); Tailwind at 3 in a row, +15 % speed | `Core/Tuning.swift` | [x] | [ ] |
-| The storm speeds up; perfect landings push it back (`perfectGapBonus`); caught = "Flight over" | `Core/Tuning.swift`, `UX-ROUND-9` §2.1 | [x] | [ ] |
+| The storm speeds up; perfect landings push it back (`perfectGapBonus`); caught = "The storm caught you", then Results ("Flight over") | `Core/Tuning.swift`, `UX-ROUND-9` §2.1 | [x] | [ ] |
 | Fixed route: Gull Point 4 km, Saltlight 9 km, Kestrel Head 15 km…; the next one always on screen; beam, bell, lead (`lighthouseGapBonus`); the Route page | `Core/Lighthouses.swift`, `UI/PlayHUD.swift`, `UI/RouteView.swift` | [x] | [ ] |
 | Daily Flight: same waves for everyone, one try that counts, practice after, streak, share | `UI/HomeView.swift` ("Same waves for everyone · 1 try"), `UI/ShareText.swift` | [x] | [ ] |
-| Goals: 3 at a time, 15 levels; unlock 8 birds, 5 skies and trails; every bird flies the same | `Core/Goals.swift`, `Core/Catalogs.swift` (`TrailCatalog`), `UI/FlocksView.swift` ("Level n of 15") | [x] | [ ] |
+| Goals: 3 at a time, 15 levels; 8 birds, 5 skies and trails, unlocked as you level up (Gull and Golden Hour from the start); every bird flies the same | `Core/Goals.swift`, `Core/Catalogs.swift` (`TrailCatalog`), `UI/FlocksView.swift` ("Level n of 15") | [x] | [ ] |
 | All sound synthesised live; no audio files in the bundle | `Feedback/FeelSynth.swift` | [x] | [ ] |
 | Sound on silent; "Respect silent switch"; Sound on/off; Haptics Off · Normal · Strong | `UI/SettingsView.swift` | [x] | [ ] |
 | Follows iOS Reduce Motion: no camera shake or screen bloom | `UI/SettingsView.swift` (info row) | [x] | [ ] |
-| 2 leaderboards ("Top scores" on Home) + 12 achievements report from the build | `App/GameCenterManager.swift`, `Persistence/ProgressStore.swift` | [x] | [ ] |
-| No network code, no SDKs (privacy) | `privacy.md` grep | [ ] | [ ] |
+| 2 leaderboards (the "Scores" button on Home; VoiceOver "Top scores") + 12 achievements report from the build | `App/GameCenterManager.swift`, `Persistence/ProgressStore.swift` | [x] | [ ] |
+| No network code, no SDKs (privacy) | `privacy.md` §3 grep: no `URLSession`, `URLRequest`, `NWConnection`, `import Network`, `WKWebView`, `SFSafari`, `openURL`, `Link(`, ATT, `ASIdentifier`, CloudKit or SDK in `Swoop/`; no `packages:` in `project.yml`; GameKit is the only outbound path | [x] | [ ] |

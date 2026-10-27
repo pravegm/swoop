@@ -19,7 +19,7 @@
 # 8 birds and 5 skies, unlocked by level; hold / let go is the iPhone control; Flight School's guide gull shows each move.
 
 # ---- iPhone 6.9" (2868 x 1320) and 6.3" (2622 x 1206): ten frames ---------------------------------------------------
-P01-book-hero|screen=home;progress=mid;bird=gull;sky=goldenHour;touch|6|The two halves are your *wings*. / Best on iPhone Duo. Plays on every iPhone.||book:D01-book-hero
+P01-book-hero|screen=home;progress=mid;bird=gull;sky=goldenHour;touch|6|The two halves are your *wings*. / Best on iPhone Duo. Plays on other iPhones too.||book:D01-book-hero
 P02-perfect|mode=flight;seed=7;autopilot=perfect;touch;chain=4;freezeOn=perfect;freezeAfter=0;freezeDelay=0.12|20|Land on the way down: *Perfect* / Perfect landings push the storm back.|SWOOP-T freeze perfect .*chain=[4-9]
 P03-storm|mode=flight;seed=7;autopilot=casual;touch;lead=0.12;freezeOn=stormclose;freezeAfter=0|22|Stay ahead of the *storm* / Reach the next lighthouse.|
 P04-lighthouse|mode=flight;seed=7;autopilot=perfect;touch;skipTo=3850;freezeOn=lighthouse;freezeAfter=0;freezeDelay=0.4|30|Reach the next *lighthouse* / Gull Point is 4 km out. Can you make it?|

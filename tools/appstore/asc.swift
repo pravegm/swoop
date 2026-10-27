@@ -1060,7 +1060,7 @@ func loadMetadata(_ v: Validation) -> Metadata? {
                 if let sd = str(r, "startDate", "\(path).recurrence", "gamecenter") {
                     if let d = parseDate(sd) {
                         a["recurrenceStartDate"] = isoFormatter.string(from: d)
-                        // Swoop's daily board starts 1 Nov 2026; Brim created its own before its start date. Whether
+                        // Swoop's daily board starts 28 Oct 2026; Brim created its own before its start date. Whether
                         // App Store Connect takes a start in the past on create is UNCONFIRMED.
                         if d < Date() { v.warnings.append("\(path).recurrence.startDate \(sd) is in the past; if creating the leaderboard is refused, move the start date (achievements.md, DECISIONS #18)") }
                     }
@@ -2753,8 +2753,8 @@ let manualAlways = [
     "Family Sharing: App Information > Family Sharing on (permanent once enabled). Not in the API.",
     "Accessibility Nutrition Labels: on launch day, only the labels accessibility.md marks as passed (runbook §7, step 3).",
     "EU trader status (DSA): App Information > App Store Regulations and Permits. Swoop's DECISIONS #10 says it is handled at account level for Squish, but Brim was asked again per app: check it shows complete for Swoop.",
-    "The build: TestFlight workflow, then pick it on the 1.0 version page, Add for Review, Submit to App Review (runbook §6f–g).",
-    "Release: manual (DECISIONS #12). On Tue 24 Nov 2026 at about 08:00 UK the founder presses Release This Version (runbook §7). This tool never submits or releases.",
+    "The build: pick it on the 1.0 version page, Add for Review, Submit to App Review (docs/LAUNCH-RUNBOOK.md).",
+    "Release: automatic on approval (DECISIONS #12): Apple releases 1.0 as soon as App Review approves it. This tool never submits or releases.",
 ]
 
 // MARK: - Inherited personal fields (--inherit-from)

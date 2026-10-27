@@ -1,6 +1,6 @@
 # Swoop: App Privacy answers and privacy policy (v1.0)
 
-**Answer: Data Not Collected.** Based on the design (`design/GAME-DESIGN.md` §11: no accounts, no analytics) and the privacy manifest `Swoop/PrivacyInfo.xcprivacy` (no tracking, no tracking domains, no collected data types; required-reason APIs UserDefaults `CA92.1` and system boot time `35F9.1`). The app code was still being written on 26 Oct 2026, so the grep in §3 must pass on the release-candidate build **before** you publish this answer.
+**Answer: Data Not Collected.** Based on the design (`design/GAME-DESIGN.md` §11: no accounts, no analytics) and the privacy manifest `Swoop/PrivacyInfo.xcprivacy` (no tracking, no tracking domains, no collected data types; required-reason APIs UserDefaults `CA92.1` and system boot time `35F9.1`). The grep in §3 was run on the release candidate on 27 Oct by QA-FINAL (commit `RC_COMMIT`) and passed; re-run it only if the code changes before submission.
 
 The live policy page is `docs/site/privacy.html` (the text in §4 is the same; keep the two in step).
 
@@ -18,13 +18,13 @@ There's no tracking question once you choose "No". For the record, Swoop doesn't
 
 | Thing | Declare? | Why |
 |---|---|---|
-| **Hinge angle** | No | Read through the public `onHingeChange` API only to steer the bird while the game is on screen. Only the player's comfortable resting angle is remembered, on the device with the other settings; it never leaves the phone. Apple: "collect" means transmitting data off the device |
+| **Hinge angle** | No | Read through the public `onHingeChange` API to steer the bird while the game is on screen. Only the calibrated resting angle is saved, on the device, with the settings (`SettingsStore.hingeOpenAngle`). Nothing leaves the phone. Apple: "collect" means transmitting data off the device |
 | **Game Center** (sign-in, leaderboard scores, achievements) | No | Apple collects it under Apple's privacy policy. Apple: "You are not responsible for disclosing data collected by Apple." Swoop never sends it anywhere itself |
 | **Daily Flight share** (result text) | No | Made on the phone and handed to the iOS share sheet only when the player taps Share. Where it goes is the player's choice; nothing comes to us |
 | **Crash reports** via iOS "Share With App Developers" | No | Apple-collected and opt-in. We add no crash SDK. *If one is ever added, the label must declare Crash Data first* |
 | **Rating prompt** (if added) | No | Apple's `requestReview` |
 | **Support through GitHub issues** | No | Happens on GitHub, outside the app, under GitHub's privacy statement; covered by the policy |
-| **Progress, ranks, birds, bests, settings** | No | Stored only on the device (`ProgressStore`, `SettingsStore`, UserDefaults). Never transmitted |
+| **Progress, levels, birds, bests, settings** | No | Stored only on the device (`ProgressStore`, `SettingsStore`, UserDefaults). Never transmitted |
 
 **The limit to watch:** if a future version ever sends anything to our own server (Game Center IDs, analytics, online ghosts, a remote daily seed), this answer and the privacy manifest change **before** that build ships.
 
@@ -32,17 +32,17 @@ There's no tracking question once you choose "No". For the record, Swoop doesn't
 
 | Look for, in `Swoop/` | Expect | Result |
 |---|---|---|
-| Networking: `URLSession`, `URLRequest`, `NWConnection`, `import Network`, sockets | none | [ ] |
-| Web/links: `WKWebView`, `SFSafariViewController`, `openURL`, SwiftUI `Link(` | none, or only a link to the support/privacy page (opening Safari is not collection) | [ ] |
-| SDKs: Firebase, Crashlytics, Sentry, Mixpanel, Amplitude, AdSupport, `ASIdentifierManager` | none | [ ] |
-| Tracking: `AppTrackingTransparency`, `ATTrackingManager` | none | [ ] |
-| Cloud: `CloudKit`, `NSUbiquitousKeyValueStore` | none | [ ] |
-| Notifications: `UNUserNotificationCenter` | none | [ ] |
-| Hinge angle written to disk (`ProgressStore`, `SettingsStore`, files) | never (the auto-calibrated open angle may be kept in memory only; if it is ever persisted, it stays on the device and the answer is unchanged, but note it here) | [ ] |
-| Packages in `project.yml` | none (true on 26 Oct) | [ ] |
-| `NS*UsageDescription` keys in `project.yml` | none (true on 26 Oct) | [ ] |
-| `Swoop/PrivacyInfo.xcprivacy` in the built app | present (`testflight.yml` `check_only` lints it) | [ ] |
-| Required-reason APIs | UserDefaults `CA92.1`, system boot time `35F9.1` (declared). If the code uses file timestamps or disk space, add those reasons | [ ] |
+| Networking: `URLSession`, `URLRequest`, `NWConnection`, `import Network`, sockets | none | [x] none (GameKit is the only outbound path) |
+| Web/links: `WKWebView`, `SFSafariViewController`, `openURL`, SwiftUI `Link(` | none, or only a link to the support/privacy page (opening Safari is not collection) | [x] none: no URLs in the app; the privacy text is in-app; sharing is plain text through `ShareLink`, only on tap |
+| SDKs: Firebase, Crashlytics, Sentry, Mixpanel, Amplitude, AdSupport, `ASIdentifierManager` | none | [x] none |
+| Tracking: `AppTrackingTransparency`, `ATTrackingManager` | none | [x] none |
+| Cloud: `CloudKit`, `NSUbiquitousKeyValueStore` | none | [x] none |
+| Notifications: `UNUserNotificationCenter` | none | [x] none |
+| Hinge angle written to disk (`ProgressStore`, `SettingsStore`, files) | only the auto-calibrated resting angle, on the device with the settings (it never leaves the phone, so the answer is unchanged) | [x] resting angle persisted on device only (SettingsStore.hingeOpenAngle); answer unchanged |
+| Packages in `project.yml` | none (true on 26 Oct) | [x] none |
+| `NS*UsageDescription` keys in `project.yml` | none (true on 26 Oct) | [x] none |
+| `Swoop/PrivacyInfo.xcprivacy` in the built app | present (`testflight.yml` `check_only` lints it) | [x] present: tracking false, no tracking domains, no collected data types; the upload job checks it in the archive |
+| Required-reason APIs | UserDefaults `CA92.1`, system boot time `35F9.1` (declared). If the code uses file timestamps or disk space, add those reasons | [x] complete: no file-timestamp, disk-space, uptime or active-keyboard APIs outside the DEBUG-only demo code |
 
 One-line grep: `URLSession|URLRequest|NWConnection|WKWebView|SFSafari|openURL|Link\(|ATTrackingManager|ASIdentifier|CloudKit|NSUbiquitous|Firebase|Sentry|UNUserNotification`
 
@@ -50,7 +50,7 @@ One-line grep: `URLSession|URLRequest|NWConnection|WKWebView|SFSafari|openURL|Li
 
 ## 4. Privacy policy (public text)
 
-*Effective: 24 November 2026. Live at `https://pravegm.github.io/swoop/privacy.html`.*
+*Last updated 27 October 2026. Live at `https://pravegm.github.io/swoop/privacy.html`.*
 
 > # Swoop Privacy Policy
 >

@@ -1135,11 +1135,11 @@ struct CoreTests {
     }
 
     @Test func dailyDisplayNumberCountsFromLaunch() {
-        #expect(DailySeed.launchDay == 327)
+        #expect(DailySeed.launchDay == 300)
         var comps = DateComponents()
         comps.year = 2026
-        comps.month = 11
-        comps.day = 24
+        comps.month = 10
+        comps.day = 28
         comps.hour = 0
         comps.minute = 30
         if let d = DailySeed.utc.date(from: comps) {
@@ -1148,8 +1148,8 @@ struct CoreTests {
         } else {
             Issue.record("no date")
         }
-        #expect(DailySeed.displayNumber(day: 327) == 1)
-        #expect(DailySeed.displayNumber(day: 336) == 10)
+        #expect(DailySeed.displayNumber(day: 300) == 1)
+        #expect(DailySeed.displayNumber(day: 309) == 10)
         #expect(DailySeed.displayNumber(day: 298) == 1)
         #expect(DailySeed.displayNumber(day: -5) == 1)
         // The seed is unchanged: it still uses the raw day.

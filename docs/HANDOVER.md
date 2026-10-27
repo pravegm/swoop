@@ -1,14 +1,15 @@
 # Swoop: handover for the founder
 
-*Kept current as work continues. Last update: 27 Oct 2026, about 05:00 (UK).*
+*Kept current as work continues. Last update: 27 Oct 2026, afternoon (UK).*
 
 ## What Swoop is
 **Swoop: Tuck & Soar**, £1.99 once, rated 4+. No ads, no in-app purchases, and no data collected.
 - **On iPhone Duo:** hold it like a book, and the two halves are the bird's wings.
-- **How you fly:** fold a little to tuck, and hold it down the face of a wave. Open at the bottom to fly off the
-  crest. Land on the next downslope for a **Perfect**. That's one fold per wave; you never flap.
-- **The goal:** a storm chases you out to sea. Outfly it and reach the next lighthouse along the route.
-- **Other iPhones:** press and hold to tuck.
+- **How you fly:** fold a little on the way down a wave and the bird folds its wings and dives. Open at the bottom
+  and it flies off the top. Land on the way down of the next wave for a **Perfect**. That's one fold per wave; you
+  never flap.
+- **The goal:** a storm chases you out to sea. Stay ahead of it and reach the next lighthouse along the route.
+- **Other iPhones:** press and hold on the way down, let go on the way up (or tap).
 
 ## What changed after your first test (TestFlight 1.0 (2))
 You said the controls, the blurred half and the objective were unclear, and that it felt half-baked. Every point
@@ -48,18 +49,45 @@ and on a normal iPhone. **All twelve correctly explained** the hands, the storm,
 | 1.0 (9) | Round 12: the lesson only names landing rings that are on screen, and Skip is out of the bird's path |
 | **1.0 (10)** | **Your fold note: install this one.** Folding about halfway no longer pauses; the pause is now under about 55° |
 
+## Final QA (27 Oct) and the fixes
+Four release audits ran on 1.0 (10) (`design/qa/QA-FINAL-*.md`):
+
+| Audit | P0 | P1 | P2 |
+|---|---|---|---|
+| App and UI | 1 | 7 | 18 |
+| Core and data | 0 | 2 | 13 |
+| Scene and feel | 0 | 3 | 16 |
+| Release compliance | 4 | 10 | 14 |
+
+The fixes you approved (`design/qa/FINAL-FIXES.md`) landed in commit `73c8369`:
+- the hinge readout and the "Device test" card are gone from every TestFlight and App Store build (Debug only);
+- Home's Daily never goes stale across midnight; a flat Duo passes Flight School's first step;
+- touch is never stuck after a pause, and a two-thumb hand-off keeps the wings folded;
+- one "Skip" on screen (the clear-side check now says "Not sure");
+- Game Center keeps your best pending score and re-sends your achievements on sign-in;
+- small-screen Home, battery, Reduce Motion and glossary fixes; audio and haptics repair themselves.
+
+Every store document was then checked line by line against the code: the 55° pause, "The storm caught you", the
+"Scores" button, the resting angle saved on the phone (privacy policy corrected), "Plays on other iPhones too".
+The listing, Game Center, screenshots and the featuring nomination are pushed by the App Store Connect tool
+(`asc.yml`), so you paste nothing. CI was still running on `73c8369` when this was written; the release build is
+made from the release-candidate commit once its CI run is green.
+
 ## What only you can do
-1. Install the newest TestFlight build and play the first 2 minutes as if you'd never seen it. Tell me whether
-   you'd know what to do.
-2. The 15-minute Duo test script is in the appendix of `design/panel/REVIEW-4-duo.md`. It uses Settings → Hinge
-   readout; that row only appears in TestFlight builds.
-3. Still pending from the launch runbook (`docs/LAUNCH-RUNBOOK.md`):
-   - Game Center leaderboards and achievements (§4);
-   - price, age rating and privacy (§5);
-   - GitHub Pages for the support and privacy URLs (§0b);
-   - the featuring nomination by Tue 3 Nov (§1e);
-   - the store listing paste (§6).
-   The store screenshots are built by the **App Store screenshots** workflow (`store.yml`).
+Everything is in the checklist at the top of `docs/LAUNCH-RUNBOOK.md`, in order, with the exact clicks:
+1. Turn on the website (GitHub Pages). **Do this now**: the Support and Privacy links don't work until then.
+2. App Privacy: "Data Not Collected".
+3. Pricing and Availability: Mac and Vision Pro off, Family Sharing on.
+4. EU Digital Services Act trader status (only if asked).
+5. Pick the build and submit for review, as soon as I say "ready".
+6. If Apple rejects it: send me the message.
+7. Launch day (optional): check the page, posts, accessibility labels, promo codes.
+
+Steps 2–4 go before step 5. As you decided, Swoop goes live **as soon as Apple approves it** ("Automatically release
+this version"), usually 24–48 hours after you submit: expected about **Thu 29 – Fri 30 Oct**, so Swoop now launches
+before Brim (still Tue 17 Nov). Nothing to press. The Daily Flight's #1 and its leaderboard start Wed 28 Oct.
+On each new build I send, the 10-minute Duo check is in the runbook's Appendix A. (The 15-minute script in
+`design/panel/REVIEW-4-duo.md` uses Settings → Hinge readout, which is now only in Debug builds, not TestFlight.)
 
 ## Where things are
 - **Repo:** `pravegm/swoop` (local copy at `C:\Users\59527\Wing`).
