@@ -647,6 +647,8 @@ struct ResultsPlan: Equatable {
         if p.farHeight() > cardHeight && c {
             var single = p
             single.oneRow = true
+            // Final QA (store frame P07): the one row has no Daily button, so its "One try a day…" line goes too.
+            single.dailyRow = false
             if single.rowsFit(width: inner) { p = single }
         }
         if p.farHeight() > cardHeight { p.dailyRow = false }

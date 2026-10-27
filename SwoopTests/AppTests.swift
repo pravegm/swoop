@@ -1050,6 +1050,8 @@ struct RoundFourTests {
                     let plan = ResultsPlan.make(s, canvas: c, cardHeight: far.height, dailyRowAllowed: dailyRow)
                     #expect(plan.farHeight() <= far.height,
                             "far card \(plan.farHeight()) > \(far.height) on \(c.size) for \(s.title)")
+                    // Final QA (P07): the one-row layout has no Daily button, so no Daily row (nor its line).
+                    #expect(!(plan.oneRow && plan.dailyRow), "one row with a Daily row on \(c.size) for \(s.title)")
                     if plan.twoPages {
                         #expect(plan.sideHeight(width: side.width) <= side.height,
                                 "side card \(plan.sideHeight(width: side.width)) > \(side.height) on \(c.size) for \(s.title)")
