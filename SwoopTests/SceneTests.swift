@@ -497,14 +497,16 @@ struct SceneTests {
         if let d = d {
             #expect(abs(d.from - 250) <= 10 && abs(d.to - 750) <= 10)
         }
+        // R12: the ring sits `ringSlopeFraction` (0.35) of the way down the downslope (R9: the middle).
+        let k = SceneLook.ringSlopeFraction
         if case .landing(let x) = SceneGuidePlacement.resolve(.landingAhead, birdX: 0, height: h) {
-            #expect(abs(x - 500) <= 10)
+            #expect(abs(x - (250 + 500 * k)) <= 10)
         } else {
             Issue.record("no landing guide")
         }
         // Sliding down a slope already: the ring goes on the next one.
         if case .landing(let x) = SceneGuidePlacement.resolve(.landingAhead, birdX: 400, height: h) {
-            #expect(abs(x - 1500) <= 10)
+            #expect(abs(x - (1250 + 500 * k)) <= 10)
         } else {
             Issue.record("no landing guide")
         }
@@ -1221,7 +1223,7 @@ struct SceneTests {
         #expect(Double(p.y) >= floorY)
         let safe = CGRect(x: 200, y: cam.visibleMinY + 200, width: 952 - 400, height: cam.visibleHeight - 320)
         let fit = cam.zoomToFit(ring, inside: safe)
-        #expect(fit < 0.8 && fit >= cam.zoomMin - 0.0001)
+        #expect(fit < 0.8 && fit >= cam.ringFitFloor - 0.0001)
         #expect(safe.contains(cam.previewPoint(ring, framingZoom: fit)))
         var plain = SceneCamera(layout: SceneTests.duo)
         plain.snap(bird: CGPoint(x: 0, y: 60), water: -20)
@@ -1293,6 +1295,313 @@ struct SceneTests {
         b.updateTrail(emit: CGPoint(x: 60, y: 40), show: true, time: 0.06, zoom: 1, speedK: 0, goldK: 0,
                       tailwind: false, ceiling: 65)
         #expect(b.trailPointCount == 3)
+    }
+
+    // MARK: Round 12: targets that are really there
+
+    /// A Flight School scene on Core's practice sea, the bird flying at `speed` from sea x `x` (always airborne, so it
+    /// never lands in a ring: every ring is flown past).
+    @MainActor static func schoolScene(_ layout: ScreenLayout, x: Double,
+                                       speed: Double) -> (FlightScene, SceneTestsDriver) {
+        let scene = FlightScene(layout: layout)
+        let driver = SceneTestsDriver()
+        driver.sea = SeaProfile(seed: 7, practice: true)
+        driver.stormSpeed = 0
+        driver.snap.stormX = -1_000_000
+        driver.snap.gap = 1_000_000
+        driver.snap.position = CGPoint(x: x, y: 0)
+        driver.snap.speed = speed
+        driver.snap.phase = .flying
+        scene.driver = driver
+        scene.practiceSea = true
+        scene.reset()
+        return (scene, driver)
+    }
+
+    /// ROUND-12 P0-2(a) (pure): the WHOLE ring rect (ellipse + drop marker) must sit inside the visible canvas inset
+    /// 200 pt at the sides, 160 pt at the bottom and 120 pt at the top; the camera's centre rect guarantees it.
+    @Test func ringTargetsKeepTheWholeRectInboard() {
+        let duo = SceneTests.duo.visibleRect
+        let box = SceneTargets.ringInboardRect(visible: duo)
+        let side: CGFloat = 200, bottom: CGFloat = 160
+        let width: CGFloat = 952 - 400, height: CGFloat = 670 - 160 - 120
+        #expect(abs(box.minX - side) < 0.01 && abs(box.minY - bottom) < 0.01)
+        #expect(abs(box.width - width) < 0.01 && abs(box.height - height) < 0.01)
+        let c = SceneTargets.ringCentreRect(visible: duo)
+        for p in [CGPoint(x: c.minX, y: c.minY), CGPoint(x: c.maxX, y: c.maxY), CGPoint(x: c.midX, y: c.midY)] {
+            #expect(box.insetBy(dx: -0.01, dy: -0.01).contains(SceneTargets.ringCanvasRect(center: p)))
+        }
+        // R11 held only the centre 200 pt in: its ellipse then reached 101 pt from the edge (under Skip, s1-08).
+        #expect(!box.contains(SceneTargets.ringCanvasRect(center: CGPoint(x: 201, y: 300))))
+        // The rect covers the drop marker above the ring (the App puts its words just above it).
+        let r = SceneTargets.ringCanvasRect(center: CGPoint(x: 400, y: 300))
+        let top: CGFloat = 300 + SceneLook.dropHeight + SceneLook.dropChevron
+        #expect(r.maxY >= top)
+        // On the phone's cropped canvas the insets scale with the shorter visible height, and there is still room.
+        let phone = SceneTests.phone.visibleRect
+        let i = SceneTargets.ringInsets(visible: phone)
+        let phoneBottom: CGFloat = phone.height * 0.3
+        #expect(abs(i.side - side) < 0.01 && abs(i.bottom - phoneBottom) < 0.01)
+        #expect(SceneTargets.ringCentreRect(visible: phone).height > 20)
+    }
+
+    /// ROUND-12 P0-1 (pure): a ring is named only ahead of the bird and wholly on screen, and first only once inboard.
+    @Test func ringIsNamedOnlyAheadAndOnScreen() {
+        let v = SceneTests.duo.visibleRect
+        let inboard = SceneTargets.ringCanvasRect(center: CGPoint(x: 476, y: 300))
+        let edge = SceneTargets.ringCanvasRect(center: CGPoint(x: 120, y: 300))
+        let off = SceneTargets.ringCanvasRect(center: CGPoint(x: 40, y: 300))
+        #expect(SceneTargets.reportsRing(ringX: 1000, birdX: 500, rect: inboard, visible: v, wasReported: false))
+        // Behind or level with the bird: never, wherever it is drawn.
+        #expect(!SceneTargets.reportsRing(ringX: 400, birdX: 500, rect: inboard, visible: v, wasReported: true))
+        #expect(!SceneTargets.reportsRing(ringX: 500, birdX: 500, rect: inboard, visible: v, wasReported: true))
+        // Cut by the screen edge: never.
+        #expect(!SceneTargets.reportsRing(ringX: 1000, birdX: 500, rect: off, visible: v, wasReported: true))
+        // On screen but at the edge: not first named there; kept if it already was (no flicker as the camera eases).
+        #expect(!SceneTargets.reportsRing(ringX: 1000, birdX: 500, rect: edge, visible: v, wasReported: false))
+        #expect(SceneTargets.reportsRing(ringX: 1000, birdX: 500, rect: edge, visible: v, wasReported: true))
+    }
+
+    /// ROUND-12 P0-1 (pure): from the bottom of a trough (the storm step starts in one, at 4300) the ring still goes
+    /// on the next downslope. R11's search found a 8 pt "downslope" there and gave up, so no ring was placed.
+    @Test func landingAheadFindsARingFromATrough() {
+        let h: (Double) -> Double = { x in -100 * cos(2 * Double.pi * x / 2000) }
+        for bx in [0.0, 2000.0] {
+            if case .landing(let x) = SceneGuidePlacement.resolve(.landingAhead, birdX: bx, height: h) {
+                let expected = bx + 1000 + 1000 * SceneLook.ringSlopeFraction
+                #expect(abs(x - expected) <= 12)
+            } else {
+                Issue.record("no ring from the trough at \(bx)")
+            }
+        }
+        let sea = SeaProfile(seed: 7, practice: true)
+        let ps: (Double) -> Double = { x in sea.height(at: x) }
+        let start = Tuning.practiceGuidedTroughX
+        if case .landing(let x) = SceneGuidePlacement.resolve(.landingAhead, birdX: start, height: ps) {
+            #expect(x > 5300 && x < 6300)
+        } else {
+            Issue.record("no ring from the storm step's start")
+        }
+    }
+
+    /// ROUND-12 P0-2(a), s1-08: the land step starts at the launch (2104) with its ring at 3450 and the CI frame holds
+    /// at 2650. The ring is named within about half a second, and in the held frame its whole rect is inboard, on the
+    /// Duo both ways and on the iPhone.
+    @Test @MainActor func landingStepRingIsInboardByTheFrame() {
+        for layout in [SceneTests.duoMirrored, SceneTests.duo, SceneTests.phone] {
+            let (scene, driver) = SceneTests.schoolScene(layout, x: Tuning.practiceLaunchX, speed: 1113)
+            scene.guide = .landing(at: 3450)
+            var now: TimeInterval = 7
+            var t = 0.0
+            var namedAt: Double?
+            while Double(driver.snap.position.x) < 2650 && t < 2 {
+                scene.update(now)
+                now += 1.0 / 120.0
+                t += 1.0 / 120.0
+                if namedAt == nil && scene.ringScreenRect != nil { namedAt = t }
+                if scene.ringScreenRect != nil, let r = scene.ringCanvasRect {
+                    #expect(layout.visibleRect.insetBy(dx: -1, dy: -1).contains(r))
+                }
+            }
+            #expect(namedAt.map { $0 <= 0.6 } == true, "mirrored \(layout.mirrored), visible \(layout.visibleRect)")
+            // The CI frame is held: the framing settles, with the whole ring rect inside the inset canvas.
+            driver.hold = true
+            for _ in 0..<240 {
+                scene.update(now)
+                now += 1.0 / 120.0
+            }
+            let box = scene.ringInboardRect().insetBy(dx: -1, dy: -1)
+            if let r = scene.ringCanvasRect {
+                #expect(box.contains(r), "ring \(r) vs \(box)")
+            } else {
+                Issue.record("no ring")
+            }
+            #expect(scene.ringInboard)
+            #expect(scene.ringScreenRect != nil)
+        }
+    }
+
+    /// ROUND-12 P0-1, s1-12 / s1-13: in the storm step (from 4300 at 1700 pt/s, never landing) there is always a ring
+    /// to name within 1.5 s, a named ring is always ahead of the bird and wholly on screen, and the held frame at sea
+    /// x 6300 (the R11 frames, whose ring was behind) names a ring ahead and inboard.
+    @Test @MainActor func stormStepAlwaysHasARingAheadToName() {
+        for layout in [SceneTests.duoMirrored, SceneTests.duo, SceneTests.phone] {
+            let (scene, driver) = SceneTests.schoolScene(layout, x: Tuning.practiceGuidedTroughX + 1, speed: 1700)
+            scene.guide = .landingAhead
+            var now: TimeInterval = 9
+            var t = 0.0
+            var lastNamed = 0.0
+            var longestGap = 0.0
+            var named = 0
+            while Double(driver.snap.position.x) < 9700 && t < 5 {
+                scene.update(now)
+                now += 1.0 / 120.0
+                t += 1.0 / 120.0
+                if scene.ringScreenRect != nil, let c = scene.ringCanvasPoint, let r = scene.ringCanvasRect {
+                    named += 1
+                    lastNamed = t
+                    let bird = scene.birdCanvasPoint
+                    let ahead = layout.mirrored ? c.x < bird.x : c.x > bird.x
+                    #expect(ahead, "a named ring behind the bird at t \(t)")
+                    #expect(layout.visibleRect.insetBy(dx: -1, dy: -1).contains(r))
+                }
+                longestGap = max(longestGap, t - lastNamed)
+            }
+            #expect(named > 0)
+            #expect(longestGap <= 1.5, "no ring to name for \(longestGap) s (mirrored \(layout.mirrored))")
+
+            // The held s1-12 frame: frozen at 6300, just past the first ring.
+            let (held, heldDriver) = SceneTests.schoolScene(layout, x: Tuning.practiceGuidedTroughX + 1, speed: 1700)
+            held.guide = .landingAhead
+            var clock: TimeInterval = 20
+            var guardFrames = 0
+            while Double(heldDriver.snap.position.x) < 6300 && guardFrames < 600 {
+                held.update(clock)
+                clock += 1.0 / 120.0
+                guardFrames += 1
+            }
+            heldDriver.hold = true
+            for _ in 0..<300 {
+                held.update(clock)
+                clock += 1.0 / 120.0
+            }
+            #expect(held.ringScreenRect != nil, "the held storm frame names no ring (mirrored \(layout.mirrored))")
+            #expect(held.ringInboard)
+            if let c = held.ringCanvasPoint {
+                let bird = held.birdCanvasPoint
+                #expect(layout.mirrored ? c.x < bird.x : c.x > bird.x)
+            }
+        }
+    }
+
+    /// ROUND-12 P0-1: the storm step's ring comes back ahead after a Perfect in it; the land step's does not; a ring
+    /// flown past is missed at once (not 1.5 widths + 200 pt later) and asks for the next.
+    @Test @MainActor func stormRingComesBackAndPassedRingsGo() {
+        let g = SceneGuides()
+        let flat: (Double) -> Double = { _ in 0 }
+        func frames(_ n: Int, birdX: Double) {
+            for i in 0..<n {
+                g.update(dt: 1.0 / 60.0, time: Double(i) / 60, zoom: 1, originX: 0, birdX: birdX, birdY: 200, tuck: 0,
+                         height: flat)
+            }
+        }
+        g.show(.landing(at: 1000), repeatsRing: true)
+        frames(30, birdX: 900)
+        #expect(g.perfectLanded(at: 1000, zoom: 1) == 1000)
+        #expect(g.ringX == nil)
+        frames(30, birdX: 1000)
+        #expect(!g.ringNeedsRespawn)
+        frames(24, birdX: 1000)
+        #expect(g.ringNeedsRespawn)
+        g.respawnRing(at: 2400)
+        #expect(g.ringX.map { abs($0 - 2400) < 0.01 } == true)
+
+        g.show(.landing(at: 3000))
+        frames(30, birdX: 2900)
+        #expect(g.perfectLanded(at: 3000, zoom: 1) == 3000)
+        frames(90, birdX: 3000)
+        #expect(!g.ringNeedsRespawn)
+        #expect(g.shown == .none)
+
+        g.show(.landing(at: 5000), repeatsRing: true)
+        frames(30, birdX: 4800)
+        #expect(g.ringX != nil)
+        frames(1, birdX: 5000 + SceneLandingRing.hitReach(zoom: 1) + 1)
+        #expect(g.ringX == nil)
+        #expect(g.ringCenter == nil)
+        frames(30, birdX: 5300)
+        #expect(g.ringNeedsRespawn)
+    }
+
+    /// ROUND-12 P0-3: where the bird opened too soon in a fold zone, a gold tick marks the wave; a fresh attempt
+    /// (back at the crest) clears it.
+    @Test @MainActor func earlyOpenIsMarkedOnTheWave() {
+        let g = SceneGuides()
+        let h: (Double) -> Double = { x in -0.3 * x }
+        g.show(.foldPath(from: 0, to: 1000))
+        for i in 0..<100 {
+            let x = Double(i) * 10
+            g.update(dt: 1.0 / 60.0, time: Double(i) / 60, zoom: 1, originX: 0, birdX: x, birdY: h(x),
+                     tuck: x < 400 ? 1 : 0, height: h)
+        }
+        #expect(g.missMarks.count == 1)
+        if let m = g.missMarks.first { #expect(abs(m - 400) <= 10.5) }
+        g.update(dt: 1.0 / 60.0, time: 2, zoom: 1, originX: 0, birdX: -50, birdY: 0, tuck: 0, height: h)
+        #expect(g.missMarks.isEmpty)
+    }
+
+    /// ROUND-12 P1-6 (pure): the guide gull shows only wholly on screen, and ahead of or level with the bird.
+    @Test func ghostShowsOnlyWhollyOnScreenAndAhead() {
+        let v = SceneTests.duo.visibleRect
+        let half = SceneTargets.ghostHalfSize(zoom: 0.78)
+        #expect(half.width > 40 && half.width < 120)
+        let mid = CGPoint(x: 600, y: 300)
+        #expect(SceneTargets.ghostShows(center: mid, halfSize: half, visible: v, ghostX: 1400, birdX: 1000))
+        // Half off the edge (s1-07): not drawn; touching it: not drawn either.
+        #expect(!SceneTargets.ghostShows(center: CGPoint(x: 10, y: 300), halfSize: half, visible: v, ghostX: 1400,
+                                         birdX: 1000))
+        #expect(!SceneTargets.ghostShows(center: CGPoint(x: half.width, y: 300), halfSize: half, visible: v,
+                                         ghostX: 1400, birdX: 1000))
+        // Level with the bird is fine; behind it is not.
+        #expect(SceneTargets.ghostShows(center: mid, halfSize: half, visible: v, ghostX: 990, birdX: 1000))
+        #expect(!SceneTargets.ghostShows(center: mid, halfSize: half, visible: v, ghostX: 900, birdX: 1000))
+    }
+
+    /// ROUND-12 P1-6 in the scene: a ghost far ahead (off the edge) or behind the bird is not drawn and has no screen
+    /// point; it still flies, and shows once it is wholly on screen ahead.
+    @Test @MainActor func guideGullIsNeverCutByTheEdge() {
+        let scene = FlightScene(layout: SceneTests.duoMirrored)
+        let driver = SceneTestsDriver()
+        scene.driver = driver
+        scene.reset()
+        driver.snap.phase = .flying
+        var now: TimeInterval = 4
+        func frames(_ n: Int, ahead: Double) {
+            for _ in 0..<n {
+                let x = Double(driver.snap.position.x) + ahead
+                let y = (driver.sea?.height(at: x) ?? 0) + 60
+                scene.guideGhost = SceneGhostPose(x: x, y: y, tuck: 0, bodyAngle: 0, move: .soar)
+                scene.update(now)
+                now += 1.0 / 120.0
+            }
+        }
+        frames(90, ahead: 350)
+        #expect(scene.ghostShown)
+        #expect(scene.ghostScreenPoint != nil)
+        if let g = scene.ghostScreenPoint { #expect(g.x < scene.birdScreenPoint.x) }
+        frames(10, ahead: 4000)
+        #expect(!scene.ghostShown)
+        #expect(scene.ghostScreenPoint == nil)
+        frames(10, ahead: -400)
+        #expect(!scene.ghostShown)
+        #expect(scene.ghostActive)
+    }
+
+    /// ROUND-12 P1-7: the school's Gull Point leaves room for its name between its apex and the visible top (on the
+    /// iPhone the R11 tower reached the top, so "Gull Point" was drawn through it).
+    @Test @MainActor func schoolTowerLeavesRoomForItsName() {
+        for layout in [SceneTests.phone, SceneTests.duoMirrored] {
+            let (scene, _) = SceneTests.schoolScene(layout, x: 6000, speed: 1700)
+            scene.schoolLighthouse = true
+            var now: TimeInterval = 11
+            for _ in 0..<240 {
+                scene.update(now)
+                now += 1.0 / 120.0
+            }
+            if let top = scene.lighthouseTopCanvasPoint, let lamp = scene.lampCanvasPoint {
+                #expect(top.y > lamp.y)
+                #expect(top.y + SceneLook.towerLabelRoom <= layout.visibleRect.maxY + 0.5)
+            } else {
+                Issue.record("no school tower")
+            }
+        }
+        let roomy = SceneTargets.schoolTowerScale(nominal: 0.4, baseY: 400, visibleTop: 670)
+        #expect(abs(roomy - 0.4) < 0.0001)
+        let tight = SceneTargets.schoolTowerScale(nominal: 0.4, baseY: 480, visibleTop: 554)
+        let limit: CGFloat = 554.01
+        #expect(tight < 0.4)
+        #expect(480 + SceneTargets.towerTop * tight + SceneLook.towerLabelRoom <= limit)
+        #expect(SceneTargets.schoolTowerScale(nominal: 0.4, baseY: 540, visibleTop: 554) == SceneLook.schoolTowerMinScale)
     }
 
     // MARK: Camera

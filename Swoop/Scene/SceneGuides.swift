@@ -44,8 +44,18 @@ final class SceneGuides {
     var isDrawing: Bool { ring.isDrawing || cues.contains { $0.isDrawing } }
     /// The live ring's centre (sea x, the water's y there), nil when no ring is up.
     var ringCenter: CGPoint? { ring.liveCenter }
+    /// R12: the live ring's sea x from the moment it is placed (the camera frames it on that same frame).
+    var ringX: Double? { ring.liveX }
+    /// R12: how far the ring has faded in (0 … 1); it is only named once it is plainly drawn.
+    var ringLevel: CGFloat { ring.shownLevel }
     /// Set when a missed ring has faded out: the scene places it again on the next downslope ahead.
     private(set) var ringNeedsRespawn = false
+    /// R12 (ROUND-12 P0-1): the storm step's ring (`.landingAhead`) keeps coming back: after a Perfect in it, another
+    /// is placed ahead `ringRepeatDelay` later, so "Land in the gold ring" always has a ring to name.
+    private(set) var repeatsRing = false
+    private var repeatTimer: Double?
+    /// R12 (ROUND-12 P0-3): where the bird opened too soon in each live fold zone (sea x), marked by a gold tick.
+    var missMarks: [Double] { cues.compactMap { $0.missMarkX } }
     /// The fold zones' paint (tests): how far it has got (sea x), whether a stretch was flown open, whether done.
     var foldPaint: [(painted: Double, missed: Bool, done: Bool)] {
         cues.filter { $0.fold && $0.isLive }.map { ($0.paintedTo, $0.missFrom != nil, $0.done) }
@@ -64,10 +74,13 @@ final class SceneGuides {
 
     func apply(foam: UIColor) {}
 
-    /// Shows a resolved guide (sea positions); `.none` fades everything out.
-    func show(_ g: SceneGuide) {
+    /// Shows a resolved guide (sea positions); `.none` fades everything out. `repeatsRing`: the ring came from
+    /// `.landingAhead` (the storm step), so a Perfect in it brings the next one ahead.
+    func show(_ g: SceneGuide, repeatsRing repeats: Bool = false) {
         active = g
         ringNeedsRespawn = false
+        repeatsRing = repeats
+        repeatTimer = nil
         var swells: [(SceneSwell, Bool, Bool)] = []
         switch g {
         case .foldPath(let from, let to): swells = [(SceneSwell(from: from, to: to), true, false)]
@@ -100,6 +113,8 @@ final class SceneGuides {
     func clear() {
         active = .none
         ringNeedsRespawn = false
+        repeatsRing = false
+        repeatTimer = nil
         ring.clear()
         for c in cues { c.clear() }
     }
@@ -108,7 +123,11 @@ final class SceneGuides {
     /// burst). Returns the ring's centre (sea x) when it landed in it.
     func perfectLanded(at x: Double, zoom z: CGFloat) -> Double? {
         guard let rx = ring.hit(x: x, zoom: z) else { return nil }
-        active = .none
+        if repeatsRing {
+            repeatTimer = SceneLook.ringRepeatDelay
+        } else {
+            active = .none
+        }
         return rx
     }
 
@@ -132,6 +151,15 @@ final class SceneGuides {
         if ring.wantsRespawn {
             ring.wantsRespawn = false
             ringNeedsRespawn = true
+        }
+        if let left = repeatTimer {
+            let next = left - Double(dt)
+            if next <= 0 {
+                repeatTimer = nil
+                ringNeedsRespawn = true
+            } else {
+                repeatTimer = next
+            }
         }
     }
 
@@ -202,6 +230,9 @@ final class SceneSwellCue {
     private var foldChevrons: [SKShapeNode] = []
     private var liftChevrons: [SKShapeNode] = []
     private let bead: SKNode
+    /// R12 (ROUND-12 P0-3): the gold tick where the bird opened too soon.
+    private let missTick: SKNode
+    private var tickLevel: CGFloat = 0
     private(set) var swell = SceneSwell(from: 0, to: 0)
     private(set) var fold = false
     private(set) var opens = false
@@ -213,6 +244,8 @@ final class SceneSwellCue {
     private var beadLevel: CGFloat = 0
     var isDrawing: Bool { level > 0.002 || beadLevel > 0.002 }
     var isLive: Bool { on }
+    /// R12: where the bird opened too soon in this live fold zone (sea x), nil when it hasn't.
+    var missMarkX: Double? { fold && on && !done ? missFrom : nil }
     private let gold = ScenePaint.ui(ScenePalette.rewardGold)
     private let mist = ScenePaint.ui(SceneLook.mist)
     private let teal = ScenePaint.ui(SceneLook.openTeal)
@@ -221,6 +254,7 @@ final class SceneSwellCue {
         root = SKNode()
         band = SKNode()
         bead = SKNode()
+        missTick = SKNode()
         root.addChild(band)
         let tex = SceneTextures.ribbon
         for _ in 0..<20 {
@@ -270,6 +304,27 @@ final class SceneSwellCue {
         bead.addChild(tickNode)
         bead.zPosition = 0.5
         root.addChild(bead)
+        // The early-open tick: a short gold stroke across the foam line on an ink underlay (it reads on the pale face
+        // and on the grey miss band alike).
+        let tickPath = CGMutablePath()
+        tickPath.move(to: CGPoint(x: 0, y: -SceneLook.missTickHeight * 0.5))
+        tickPath.addLine(to: CGPoint(x: 0, y: SceneLook.missTickHeight * 0.5))
+        let under = SKShapeNode(path: tickPath)
+        under.strokeColor = ScenePaint.ui(ScenePalette.ink, alpha: 0.55)
+        under.lineWidth = SceneLook.missTickWidth + 3
+        under.lineCap = .round
+        under.fillColor = .clear
+        missTick.addChild(under)
+        let mark = SKShapeNode(path: tickPath)
+        mark.strokeColor = gold
+        mark.lineWidth = SceneLook.missTickWidth
+        mark.lineCap = .round
+        mark.fillColor = .clear
+        mark.zPosition = 0.1
+        missTick.addChild(mark)
+        missTick.zPosition = 0.6
+        missTick.isHidden = true
+        root.addChild(missTick)
         root.isHidden = true
     }
 
@@ -292,6 +347,7 @@ final class SceneSwellCue {
         on = false
         level = 0
         beadLevel = 0
+        tickLevel = 0
         done = false
         missFrom = nil
         root.isHidden = true
@@ -398,6 +454,19 @@ final class SceneSwellCue {
             c.alpha = SceneLook.cueChevronAlpha * a * CGFloat(0.35 + 0.65 * ph)
         }
 
+        // R12 (ROUND-12 P0-3): the early open, marked on the wave where it happened.
+        if let mx = missMarkX {
+            tickLevel = min(1, tickLevel + dt / SceneLook.missTickFadeIn)
+            missTick.position = CGPoint(x: CGFloat(mx - originX), y: CGFloat(height(mx)))
+            let slope = (height(mx + 2) - height(mx - 2)) / 4
+            missTick.zRotation = CGFloat(atan(slope))
+            missTick.setScale(r)
+        } else {
+            tickLevel = 0
+        }
+        missTick.isHidden = tickLevel <= 0.002 || a <= 0.002
+        if !missTick.isHidden { missTick.alpha = tickLevel * a }
+
         // The done bead over the crest (it stays with the sea).
         bead.isHidden = beadLevel <= 0.002
         if !bead.isHidden {
@@ -489,10 +558,21 @@ final class SceneLandingRing {
     /// A Perfect at `bx`: in the ring, it turns into the real Perfect ring; returns the centre.
     func hit(x bx: Double, zoom z: CGFloat) -> Double? {
         guard on, !missing, let rx = x, level > 0.2 else { return nil }
-        guard abs(bx - rx) <= Double(SceneLook.ringWidth / z) * 0.75 + 60 else { return nil }
+        guard abs(bx - rx) <= SceneLandingRing.hitReach(zoom: z) else { return nil }
         on = false
         return rx
     }
+
+    /// The Perfect window either side of the ring's centre (sea pt): 0.75 of its width at this zoom, plus 60.
+    nonisolated static func hitReach(zoom z: CGFloat) -> Double {
+        Double(SceneLook.ringWidth / max(z, 0.01)) * 0.75 + 60
+    }
+
+    /// The live ring's sea x (placed, not landed in, not missed), nil when none is up. Unlike `liveCenter` it is set
+    /// the moment the ring is placed, so the camera can frame a ring on the frame it appears.
+    var liveX: Double? { on && !missing ? x : nil }
+    /// How far the ring has faded in (0 … 1).
+    var shownLevel: CGFloat { level }
 
     /// Any other touchdown near or past the ring: fade over 0.3 s, then ask for a respawn.
     func miss(x bx: Double, zoom z: CGFloat) {
@@ -507,8 +587,10 @@ final class SceneLandingRing {
             liveCenter = nil
             return
         }
-        // The bird running on well past the ring without landing in it is a miss too.
-        if on && !missing && birdX > rx + Double(SceneLook.ringWidth / z) * 1.5 + 200 { missing = true }
+        // The bird flying past the ring without landing in it is a miss too. R12 (ROUND-12 P0-1): as soon as it is
+        // beyond the Perfect window (it can no longer be landed in), not 1.5 widths + 200 pt later: R11's passed ring
+        // stayed "live" behind the bird, so the storm step's words and pointer named a ring off the behind edge.
+        if on && !missing && birdX > rx + SceneLandingRing.hitReach(zoom: z) { missing = true }
         if on && !missing {
             level = min(1, level + dt / SceneLook.cueFadeIn)
         } else {
@@ -549,13 +631,17 @@ enum SceneGuidePlacement {
         let step = 8.0
         var p = x
         let end = x + reach
-        // Climb to the next crest (or stay on it).
-        while p < end && slope(p, height) > 0.002 { p += step }
-        let crest = p
-        // Then run down to the trough.
-        while p < end && slope(p, height) <= 0.002 { p += step }
-        guard p < end, p - crest > 40 else { return nil }
-        return (crest, p)
+        // R12: a level stretch shorter than 40 pt (the bottom of a trough: the bird sitting in one found nothing ahead,
+        // so the storm step's ring was never placed) is skipped and the search goes on to the next crest.
+        while p < end {
+            // Climb to the next crest (or stay on it).
+            while p < end && slope(p, height) > 0.002 { p += step }
+            let crest = p
+            // Then run down to the trough.
+            while p < end && slope(p, height) <= 0.002 { p += step }
+            if p < end && p - crest > 40 { return (crest, p) }
+        }
+        return nil
     }
 
     private static func slope(_ a: Double, _ height: (Double) -> Double) -> Double {
@@ -589,11 +675,14 @@ enum SceneGuidePlacement {
         }
     }
 
-    /// The middle of the next downslope that starts ahead of `x` (skipping the one the bird may be sliding down now).
+    /// `ringSlopeFraction` (0.35) of the way down the next downslope that starts ahead of `x` (skipping the one the
+    /// bird may be sliding down now).
     static func landingX(after birdX: Double, height: (Double) -> Double) -> Double? {
         var from = birdX
         if let d = nextDownslope(after: birdX, height: height), d.from <= birdX + 8 { from = d.to + 8 }
-        if let d = nextDownslope(after: from, height: height) { return d.from + (d.to - d.from) * 0.5 }
+        if let d = nextDownslope(after: from, height: height) {
+            return d.from + (d.to - d.from) * SceneLook.ringSlopeFraction
+        }
         return nil
     }
 }

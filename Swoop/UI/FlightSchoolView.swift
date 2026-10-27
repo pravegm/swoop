@@ -22,8 +22,18 @@ struct SchoolLayout: Equatable {
     var stormPrompt: CGRect
     /// The low fallback word place on the bird page.
     var seaPromptLow: CGRect
-    /// Skip: the sea page's bottom outer corner.
+    /// Skip: R12 P0-2 the TRAILING bottom corner, the side the bird flies away from (the bird page's outer corner:
+    /// bottom-left unmirrored and on iPhone, bottom-right mirrored), never where the ring lands or the bird is going.
     var skip: CGRect
+    /// R12 P0-5: the muted "Your wings" / "Your bird" caption under the big top-down gull (step 1): under its far-page
+    /// wing on a Duo (never on the fold), centred under its body on an iPhone.
+    var wingsCaption: CGRect = .zero
+
+    /// R12 P0-2: the corner chrome's size: Skip, and the dots pill stacked just above it.
+    static let skipWidth: CGFloat = 96
+    static let dotsWidth: CGFloat = 100
+    static let dotsHeight: CGFloat = 12
+    static let dotsGap: CGFloat = 6
 
     /// R8 P1-9 (kept for the fallback places): true when the bird (+ 60 pt) is under the usual place. Pure; tested.
     nonisolated static func usesLowPrompt(usual: CGRect, low: CGRect, bird: CGPoint?, radius: CGFloat = 44,
@@ -42,14 +52,14 @@ struct SchoolLayout: Equatable {
         let bp = c.birdPage
         let fp = c.farPage
         let compact = c.isCompact
-        let skipW: CGFloat = 96
-        let skipX = c.mirrored ? fp.minX + 8 : fp.maxX - skipW - 8
+        // R12 P0-2 (s1-08): the landing ring sat under Skip and the dots at the sea page's corner, the one the bird
+        // flies TOWARD. Both move to the trailing bottom corner (the bird page's outer corner, behind the bird), the
+        // dots stacked just above Skip so the pair stays in that corner, out of the bird's path, on every canvas.
+        let skipW = skipWidth
+        let skipX = c.mirrored ? bp.maxX - skipW - 8 : bp.minX + 8
         let skip = CGRect(x: skipX, y: c.bottom - AppCanvas.minTap, width: skipW, height: AppCanvas.minTap)
-        // R11 P1-11 / P1-12: the dots sit beside Skip (one chrome corner on the sea page, tester 14), never on the bird
-        // page where the Perfect ring lands (s1-09). Scene keeps its ring ≥ 200 pt inboard of every edge.
-        let dotsW: CGFloat = 100
-        let dotsX = c.mirrored ? skip.maxX + 12 : skip.minX - 12 - dotsW
-        let dots = CGRect(x: dotsX, y: skip.midY - 6, width: dotsW, height: 12)
+        let dots = CGRect(x: skip.midX - dotsWidth / 2, y: skip.minY - dotsGap - dotsHeight, width: dotsWidth,
+                          height: dotsHeight)
         // ART #46: on iPhone the title bird gets y 24 and 0.30 h (it was crammed into the top 95 pt).
         let birdH = compact ? c.size.height * 0.30 : min(max(c.size.height * 0.30, 70), 210)
         let foldMid = (c.foldMinX + c.foldMaxX) / 2
@@ -71,8 +81,14 @@ struct SchoolLayout: Equatable {
                                   width: pw, height: 44)
         let meter = PlayLayout.make(c).meter
         let stormPrompt = CGRect(x: bp.midX - pw / 2, y: max(meter.maxY + 20, seaPrompt.minY), width: pw, height: 44)
+        // Under the gull's far-page wing: off the middle band (both canvases keep words off it) and away from the
+        // diagram and its words on the bird page.
+        let cw: CGFloat = min(160, fp.width)
+        let ch: CGFloat = compact ? 22 : 26
+        let wingsCaption = CGRect(x: fp.midX - cw / 2, y: titleBird.maxY + 6, width: cw, height: ch)
         return SchoolLayout(dots: dots, titleBird: titleBird, diagram: diagram, prompt: prompt, seaPrompt: seaPrompt,
-                            stormPrompt: stormPrompt, seaPromptLow: seaPromptLow, skip: skip)
+                            stormPrompt: stormPrompt, seaPromptLow: seaPromptLow, skip: skip,
+                            wingsCaption: wingsCaption)
     }
 }
 
@@ -100,10 +116,17 @@ struct SchoolDots: View {
 
 /// In-world words (≤ 4, no full stop): `headline` foam on a soft 0.45 navy glow, not a panel (UX-ROUND-9 §1.1 rule 2).
 /// R11 P0-3: an optional muted second line under them ("Open at the bottom", the remedy after a miss).
+/// R12 P1-8 (s1-08: the sun-glint dashes ran through "Land here"): at sea the words sit on a soft navy backing, as
+/// R8 P1-10's prompts did: a feathered scrim, not a panel, so no glint, spray or sky streak runs through them.
 struct SchoolWord: View {
     let text: String
     var sub: String? = nil
     var compact = false
+    var backed = false
+
+    /// The backing's opacity and feather (pure; the words' contrast over the brightest glint).
+    nonisolated static let backingOpacity: Double = 0.5
+    nonisolated static let backingFeather: CGFloat = 8
 
     var body: some View {
         VStack(spacing: 2) {
@@ -122,6 +145,14 @@ struct SchoolWord: View {
         }
         .shadow(color: Color(swoopHex: Contrast.scrim).opacity(0.45), radius: 10)
         .shadow(color: Color(swoopHex: Contrast.scrim).opacity(0.45), radius: 4)
+        .background {
+            if backed {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color(swoopHex: Contrast.scrim).opacity(Self.backingOpacity))
+                    .padding(EdgeInsets(top: -8, leading: -16, bottom: -8, trailing: -16))
+                    .blur(radius: Self.backingFeather)
+            }
+        }
         .accessibilityHidden(true)
     }
 }
@@ -230,6 +261,26 @@ enum SchoolRig {
         return dx * dx + dy * dy > 24 * 24 ? (from, to) : nil
     }
 
+    /// R12 P0-1: the ring the words sit by and point at: only a ring in view (fully on screen, ahead of the bird) for
+    /// words that name it; nil otherwise, so no pointer ever runs off an edge or back to a ring behind. Pure; tested.
+    static func pointerRing(anchor: SchoolWordsAnchor, ring: CGRect?, ringInView: Bool) -> CGRect? {
+        anchor == .ring && ringInView ? ring : nil
+    }
+
+    /// R12 P1-7 (iPhone s1-12: "Gull Point" drawn through its own tower): the lighthouse's name sits above the lamp
+    /// with its bottom ≥ `lampClear` over it; where the top of the screen leaves no room, beside the tower (on the
+    /// side toward the screen's middle), level with the lamp. Pure; tested.
+    static let lampClear: CGFloat = 22
+    static func lampLabelSize(compact: Bool) -> CGSize { CGSize(width: compact ? 130 : 150, height: compact ? 26 : 30) }
+    static func lampLabelCenter(lamp: CGPoint, canvas c: AppCanvas) -> CGPoint {
+        let s = lampLabelSize(compact: c.isCompact)
+        let above = lamp.y - lampClear - s.height / 2
+        if above - s.height / 2 >= c.top { return CGPoint(x: lamp.x, y: above) }
+        let towardMiddle: CGFloat = lamp.x > c.size.width / 2 ? -1 : 1
+        let x = lamp.x + towardMiddle * (s.width / 2 + 18)
+        return CGPoint(x: x, y: max(lamp.y, c.top + s.height / 2))
+    }
+
     /// R10: the big "Perfect": above the bird (≥ 80 pt off it), on its page.
     static func bigWordCenter(bird: CGPoint, canvas c: AppCanvas) -> CGPoint {
         let size = CGSize(width: 260, height: 56)
@@ -294,6 +345,17 @@ struct WingDiagram: View {
         return min(1.6 * (180 - t) / 2, 60) * Double.pi / 180
     }
 
+    /// R12 P0-4: the pose the drawing shows. Done: the TARGET (the pose the words asked for), whatever the hands did;
+    /// otherwise the live pose, clamped so it never folds past a fold target. The diagram is never a different shape
+    /// from the one its words ask for. Pure; tested.
+    nonisolated static func drawnTuck(live: Double, target: Double?, done: Bool) -> Double {
+        let u = live.isFinite ? min(max(live, 0), 1) : 0
+        guard let target, target.isFinite else { return u }
+        let t = min(max(target, 0), 1)
+        if done { return t }
+        return t > 0.5 ? min(u, t) : u
+    }
+
     /// The hinge angle a tuck 0…1 shows: open 174° … folded 135°. Pure; tested.
     nonisolated static func hinge(forTuck u: Double) -> Double {
         let k = u.isFinite ? min(max(u, 0), 1) : 0
@@ -318,10 +380,37 @@ struct WingDiagram: View {
                                  target: target.map { $0 > 0.5 }, done: done)
             } else {
                 Canvas { ctx, size in
-                    let live = ghostTuck ?? tuck
+                    let live = Self.drawnTuck(live: ghostTuck ?? tuck, target: target, done: done)
                     let phi = Self.displayAngle(hinge: Self.hinge(forTuck: live))
                     let p = Self.plates(phi: phi, size: size)
                     let plateWidth: CGFloat = compact ? 6 : 7
+                    // R12 P0-4: done draws the TARGET pose filled (its wedge, its plates solid), with the tick: the
+                    // very shape the dashed target showed, never the deeper fold the hands (or the demo) made.
+                    if done, let target {
+                        let tphi = Self.displayAngle(hinge: Self.hinge(forTuck: target))
+                        let t = Self.plates(phi: tphi, size: size, lengthScale: 1.08)
+                        let colour = target > 0.5 ? SwoopTheme.rewardGold : SwoopTheme.accentOn
+                        var wedge = Path()
+                        wedge.move(to: t.hinge)
+                        wedge.addLine(to: t.left)
+                        wedge.addLine(to: t.right)
+                        wedge.closeSubpath()
+                        ctx.fill(wedge, with: .color(colour.opacity(0.38)))
+                        var solid = Path()
+                        solid.move(to: t.left)
+                        solid.addLine(to: t.hinge)
+                        solid.addLine(to: t.right)
+                        ctx.stroke(solid, with: .color(Color(swoopHex: Contrast.scrim).opacity(0.55)),
+                                   style: StrokeStyle(lineWidth: plateWidth + 3, lineCap: .round, lineJoin: .round))
+                        ctx.stroke(solid, with: .color(DuoDiagram.bodyColor),
+                                   style: StrokeStyle(lineWidth: plateWidth, lineCap: .round, lineJoin: .round))
+                        ctx.stroke(solid, with: .color(colour),
+                                   style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                        let r: CGFloat = compact ? 4 : 5
+                        ctx.fill(Path(ellipseIn: CGRect(x: t.hinge.x - r, y: t.hinge.y - r, width: 2 * r, height: 2 * r)),
+                                 with: .color(DuoDiagram.spine))
+                        return
+                    }
                     // The target first, under the live plates: its wedge tinted, its plates dashed.
                     if let target, !done {
                         let tphi = Self.displayAngle(hinge: Self.hinge(forTuck: target))
@@ -481,8 +570,12 @@ struct SchoolBirdRig: View {
             let scripted = FlightSchool.hasDemo(display.step) && elapsed < FlightSchool.ghostDemoSeconds
                 && !display.isSea
             let ghostPose: Double? = sceneGhost ?? (scripted ? FlightSchool.ghostTuck(display.step, elapsed: elapsed) : nil)
-            let hasSub = display.wordsSub != nil
-                && SchoolRig.showsSub(bird: bird, canvas: info, anchor: display.wordsAnchor)
+            // R12 P0-1: the words name a ring (and point at it) only while it is fully on screen AHEAD of the bird.
+            let ringRect = controller.ringScreenRect
+            let ringInView = SchoolRingRule.ringInView(ringRect, bird: bird, screen: info.size, mirrored: info.mirrored)
+            let shown = display.shownWords(ringInView: ringInView)
+            let anchor = shown?.anchor ?? display.wordsAnchor
+            let hasSub = shown?.sub != nil && SchoolRig.showsSub(bird: bird, canvas: info, anchor: anchor)
             ZStack(alignment: .topLeading) {
                 if display.showsDiagram {
                     // R11 P0-4: the ONE wing indicator; its words always under it.
@@ -494,18 +587,20 @@ struct SchoolBirdRig: View {
                         .position(p)
                         .animation(.easeOut(duration: 0.15), value: p)
                 }
-                if let words = display.words {
-                    let ring = display.wordsAnchor == .ring ? controller.ringScreenRect : nil
-                    let p = SchoolRig.wordsCenter(anchor: display.wordsAnchor, bird: bird, canvas: info, layout: layout,
+                if let shown {
+                    let ring = SchoolRig.pointerRing(anchor: shown.anchor, ring: ringRect, ringInView: ringInView)
+                    let p = SchoolRig.wordsCenter(anchor: shown.anchor, bird: bird, canvas: info, layout: layout,
                                                   showsDiagram: display.showsDiagram,
                                                   ring: ring, ghost: controller.ghostScreenPoint, hasSub: hasSub)
-                    // R11 P0-5: the words point at the ring they name when they could not sit right on it.
+                    // R11 P0-5: the words point at the ring they name when they could not sit right on it (R12: only a
+                    // ring in view; never a pointer off the edge or behind the bird).
                     if let line = SchoolRig.ringPointer(words: p, size: SchoolRig.wordsSize(compact: info.isCompact,
                                                                                             hasSub: hasSub),
                                                         ring: ring) {
                         RingPointer(from: line.from, to: line.to)
                     }
-                    SchoolWord(text: words, sub: hasSub ? display.wordsSub : nil, compact: info.isCompact)
+                    // R12 P1-8: on the soft navy backing (the sun-glint ran through "Land here").
+                    SchoolWord(text: shown.text, sub: hasSub ? shown.sub : nil, compact: info.isCompact, backed: true)
                         .position(p)
                         .animation(.easeOut(duration: 0.15), value: p)
                         .transition(.opacity)
@@ -518,9 +613,10 @@ struct SchoolBirdRig: View {
                 }
                 // Step 6: the in-world name by Gull Point's lamp as it rises (Scene `schoolLighthouse`).
                 if display.step == .storm, let lamp = hud.lampPoint {
+                    // R12 P1-7: above its lamp, or beside the tower when the top leaves no room (never through it).
                     let s = info.screenPoint(lamp)
                     SchoolWord(text: RouteRules.name(0), compact: info.isCompact)
-                        .position(x: s.x, y: max(s.y - 36, info.top + 20))
+                        .position(SchoolRig.lampLabelCenter(lamp: s, canvas: info))
                         .transition(.opacity)
                 }
             }
@@ -573,11 +669,12 @@ struct SchoolStudioView: View {
                         TitleBirdView(bird: controller.bird, tuck: tuck)
                             .frame(width: l.titleBird.width, height: l.titleBird.height)
                             .position(x: l.titleBird.midX, y: l.titleBird.midY)
-                        // R11 P0-4: the side-on hinge; done shows the reached pose with a tick (not an open book).
+                        // R11 P0-4: the side-on hinge. R12 P0-4: done draws the step's TARGET pose filled with the tick
+                        // (s1-04 showed the demo's full fold, deeper than "Fold a little").
                         WingDiagram(angle: doneFold ? Self.foldTarget : controller.hingeAngleForDiagram,
                                     tuck: doneFold ? 1 : (d.touch ? (touching ? 1 : 0) : liveTuck),
                                     ghostTuck: demo && !doneFold ? FlightSchool.ghostTuck(d.step, elapsed: elapsed) : nil,
-                                    target: doneFold ? nil : target,
+                                    target: d.praise != nil ? FlightSchool.doneTarget(d.step) : target,
                                     touch: d.touch, compact: info.isCompact, mirrored: info.mirrored,
                                     done: d.praise != nil)
                             .scaleEffect(SchoolLayout.studioScale(info.isCompact))
@@ -586,6 +683,22 @@ struct SchoolStudioView: View {
                     .frame(width: info.size.width, height: info.size.height, alignment: .topLeading)
                 }
                 .allowsHitTesting(false)
+                // R12 P0-5: which bird is me. Under the big top-down gull on the first step: the halves are "Your
+                // wings" (Duo) / "Your bird" (touch); it fades as the step completes.
+                if let caption = d.wingsCaption(hasFold: info.hasFold) {
+                    Text(caption)
+                        .font(SwoopType.body(info.isCompact).weight(.semibold))
+                        .foregroundStyle(SwoopTheme.mist.opacity(0.85))
+                        .lineLimit(1)
+                        .fixedSize()
+                        .shadow(color: Color(swoopHex: Contrast.scrim).opacity(0.5), radius: 4)
+                        .opacity(d.praise == nil ? 1 : 0)
+                        .animation(.easeOut(duration: 0.4), value: d.praise == nil)
+                        .position(x: l.wingsCaption.midX, y: l.wingsCaption.midY)
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
                 if let words = d.words {
                     // The words always sit in one place: under the diagram.
                     SchoolWord(text: words, sub: d.wordsSub, compact: info.isCompact)

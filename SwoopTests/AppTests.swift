@@ -1543,21 +1543,24 @@ struct RoundSixTests {
         func sea(_ t: Double, _ signals: [PracticeSignal]) -> SchoolInput {
             SchoolInput(time: t, landscape: true, flying: true, practice: true, signals: signals)
         }
-        // Step 3: a dive held 40 % rewinds with the help line; one held 90 % passes.
+        // Step 3: a dive held 40 % rewinds with the help line; one held 90 % passes. R12 P0-3: the rewind waits
+        // `missRewindDelay` (the miss is said at the trough the bird reached, then back to the crest).
         var d = FlightSchool(touch: false, asksWingCheck: false)
         d.start(at: .dive, time: 0)
         var out = d.step(sea(2, [.diveDone(heldFraction: 0.4)]))
-        #expect(out.rewind)
+        #expect(!out.rewind)
         #expect(d.subline == "You opened too soon. Stay folded.")
-        out = d.step(sea(3, [.diveDone(heldFraction: 0.9)]))
+        out = d.step(sea(2 + FlightSchool.missRewindDelay + 0.05, []))
+        #expect(out.rewind)
+        out = d.step(sea(4, [.diveDone(heldFraction: 0.9)]))
         #expect(out.succeeded && !out.rewind)
         // Three misses: "Good enough. Let's fly."
         var f = FlightSchool(touch: true, asksWingCheck: false)
         f.start(at: .dive, time: 0)
         _ = f.step(sea(2, [.diveDone(heldFraction: 0.1)]))
         #expect(f.subline == "You let go too soon. Keep holding.")
-        _ = f.step(sea(3, [.diveDone(heldFraction: 0.1)]))
-        out = f.step(sea(4, [.diveDone(heldFraction: 0.1)]))
+        _ = f.step(sea(3.5, [.diveDone(heldFraction: 0.1)]))
+        out = f.step(sea(5, [.diveDone(heldFraction: 0.1)]))
         #expect(out.succeeded)
         #expect(f.subline == "Good enough. Let's fly.")
         // Step 4: launched folded rewinds; launched open passes.
@@ -2311,11 +2314,12 @@ struct RoundNineTests {
                     }
                 }
             }
-            // R11: the dots sit beside Skip on the sea page (one chrome corner), never under the meter or on Skip.
+            // R12 P0-2: the dots sit with Skip in the TRAILING bottom corner (the bird page's outer corner, behind the
+            // bird), stacked just above it; never under the meter or on Skip.
             #expect(l.dots.minY > PlayLayout.make(c).meter.maxY + 100)
-            #expect(c.farPage.contains(CGPoint(x: l.dots.midX, y: l.dots.midY)))
+            #expect(c.birdPage.insetBy(dx: -0.5, dy: -0.5).contains(CGPoint(x: l.dots.midX, y: l.dots.midY)))
             #expect(!l.dots.intersects(l.skip))
-            #expect(abs(l.dots.midY - l.skip.midY) < 0.5)
+            #expect(abs(l.dots.midX - l.skip.midX) < 0.5 && l.dots.maxY <= l.skip.minY)
         }
     }
 

@@ -206,10 +206,29 @@ final class FlightScene: SKScene {
     var ghostTuck: Double { ghost.tuck }
     /// Called once when the guide gull dissolves into its motes (the player's turn).
     var onGhostFinished: (() -> Void)?
-    /// SR7: the live landing ring's rect (the ellipse with its drop marker) in view points, nil when none is up.
+    /// SR7: the live landing ring's rect (the ellipse with its drop marker) in view points. R12 (ROUND-12 P0-1): nil
+    /// unless the ring is ahead of the bird and wholly on screen; it is first reported once it has settled inboard
+    /// (`ringInboardRect`), then kept while it stays ahead and on screen. Name the ring ("Land here", "Land in the
+    /// gold ring", the pointer) only while this is non-nil.
     private(set) var ringScreenRect: CGRect?
-    /// R11: the live ring's centre on the canvas (SpriteKit, y up), nil when none is up (tests: `ringSafeRect`).
+    /// R11: the live ring's centre on the canvas (SpriteKit, y up), nil when none is up (tests: `ringSafeRect`). Set
+    /// whether or not the ring is reported.
     private(set) var ringCanvasPoint: CGPoint?
+    /// R12: the live ring's whole rect on the canvas (y up), reported or not (tests).
+    private(set) var ringCanvasRect: CGRect?
+    /// R12: whether the live ring is ahead of the bird with its whole rect inside `ringInboardRect()` this frame.
+    private(set) var ringInboard = false
+    private var ringReported = false
+    /// R12 (ROUND-12 P1-6): whether the guide gull is drawn this frame (fully on screen, ahead of or level with the
+    /// bird). `ghostScreenPoint` is nil while it isn't.
+    var ghostShown: Bool { ghost.isActive && ghost.isShown }
+    /// R12 (ROUND-12 P0-3): where the bird opened too soon in each live fold zone (sea x); each carries a gold tick
+    /// on the wave. Nothing to call: the fold zone marks it by itself.
+    var foldMissMarks: [Double] { guides.missMarks }
+    /// R12 (ROUND-12 P1-7): the school tower's apex (the top of its cap) on the canvas (y up), nil when no tower
+    /// shows. In school the tower is sized so this stays ≥ `SceneLook.towerLabelRoom` (46 pt) under the visible top:
+    /// put the name's baseline 8 pt above it.
+    private(set) var lighthouseTopCanvasPoint: CGPoint?
     /// UX-ROUND-9 step 6: while set, a dotted line flows from the storm's front to this view point (the meter's storm
     /// icon). Set it for about 1 s, then nil.
     var stormLinkTarget: CGPoint?
@@ -511,6 +530,10 @@ final class FlightScene: SKScene {
         ghostScreenPoint = nil
         ringScreenRect = nil
         ringCanvasPoint = nil
+        ringCanvasRect = nil
+        ringInboard = false
+        ringReported = false
+        lighthouseTopCanvasPoint = nil
         caughtAge = 0
         caughtStartEdge = nil
         caughtBoltDone = false
@@ -680,6 +703,22 @@ final class FlightScene: SKScene {
 
         // Camera: framing on the simulation's clock; the punch-in and the pull-outs on the FX clock.
         let birdPoint = CGPoint(x: bx, y: by)
+        // A jump of the bird (a rewind, a session switch) never leaves a straight trail (defect #29). R12: it is a cut,
+        // so the camera snaps too, and the storm step's ring is placed afresh ahead of where the bird now is.
+        let jumped = !needsSnap && (lastBirdX.map { abs(bx - $0) > 600 } ?? false)
+        if jumped {
+            birdView.clearTrail()
+            if guide == .landingAhead { pendingGuide = true }
+        }
+        // R12 (ROUND-12 P0-2): Flight School's guides are placed BEFORE the camera frames, so the frame a ring
+        // appears on (a reset, a rewind, a step change) already frames it. R11 placed them after the camera, so the
+        // snap at a step's start never saw its ring.
+        if pendingGuide {
+            pendingGuide = false
+            guides.show(SceneGuidePlacement.resolve(guide, birdX: bx, height: { x in self.seaHeight(x) }),
+                        repeatsRing: guide == .landingAhead)
+        }
+        let ringTarget: CGPoint? = guides.ringX.map { CGPoint(x: $0, y: seaHeight($0)) }
         viewCam.birdCeiling = s.mode == .attract ? attractBirdCeiling().map { Double($0) } : nil
         viewCam.waterCeiling = s.mode == .attract ? homeWaterCeiling().map { Double($0) } : nil
         viewCam.practiceFraming = inSchool
@@ -688,32 +727,40 @@ final class FlightScene: SKScene {
         var bias: CGFloat = 0
         if ghost.isActive {
             bias = SceneLook.ghostCameraBias * w
-        } else if let rc = guides.ringCenter, Double(rc.x) > bx {
+        } else if let rc = ringTarget, Double(rc.x) > bx {
             bias = SceneLook.ringCameraBias * w
         }
         let biasRoom = w * ScreenLayout.birdScreenFraction - SceneLook.biasEdgeClearance
         viewCam.biasTarget = Double(min(bias, max(biasRoom, 0)))
-        // R11 (ROUND-11 P0-5): the live landing ring ahead is framed ≥ 200 pt inboard of the sides and the bottom
-        // (clear of Skip, the step dots and the pause button): the bird rides higher in its band and, if that is not
-        // enough, the zoom comes out until the ring fits.
-        if inSchool, let rc = guides.ringCenter, Double(rc.x) > bx - 40, Double(rc.x) < bx + 4000 {
+        // A snap (a reset, a jump) lands first, so the ring fit below is worked out for where the bird is now.
+        if needsSnap || jumped { viewCam.snap(bird: birdPoint, water: water) }
+        // R11 (ROUND-11 P0-5), R12 (P0-2): the live landing ring ahead is framed with its WHOLE rect (the ellipse and
+        // its drop marker) inside the canvas inset 200 pt at the sides, 160 pt at the bottom and 120 pt at the top
+        // (clear of Skip, the step dots and the pause button in any corner): the bird rides higher in its band and,
+        // if that is not enough, the zoom comes out until the ring fits. The springs rush while it isn't there yet.
+        if inSchool, let rc = ringTarget, Double(rc.x) > bx - 40, Double(rc.x) < bx + 4000 {
             let safe = ringSafeRect()
             viewCam.keepInView = rc
             viewCam.keepInset = Double(safe.minY - layout.visibleRect.minY)
             let fit = viewCam.zoomToFit(rc, inside: safe)
             viewCam.zoomCap = min(viewCam.zoomCap ?? SceneCamera.zoomMax, fit)
+            viewCam.rushToCap = true
         } else {
             viewCam.keepInView = nil
+            viewCam.rushToCap = false
         }
-        // A jump of the bird (a rewind, a session switch, a held frame) never leaves a straight trail (defect #29).
-        if let lx = lastBirdX, abs(bx - lx) > 600 { birdView.clearTrail() }
+        // R12: in school a held frame (a demo freeze, a pause; not the hit-stop) lets the framing settle on wall
+        // time, so a frozen frame shows the framing the words were placed for rather than a spring caught mid-way.
+        let camDt = simDt > 0 ? simDt : (inSchool && stallTime > SceneLook.hitStopWindow ? wallDt : 0)
         if needsSnap {
             viewCam.snap(bird: birdPoint, water: water)
             originX = (bx / 2048).rounded(.down) * 2048
             lastBirdX = bx
             needsSnap = false
+        } else if jumped {
+            viewCam.snap(bird: birdPoint, water: water)
         } else {
-            viewCam.update(bird: birdPoint, water: water, dt: simDt)
+            viewCam.update(bird: birdPoint, water: water, dt: camDt)
         }
         punchAge += fxDt
         tailwindAge += fxDt
@@ -889,8 +936,11 @@ final class FlightScene: SKScene {
         if props.lighthouseShown {
             let lamp = props.lampPoint
             lampCanvasPoint = CGPoint(x: layout.mirrored ? w - lamp.x : lamp.x, y: lamp.y)
+            let top = props.towerTopPoint
+            lighthouseTopCanvasPoint = CGPoint(x: layout.mirrored ? w - top.x : top.x, y: top.y)
         } else {
             lampCanvasPoint = nil
+            lighthouseTopCanvasPoint = nil
         }
         if s.bestMeters > 0 && s.mode == .flight && !inSchool {
             let bxBest = s.bestMeters * 10
@@ -906,12 +956,11 @@ final class FlightScene: SKScene {
         }
         props.updateClouds(birdX: bx, originX: originX)
 
-        // Flight School's guides on the water, and step 4's bloom.
-        if pendingGuide {
-            pendingGuide = false
-            guides.show(SceneGuidePlacement.resolve(guide, birdX: bx, height: { x in self.seaHeight(x) }))
-        }
-        guides.update(dt: dt, time: t, zoom: z, originX: originX, birdX: bx, birdY: by, tuck: s.tuck,
+        // Flight School's guides on the water (placed before the camera, above), and step 4's bloom. R12: a held school
+        // frame runs the guides' fades on wall time, so a ring passed just before a freeze is replaced, not stuck
+        // half-faded with nothing ahead (s1-12, s1-13).
+        let guideDt = dt > 0 ? dt : (inSchool ? CGFloat(wallDt) : 0)
+        guides.update(dt: guideDt, time: t, zoom: z, originX: originX, birdX: bx, birdY: by, tuck: s.tuck,
                       height: { x in self.seaHeight(x) })
         if guides.ringNeedsRespawn {
             // A missed ring comes back on the next downslope ≥ 200 pt ahead (ART-ROUND-9 §1C).
@@ -1003,7 +1052,7 @@ final class FlightScene: SKScene {
 
         handle(events, s: s, bx: bx, birdLocal: birdLocal, zoom: z, inSchool: inSchool)
         updateGhost(dt: fxDt, zoom: z, bx: bx)
-        updateRingRect(zoom: z)
+        updateRingRect(zoom: z, birdX: bx)
         updateStormLink(edgeU: edgeU, t: t)
         fx.update(dt)
         updateFlare(dt: dt)
@@ -1074,12 +1123,23 @@ final class FlightScene: SKScene {
     /// The guide gull: fly, report its point, fire the ghost Perfect, tell the App when it hands over.
     private func updateGhost(dt: Double, zoom z: CGFloat, bx: Double) {
         let wasActive = ghost.isActive
-        ghost.update(dt: dt, zoom: z, originX: originX, bird: birdView, birdX: bx, still: reduceMotion)
-        if ghost.landedNow {
+        // R12 (ROUND-12 P1-6): the ghost is drawn only fully on screen and ahead of or level with the bird (s1-07: it
+        // and its dotted path started half off the ahead edge, unexplained).
+        let half = SceneTargets.ghostHalfSize(zoom: z)
+        let visible = layout.visibleRect
+        let cam = viewCam
+        let lift = bumpY
+        ghost.update(dt: dt, zoom: z, originX: originX, bird: birdView, birdX: bx, still: reduceMotion,
+                     visible: { p in
+                         let c = cam.screenPoint(p)
+                         return SceneTargets.ghostShows(center: CGPoint(x: c.x, y: c.y + lift), halfSize: half,
+                                                        visible: visible, ghostX: Double(p.x), birdX: bx)
+                     })
+        if ghost.landedNow && ghost.isShown {
             let p = ghost.position
             fx.ghostPerfect(at: CGPoint(x: p.x - CGFloat(originX), y: p.y), zoom: z)
         }
-        if ghost.isActive {
+        if ghost.isActive && ghost.isShown {
             let c = viewCam.screenPoint(ghost.position)
             ghostScreenPoint = viewPoint(CGPoint(x: c.x, y: c.y + bumpY))
         } else {
@@ -1088,32 +1148,48 @@ final class FlightScene: SKScene {
         if wasActive && ghost.finishedNow { onGhostFinished?() }
     }
 
-    /// R11 (ROUND-11 P0-5): where the live landing ring may sit on the canvas (y up): ≥ `ringEdgeInset` (200 pt) in
-    /// from the sides and the visible bottom (at most a quarter of the width / 30 % of the height on small screens),
-    /// and `ringTopInset` under the visible top (the HUD band).
+    /// Where the live landing ring's CENTRE may sit on the canvas (y up) so that its whole rect (the ellipse and the
+    /// drop marker) is inboard: R12 (ROUND-12 P0-2) `SceneTargets.ringCentreRect`, i.e. the rect inside the visible
+    /// canvas inset 200 pt at the sides, 160 pt at the bottom and 120 pt at the top (scaled down on short canvases).
+    /// R11 kept only the centre 200 pt in, so the ellipse could reach 101 pt from the edge (under Skip, s1-08).
     func ringSafeRect() -> CGRect {
-        let v = layout.visibleRect
-        let side = min(SceneLook.ringEdgeInset, layout.size.width * 0.25)
-        let bottom = min(SceneLook.ringEdgeInset, v.height * 0.3)
-        let top = min(SceneLook.ringTopInset, v.height * 0.2)
-        return CGRect(x: side, y: v.minY + bottom, width: max(layout.size.width - 2 * side, 1),
-                      height: max(v.height - bottom - top, 1))
+        SceneTargets.ringCentreRect(visible: layout.visibleRect)
+    }
+
+    /// R12: the rect the ring's whole rect must sit inside (canvas, y up; tests).
+    func ringInboardRect() -> CGRect {
+        SceneTargets.ringInboardRect(visible: layout.visibleRect)
     }
 
     /// SR7: the live ring's rect in view points (its ellipse, widened 1.1×, with the drop marker above it).
-    private func updateRingRect(zoom z: CGFloat) {
+    /// R12 (ROUND-12 P0-1): reported only for a ring that is ahead of the bird and wholly on the visible canvas, and
+    /// first reported once it is inboard (`SceneTargets.reportsRing`), so the words and the pointer never name a ring
+    /// that is behind, off screen, at an edge or still fading in.
+    private func updateRingRect(zoom z: CGFloat, birdX bx: Double) {
         guard let c = guides.ringCenter else {
             ringScreenRect = nil
             ringCanvasPoint = nil
+            ringCanvasRect = nil
+            ringReported = false
+            ringInboard = false
             return
         }
         let p = viewCam.screenPoint(c)
-        ringCanvasPoint = CGPoint(x: p.x, y: p.y + bumpY)
-        let w = SceneLook.ringWidth * 1.1
-        let below = w * SceneLook.ringAspect * 0.5
-        let above = SceneLook.dropHeight + SceneLook.dropChevron + 8
-        let a = viewPoint(CGPoint(x: p.x - w * 0.5, y: p.y + bumpY + above))
-        let b = viewPoint(CGPoint(x: p.x + w * 0.5, y: p.y + bumpY - below))
+        let centre = CGPoint(x: p.x, y: p.y + bumpY)
+        ringCanvasPoint = centre
+        let rect = SceneTargets.ringCanvasRect(center: centre)
+        ringCanvasRect = rect
+        let v = layout.visibleRect
+        ringInboard = Double(c.x) > bx && ringInboardRect().contains(rect)
+        let named = guides.ringLevel >= 0.5 && SceneTargets.reportsRing(ringX: Double(c.x), birdX: bx, rect: rect,
+                                                                      visible: v, wasReported: ringReported)
+        ringReported = named
+        guard named else {
+            ringScreenRect = nil
+            return
+        }
+        let a = viewPoint(CGPoint(x: rect.minX, y: rect.maxY))
+        let b = viewPoint(CGPoint(x: rect.maxX, y: rect.minY))
         ringScreenRect = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
     }
 
@@ -1150,10 +1226,13 @@ final class FlightScene: SKScene {
         let k = CGFloat(min(schoolTowerAge / 1.2, 1))
         let e = k * k * (3 - 2 * k)
         let u = w * SceneLook.lighthouseFarU
-        let scale = SceneLook.lighthouseScale * (0.55 + 0.45 * z) * 0.55
+        // R12 (ROUND-12 P1-7): small enough that its name fits above it under the visible top (on the phone the far
+        // horizon is ~65 pt under the top, so the R11 tower reached the top and "Gull Point" was drawn through it).
+        let nominal = SceneLook.lighthouseScale * (0.55 + 0.45 * z) * 0.55
+        let base = backdrop.frontBaseY + 4
+        let scale = SceneTargets.schoolTowerScale(nominal: nominal, baseY: base, visibleTop: layout.visibleRect.maxY)
         lighthouseU = u
-        props.showLighthouse(at: CGPoint(x: u, y: backdrop.frontBaseY + 4 - 40 * (1 - e)), scale: scale, alpha: e,
-                             dt: CGFloat(dt))
+        props.showLighthouse(at: CGPoint(x: u, y: base - 40 * (1 - e)), scale: scale, alpha: e, dt: CGFloat(dt))
     }
 
     /// Chain milestones (ROUND-4 P1-8): 3, 5, 10, 15, 20… get the callout, the hit-stop and the punch-in.

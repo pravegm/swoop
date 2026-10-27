@@ -106,6 +106,27 @@ struct SchoolDisplay: Equatable {
     var showsDiagram = true
     /// The Studio steps (title bird + diagram) vs the Sea steps (the practice sea).
     var isSea: Bool { step.isSea }
+    /// R12 P0-1: what a ring step says while its ring is NOT fully on screen ahead of the bird ("Stay ahead" by the
+    /// meter, "Open to glide"), with no pointer. nil when the step's words don't name a ring.
+    var noRingWords: String?
+    var noRingAnchor: SchoolWordsAnchor = .meter
+    var noRingSub: String?
+
+    /// R12 P0-1: the words to draw this frame, given `SchoolRingRule.ringInView`. Ring words only with the ring in
+    /// view; otherwise the step's other words (never anchored to a ring). Pure; tested.
+    func shownWords(ringInView: Bool) -> (text: String, anchor: SchoolWordsAnchor, sub: String?)? {
+        guard let words else { return nil }
+        guard wordsAnchor == .ring, !ringInView else { return (words, wordsAnchor, wordsSub) }
+        guard let other = noRingWords, noRingAnchor != .ring else { return nil }
+        return (other, noRingAnchor, noRingSub)
+    }
+
+    /// R12 P0-5: the muted caption under the big top-down gull on the first step: the two halves are "Your wings" on a
+    /// Duo's hinge, the bird is "Your bird" on touch (and on an iPhone). nil on every other step. Pure; tested.
+    func wingsCaption(hasFold: Bool) -> String? {
+        guard step == .hold else { return nil }
+        return hasFold && !touch ? "Your wings" : "Your bird"
+    }
 }
 
 /// HUD values, published at ≤ 15 Hz (toasts at once). Separate from GameController so only the HUD redraws.

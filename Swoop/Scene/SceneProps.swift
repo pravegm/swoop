@@ -30,6 +30,10 @@ final class SceneProps {
     var lampPoint: CGPoint {
         CGPoint(x: lighthouseRoot.position.x, y: lighthouseRoot.position.y + 131 * lighthouseRoot.yScale)
     }
+    /// R12: the apex of the tower's cap in u-space this frame (the school's name goes above it).
+    var towerTopPoint: CGPoint {
+        CGPoint(x: lighthouseRoot.position.x, y: lighthouseRoot.position.y + SceneTargets.towerTop * lighthouseRoot.yScale)
+    }
     /// The tower's current scale (the reached moment sizes its lamp flare to it).
     var lighthouseScale: CGFloat { lighthouseRoot.yScale }
     var buoyShown: Bool { !buoyRoot.isHidden }

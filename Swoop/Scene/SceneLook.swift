@@ -606,6 +606,20 @@ enum SceneLook {
     /// the step dots), and `ringTopInset` under the visible top (the pause button and the meter).
     static let ringEdgeInset: CGFloat = 200
     static let ringTopInset: CGFloat = 120
+    /// R12 (ROUND-12 P0-2): these insets now hold for the ring's WHOLE rect (the ellipse and its drop marker, see
+    /// `SceneTargets`), with 160 pt at the bottom; R11 held only the centre, so the ellipse could reach 101 pt from
+    /// the edge, under Skip.
+    static let ringBottomInset: CGFloat = 160
+    /// R12 (ROUND-12 P0-1): a ring the bird has flown past (beyond the Perfect window) is missed at once and respawns
+    /// on the next downslope ahead; in the storm step a ring landed Perfect comes back ahead after this long.
+    static let ringRepeatDelay: Double = 0.8
+    /// R12: while a ring is being framed and the zoom is still above the fit, the zoom and lift springs run this much
+    /// faster (so the ring is inboard, and named, within about half a second of appearing).
+    static let ringRushFactor: Double = 2
+    /// R12: the landing ring sits this far down its downslope (crest 0 … trough 1). R9 used the middle; a little higher
+    /// up the face is where a bird clearing the crest first comes down, and a ring placed from a trough (≈ 1.35 km
+    /// ahead on the school's 2 km swells) still fits inboard on the Duo at the camera's furthest zoom.
+    static let ringSlopeFraction: Double = 0.35
     /// The drop marker: 3 pt dots every 9 pt from 96 pt above the ring, under a 22 pt down-chevron bobbing ±6 pt at 1 Hz.
     static let dropHeight: CGFloat = 96
     static let dropDotGap: CGFloat = 9
@@ -637,6 +651,26 @@ enum SceneLook {
     static let ghostLead: CGFloat = 420
     static let ghostHold: Double = 0.6
     static let ghostMotes: Int = 10
+    /// R12 (ROUND-12 P1-6): the ghost shows only fully inside the visible canvas by this margin, and ahead of or level
+    /// with the bird (up to this many sea pt behind it); otherwise it and its dotted path are not drawn.
+    static let ghostEdgeMargin: CGFloat = 8
+    static let ghostLevelSlack: Double = 40
+
+    // MARK: Round 12: the school lighthouse's name (ROUND-12 P1-7)
+
+    /// Room kept between the school tower's apex and the visible top for its name: the baseline 8 pt above the apex,
+    /// a ≤ 30 pt line, 8 pt to spare.
+    static let towerLabelRoom: CGFloat = 46
+    /// The school tower is never drawn smaller than this scale (≈ 22 pt tall) to make that room.
+    static let schoolTowerMinScale: CGFloat = 0.14
+
+    // MARK: Round 12: the early-open mark (ROUND-12 P0-3)
+
+    /// Where the bird opened inside a fold zone: a gold tick across the foam line, 18 pt tall, 3 pt wide on a 6 pt ink
+    /// underlay, fading in over 0.15 s.
+    static let missTickHeight: CGFloat = 18
+    static let missTickWidth: CGFloat = 3
+    static let missTickFadeIn: CGFloat = 0.15
 
     // MARK: Round 9: the storm link (UX-ROUND-9 §1.2 step 6)
 

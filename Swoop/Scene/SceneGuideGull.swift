@@ -225,6 +225,9 @@ final class SceneGuideGull {
     private(set) var finishedNow = false
     /// Whether the path came from Core (false: the scene's own stand-in).
     private(set) var fromCore = false
+    /// R12 (ROUND-12 P1-6): whether the ghost is drawn this frame. It flies on regardless, but it (and its dotted
+    /// path) is drawn only while fully on screen and ahead of or level with the bird (`SceneTargets.ghostShows`).
+    private(set) var isShown = false
 
     init() {
         root = SKNode()
@@ -328,6 +331,7 @@ final class SceneGuideGull {
         external = nil
         move = nil
         isFlying = false
+        isShown = false
         path = []
         art.isHidden = true
         fade = 0
@@ -349,10 +353,13 @@ final class SceneGuideGull {
         if let l = lastDot { lastDot = CGPoint(x: l.x + dx, y: l.y) }
     }
 
-    /// Per frame (FX clock). `bird`: the player's bird view (the species and its scale); `birdX`: the player's sea x.
-    func update(dt: Double, zoom z: CGFloat, originX: Double, bird: SceneBirdView, birdX: Double, still: Bool) {
+    /// Per frame (FX clock). `bird`: the player's bird view (the species and its scale); `birdX`: the player's sea x;
+    /// `visible`: whether a ghost at this sea point may be drawn (R12: fully on screen, ahead of or level with the bird).
+    func update(dt: Double, zoom z: CGFloat, originX: Double, bird: SceneBirdView, birdX: Double, still: Bool,
+                visible: (CGPoint) -> Bool = { _ in true }) {
         landedNow = false
         finishedNow = false
+        isShown = false
         let zz = max(z, 0.01)
         // The dots fade over 1.6 s.
         for (i, d) in dots.enumerated() where !d.isHidden {
@@ -381,7 +388,8 @@ final class SceneGuideGull {
             lastLanded = p.landed
             let derived = atan2(Double(position.y - prev.y), max(Double(position.x - prev.x), 0.001))
             let s = SceneGhostSample(t: 0, x: p.x, y: p.y, tuck: p.tuck)
-            drawPose(s, angle: p.bodyAngle ?? derived, zoom: zz, originX: originX, bird: bird, dt: dt, still: still)
+            drawPose(s, angle: p.bodyAngle ?? derived, zoom: zz, originX: originX, bird: bird, dt: dt, still: still,
+                     show: visible(CGPoint(x: p.x, y: p.y)))
             return
         }
         guard isFlying, let first = path.first, let last = path.last else {
@@ -407,12 +415,21 @@ final class SceneGuideGull {
             return
         }
         let angle = atan2(ahead.y - s.y, max(ahead.x - s.x, 0.001))
-        drawPose(s, angle: angle, zoom: zz, originX: originX, bird: bird, dt: dt, still: still)
+        drawPose(s, angle: angle, zoom: zz, originX: originX, bird: bird, dt: dt, still: still,
+                 show: visible(CGPoint(x: s.x, y: s.y)))
     }
 
-    /// Draws the ghost at `s` (sea) turned to `angle`, and drops its dotted path.
+    /// Draws the ghost at `s` (sea) turned to `angle`, and drops its dotted path. `show` false (R12: not fully on
+    /// screen, or behind the bird): nothing is drawn and no dot dropped; it fades in afresh once it may show.
     private func drawPose(_ s: SceneGhostSample, angle: Double, zoom zz: CGFloat, originX: Double, bird: SceneBirdView,
-                          dt: Double, still: Bool) {
+                          dt: Double, still: Bool, show: Bool) {
+        guard show else {
+            art.isHidden = true
+            fade = 0
+            lastDot = nil
+            return
+        }
+        isShown = true
         fade = min(1, fade + CGFloat(dt) / 0.2)
 
         // The art: the player's species at 0.9×, posed at the ghost's tuck.

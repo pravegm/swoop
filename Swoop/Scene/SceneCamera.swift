@@ -77,6 +77,10 @@ struct SceneCamera: Equatable {
     private(set) var keepLift: Double = 0
     private(set) var keepLiftVelocity: Double = 0
     private(set) var keepLiftTarget: Double = 0
+    /// R12 (ROUND-12 P0-2): while a ring is framed, the zoom (when above its cap) and the lift spring run
+    /// `SceneLook.ringRushFactor` × faster, so the ring is inboard within about half a second of appearing (R11's
+    /// springs took 1.5–2 s, and s1-08 was shot 0.5 s into the step with the ring still at the edge).
+    var rushToCap = false
 
     init(layout: ScreenLayout) {
         canvasWidth = Double(layout.size.width)
@@ -145,7 +149,9 @@ struct SceneCamera: Equatable {
             groundVelocity += ga * h
             ground += groundVelocity * h
             let tz = targetZoom(altitude: Double(bird.y) - ground)
-            let wz = SceneCamera.zoomOmega
+            let rush = rushToCap ? SceneLook.ringRushFactor : 1
+            let over = rushToCap && framingZoom > min(SceneCamera.zoomMax, zoomCap ?? SceneCamera.zoomMax) + 0.005
+            let wz = SceneCamera.zoomOmega * (over ? rush : 1)
             let za = wz * wz * (tz - framingZoom) - 2 * wz * zoomVelocity
             zoomVelocity += za * h
             framingZoom += zoomVelocity * h
@@ -154,7 +160,8 @@ struct SceneCamera: Equatable {
             let ba = wb * wb * (biasTarget - bias) - 2 * wb * biasVelocity
             biasVelocity += ba * h
             bias += biasVelocity * h
-            let la = wz * wz * (keepLiftTarget - keepLift) - 2 * wz * keepLiftVelocity
+            let wl = SceneCamera.zoomOmega * rush
+            let la = wl * wl * (keepLiftTarget - keepLift) - 2 * wl * keepLiftVelocity
             keepLiftVelocity += la * h
             keepLift = max(0, keepLift + keepLiftVelocity * h)
         }
@@ -171,17 +178,22 @@ struct SceneCamera: Equatable {
         return c.screenPoint(p)
     }
 
-    /// R11: the largest framing zoom from the current top (`zoomCap` or `zoomMax`) down to `zoomMin`, in 0.02 steps,
-    /// at which the sea point `p` lands inside `safe` (canvas, y up); `zoomMin` when none does. Pure.
+    /// R11: the largest framing zoom from the current top (`zoomCap` or `zoomMax`) down to `ringFitFloor`, in 0.02
+    /// steps, at which the sea point `p` lands inside `safe` (canvas, y up); the floor when none does. Pure.
     func zoomToFit(_ p: CGPoint, inside safe: CGRect) -> Double {
         let top = min(SceneCamera.zoomMax, zoomCap ?? SceneCamera.zoomMax)
+        let lowest = ringFitFloor
         var z = top
-        while z > zoomMin {
+        while z > lowest + 0.0001 {
             if safe.contains(previewPoint(p, framingZoom: z)) { return z }
             z -= 0.02
         }
-        return zoomMin
+        return lowest
     }
+
+    /// R12: how far out `zoomToFit` may go: the framing spring's own floor (0.9 × `zoomMin`), a little past the flight's
+    /// furthest zoom, so a ring 1.35 km ahead still fits inboard on the Duo.
+    var ringFitFloor: Double { zoomMin * 0.9 }
 
     /// A launch "pull-out": the zoom dips by about `amount` and springs back.
     mutating func pullOut(_ amount: Double) {
@@ -214,6 +226,12 @@ struct SceneCamera: Equatable {
         }
         if instantLift { keepLift = keepLiftTarget }
         b -= keepLift / z
+        // R12: the lift never pushes the horizon into the top band either (the school tower and its name stand
+        // there, ROUND-12 P1-7); where both can't hold, `zoomToFit` (which frames through here) zooms out instead.
+        if practiceFraming {
+            let room = (1 - SceneLook.practiceHorizonInset) * hv - 34 - 18 * z
+            b = max(b, -room / z)
+        }
         b = max(b, y - SceneCamera.birdTopFraction * hv / z)
         b = min(b, y - SceneCamera.birdBottomFraction * hv / z)
         // Home's menu wins over the bird's bottom margin (the attract bird skims the water anyway).

@@ -65,6 +65,8 @@ import UIKit
 // - `school=<step>[:<phase>]`     Flight School at a step (0–7 or hold wings wingcheck dive soar land rhythm storm),
 //                                 held for the frame; phases `done` (praise), `fail` (help), and the Wing check's
 //                                 `explain|fold|ask|confirm`. Logs `SWOOP-T school <step> <phase>`.
+//                                 R12: `dive:fail` flies a real early open (folded off crest A, open from sea x 450)
+//                                 and holds at sea x 1000, partway down the face, with "Opened too soon".
 // - `schoolTouch`, `schoolTap`    the touch / tapping variants.
 // - `birdSide=sharp|left|right`, `sharp=a|b`, `orient=landscapeLeft|landscapeRight`: the bird's side (D1).
 // - `flatTip`                     the flat-open tip, 1.5 s into the run.

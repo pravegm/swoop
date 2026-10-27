@@ -137,6 +137,24 @@ enum SchoolStep: Int, CaseIterable, Comparable {
 /// the meter, or on both halves (the clear-side check).
 enum SchoolWordsAnchor: Equatable { case diagram, spot, ring, meter, pages }
 
+/// R12 P0-1: words never name a target that isn't there. "Land in the gold ring", "Land here" and every pointer to a
+/// ring show only while that ring is FULLY on screen and AHEAD of the bird (in the flight direction: +x, or −x when the
+/// flight is mirrored). Scene reports `ringScreenRect` only for a ring ahead and on screen; this checks both again
+/// against the bird, so a ring behind or half off an edge never gets words. Pure; tested.
+enum SchoolRingRule {
+    /// The ring (and its drop marker) must sit this far inside the screen edges to count as on screen.
+    static let edgeMargin: CGFloat = 0
+
+    static func ringInView(_ ring: CGRect?, bird: CGPoint, screen: CGSize, mirrored: Bool) -> Bool {
+        guard let r = ring, !r.isNull, !r.isInfinite, r.width > 0, r.height > 0,
+              r.minX.isFinite, r.minY.isFinite, r.maxX.isFinite, r.maxY.isFinite,
+              bird.x.isFinite, screen.width > 0, screen.height > 0 else { return false }
+        let bounds = CGRect(origin: .zero, size: screen).insetBy(dx: edgeMargin, dy: edgeMargin)
+        guard bounds.contains(r) else { return false }
+        return mirrored ? r.midX < bird.x : r.midX > bird.x
+    }
+}
+
 /// One frame of what the school sees.
 struct SchoolInput: Equatable {
     var time: Double
@@ -156,6 +174,8 @@ struct SchoolInput: Equatable {
     /// fallback for a plain Flight sea).
     var practice: Bool = false
     var signals: [PracticeSignal] = []
+    /// R12 P0-3: the bird's sea x (how far down the face it has gone); nil when unknown.
+    var seaX: Double? = nil
 }
 
 /// The Flight School state machine (UX §1.2). Each frame: `step(_:)`; it returns what the App should do now.
@@ -201,6 +221,14 @@ struct FlightSchool: Equatable {
     static let maxFails = 3
     static let stormLineSeconds: Double = 2.2
     static let rhythmSwapAfter: Double = 2.5
+    /// R12 P0-3: a missed dive's words hold this long where the bird is (past the trough) before the rewind, so the
+    /// miss is said after the dive, never back on the crest.
+    static let missRewindDelay: Double = 1.2
+    /// R12 P0-3: the wings opening early is seen once the bird, folded, has skimmed this far down the face (sea pt; the
+    /// tutorial face runs 1500 pt from crest A to the trough). Never on the crest itself.
+    static let earlyOpenAfter: Double = 300
+    /// R12 P0-3: miss words not followed by Core's verdict (a face too short to judge) clear after this long.
+    static let missWordsMax: Double = 3
 
     let touch: Bool
     let tapping: Bool
@@ -242,6 +270,17 @@ struct FlightSchool: Equatable {
     private var landAttempts = 0
     /// R9: step 3 was missed at least once ("Stay folded" at the spot).
     private(set) var missedOnce = false
+    /// R12 P0-3: when this attempt's miss was seen (the wings opened partway down the face, or Core's verdict at the
+    /// trough); the miss words show from then until the rewind. nil: no miss to say (the bird is on the crest).
+    private(set) var missedAt: Double?
+    /// R12 P0-3: the deferred rewind after a missed dive (the words first, then back to the crest).
+    private(set) var rewindAt: Double?
+    /// Demo `dive:fail`: the miss words are held for the frame.
+    private var missHeld = false
+    /// Sea x where the folded bird started down this face (nil: not folded on a face yet).
+    private var faceStartX: Double?
+    /// Without a sea x (the plain-Flight fallback): the folded time on the face, in its place.
+    private var faceTime: Double = 0
     /// Demo `school=<step>:demo|turn|fail`: the frame's moment in the step, held (the ghost demonstrating, or the
     /// player's turn).
     private(set) var frozenElapsed: Double?
@@ -306,8 +345,38 @@ struct FlightSchool: Equatable {
 
     /// R9: the step's in-world words (≤ 4, no full stop; "Land in the gold ring" is the one 5-word name) and where
     /// they sit; nil = none. R11 P0-3: the rule comes before the miss ("Fold down the wave"), and the diagram's words
-    /// always sit under the diagram. Pure; tested.
-    func words(at time: Double) -> (text: String, anchor: SchoolWordsAnchor)? {
+    /// always sit under the diagram. R12 P0-1: words that name a ring ("Land here", "Land in the gold ring") only while
+    /// that ring is fully on screen and ahead of the bird (`ringInView`, from `SchoolRingRule`); otherwise the step's
+    /// other words, never anchored to a ring. Pure; tested.
+    func words(at time: Double, ringInView: Bool = true) -> (text: String, anchor: SchoolWordsAnchor)? {
+        guard let w = ringWords(at: time) else { return nil }
+        guard w.anchor == .ring, !ringInView else { return w }
+        return noRingWords(at: time)
+    }
+
+    /// R12 P0-1: what a ring step says while its ring is not (yet, or any more) on screen ahead of the bird: the storm
+    /// step "Stay ahead" by the meter; the land step tells the wings to wait (open to glide). Pure; tested.
+    func noRingWords(at time: Double) -> (text: String, anchor: SchoolWordsAnchor)? {
+        switch stepNow {
+        case .land:
+            return (tapping ? "Glide" : (touch ? "Let go to glide" : "Open to glide"), .spot)
+        case .storm:
+            return ("Stay ahead", .meter)
+        default:
+            return nil
+        }
+    }
+
+    /// R12 P0-3: the miss words show (the bird has gone down the face and opened early), until the rewind.
+    func showsMiss(at time: Double) -> Bool {
+        guard stepNow == .dive else { return false }
+        if missHeld { return true }
+        guard let m = missedAt else { return false }
+        return rewindAt != nil || time - m < Self.missWordsMax
+    }
+
+    /// The step's words with a ring in view (R11's table).
+    private func ringWords(at time: Double) -> (text: String, anchor: SchoolWordsAnchor)? {
         let e = elapsed(at: time)
         guard phase == .prompt else { return nil }
         switch stepNow {
@@ -326,8 +395,12 @@ struct FlightSchool: Equatable {
             case .confirm: return nil
             }
         case .dive:
-            // R10: a miss says what happened ("Opened too soon"); R11: its remedy is the muted second line.
-            if missedOnce { return (tapping ? "Tapped too soon" : (touch ? "Let go too soon" : "Opened too soon"), .diagram) }
+            // R10: a miss says what happened ("Opened too soon"); R11: its remedy is the muted second line. R12 P0-3:
+            // only once the bird has gone down the face and opened early, until the rewind; back on the crest the
+            // rule shows again, with the remedy under it.
+            if showsMiss(at: time) {
+                return (tapping ? "Tapped too soon" : (touch ? "Let go too soon" : "Opened too soon"), .diagram)
+            }
             return (tapping ? "Tap at the top" : (touch ? "Hold down the wave" : "Fold down the wave"), .diagram)
         case .soar:
             return (tapping ? "Tap again" : (touch ? "Let go" : "Open"), .diagram)
@@ -348,15 +421,17 @@ struct FlightSchool: Equatable {
     /// R11 P0-3: the muted second line under the words: the rhythm on the first move ("One fold per wave"), when to
     /// open once the ghost has shown the dive, the remedy after a miss, and what the finger does to land. ≤ 7 words, no
     /// full stop. Pure; tested.
-    func subWords(at time: Double) -> String? {
-        guard phase == .prompt, words(at: time) != nil else { return nil }
+    func subWords(at time: Double, ringInView: Bool = true) -> String? {
+        guard phase == .prompt, let w = words(at: time, ringInView: ringInView) else { return nil }
         let e = elapsed(at: time)
+        // R12 P0-1: the land step's waiting words have no second line (it would ask to come down before the ring).
+        if stepNow == .land && w.anchor != .ring { return nil }
         switch stepNow {
         case .wings:
             if tapping || folded { return nil }
             return touch ? "One hold per wave" : "One fold per wave"
         case .dive:
-            if missedOnce {
+            if missedOnce || showsMiss(at: time) {
                 return tapping ? "Tap again at the bottom" : (touch ? "Keep holding to the bottom" : "Stay folded to the bottom")
             }
             guard e >= Self.ghostDemoSeconds else { return nil }
@@ -395,6 +470,16 @@ struct FlightSchool: Equatable {
         case .wings: return folded ? 0 : 1
         case .dive: return 1
         case .soar: return 0
+        case .wingCheck, .land, .rhythm, .storm: return nil
+        }
+    }
+
+    /// R12 P0-4: the pose a step's done state draws (filled, with the tick): the one its words asked for ("Hold it
+    /// open" open, "Fold a little" the 135° fold), never a deeper fold the player (or the demo) made. Pure; tested.
+    static func doneTarget(_ step: SchoolStep) -> Double? {
+        switch step {
+        case .hold, .soar: return 0
+        case .wings, .dive: return 1
         case .wingCheck, .land, .rhythm, .storm: return nil
         }
     }
@@ -486,6 +571,11 @@ struct FlightSchool: Equatable {
         waves = 0
         landAttempts = 0
         missedOnce = false
+        missedAt = nil
+        rewindAt = nil
+        missHeld = false
+        faceStartX = nil
+        faceTime = 0
         pushedAt = nil
         wingCheck = WingCheckFlow()
     }
@@ -500,8 +590,12 @@ struct FlightSchool: Equatable {
             phaseAt = time + 3600
             praise = FlightSchoolCopy.praise(stepNow, wingCheck: wingCheck)
         case "fail":
+            // R12 P0-3: the frame is the bird partway down the face with its wings opened (the demo's early-open
+            // tuck, `GameController.demoEarlyOpenTuck`), the miss words held.
             subline = FlightSchoolCopy.failure(stepNow, touch: touch)
             missedOnce = true
+            missedAt = time
+            missHeld = true
             frozenElapsed = Self.ghostDemoSeconds + 1
         case "push":
             // R10: step 6 at the moment its Perfect pushes the storm back.
@@ -566,6 +660,16 @@ struct FlightSchool: Equatable {
         lastTuck = u
         let dt: Double = lastTime.map { max(t - $0, 0) } ?? 0
         lastTime = t
+        // R12 P0-3: a missed dive's words have been said where the bird is; now back to the crest, with the rule.
+        if let r = rewindAt, t >= r {
+            rewindAt = nil
+            missedAt = nil
+            faceStartX = nil
+            faceTime = 0
+            out.rewind = true
+        } else if rewindAt == nil, let m = missedAt, t - m >= Self.missWordsMax {
+            missedAt = nil
+        }
 
         switch stepNow {
         case .hold:
@@ -608,17 +712,19 @@ struct FlightSchool: Equatable {
             if let a = input.angle { wingCheck.update(angle: a, time: t) }
             subline = nil
         case .dive where input.practice:
+            watchFace(input, tuck: u, dt: dt, time: t)
             for sig in input.signals {
-                if case let .diveDone(fraction) = sig { judgeDive(fraction, out: &out) }
+                if case let .diveDone(fraction) = sig { judgeDive(fraction, time: t, out: &out) }
             }
         case .dive:
+            watchFace(input, tuck: u, dt: dt, time: t)
             if input.flying && input.skimming && input.slope < -0.05 {
                 onDownslope = true
                 downTime += dt
                 if u >= 0.6 { heldTime += dt }
             } else if onDownslope && (input.slope >= 0 || !input.skimming) {
                 onDownslope = false
-                if downTime >= 0.3 { judgeDive(downTime > 0 ? heldTime / downTime : 0, out: &out) }
+                if downTime >= 0.3 { judgeDive(downTime > 0 ? heldTime / downTime : 0, time: t, out: &out) }
                 downTime = 0
                 heldTime = 0
             }
@@ -710,20 +816,44 @@ struct FlightSchool: Equatable {
     }
 
     /// Step 3's verdict on one downslope: held ≥ 70 % of it, else the help line and a rewind (3 fails: on we go).
-    private mutating func judgeDive(_ fraction: Double, out: inout Output) {
-        guard !pendingSuccess else { return }
+    /// R12 P0-3: the miss words show now, at the trough the bird has reached, and the rewind waits
+    /// `missRewindDelay` so they are never first read back on the crest.
+    private mutating func judgeDive(_ fraction: Double, time t: Double, out: inout Output) {
+        guard !pendingSuccess, rewindAt == nil else { return }
         if fraction >= 0.7 {
+            missedAt = nil
             pendingSuccess = true
             return
         }
         fails += 1
         missedOnce = true
+        if missedAt == nil { missedAt = t }
         if fails >= Self.maxFails {
             subline = "Good enough. Let's fly."
             pendingSuccess = true
         } else {
             subline = FlightSchoolCopy.failure(.dive, touch: touch)
-            out.rewind = true
+            rewindAt = t + Self.missRewindDelay
+        }
+    }
+
+    /// R12 P0-3: the wings opened early, seen on the face itself: folded off the crest, then open (< 0.3) once the bird
+    /// has gone `earlyOpenAfter` pt down the face (0.5 s folded without a sea x). Never on the crest: the distance only
+    /// counts from where the folded bird started down.
+    private mutating func watchFace(_ input: SchoolInput, tuck u: Double, dt: Double, time t: Double) {
+        guard rewindAt == nil, missedAt == nil else { return }
+        if input.skimming && input.slope < -0.05 {
+            if faceStartX == nil && u >= 0.6 {
+                faceStartX = input.seaX ?? 0
+                faceTime = 0
+            }
+            guard let start = faceStartX else { return }
+            faceTime += dt
+            let down = input.seaX.map { $0 - start } ?? (faceTime >= 0.5 ? Self.earlyOpenAfter : 0)
+            if u < 0.3 && down >= Self.earlyOpenAfter { missedAt = t }
+        } else if input.slope >= 0 {
+            faceStartX = nil
+            faceTime = 0
         }
     }
 

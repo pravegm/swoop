@@ -611,3 +611,57 @@ Scene's side of ROUND-11 is in `design/notes/scene-R11.md`. Most of it needs no 
   ring rule already keeps the ring off both; nothing to change.
 - Held demo frames stall the scene's clock (`fxDt` = 0 once frozen), so the held storm frames now freeze at sea x 6300
   (was 5000) to let the 2 s roll-in play first. If you'd rather the roll-in ran on wall time, the App could go back.
+
+## App → Scene (Round 12)
+- **P0-1, `ringScreenRect`:** the App now shows "Land here", "Land in the gold ring" and the dotted `RingPointer` only
+  while `SchoolRingRule.ringInView` holds: the rect is non-empty, entirely inside the view (0…width, 0…height, view
+  points) and its midX is ahead of the bird point (`> bird.x`, mirrored `< bird.x`). Otherwise the storm step says
+  "Stay ahead" by the meter and the land step "Open to glide" / "Let go to glide" at the spot, with no pointer. So:
+  - keep the rect covering the ellipse AND its drop marker (the App sits the words just above `minY`);
+  - a ring that is ahead but not yet fully in view simply keeps the other words up, so the storm step's s1-12 / s1-13
+    frames (held at sea x 6300, 3.4 s and 5.4 s into the step) need the ring fully on screen by then to read
+    "Land in the gold ring". If it isn't, the frames will now honestly show "Stay ahead".
+- **P0-2(b), the chrome moved:** Skip and the step dots now sit in the TRAILING bottom corner, i.e. the bird page's
+  outer bottom corner (bottom-left unmirrored and on iPhone, bottom-right mirrored): Skip 96 × 56 pt, 8 pt in from the
+  page edge, its bottom at `AppCanvas.bottom`; the dots pill (100 × 12) centred 6 pt above it (`SchoolLayout.skip`,
+  `dots`). The leading bottom corner (where the ring lands) is now free of chrome. Nothing to change unless something
+  of yours is drawn at the bird page's bottom outer corner (the trail and spray pass behind the bird there).
+- **P1-7, the lighthouse name:** the "Gull Point" label in the storm step is App-drawn (`SchoolBirdRig`, from
+  `hud.lampPoint`). It now sits with its box 22 pt over the lamp point, or, where the top of the screen leaves no
+  room (the iPhone s1-12), beside the tower on the side toward the screen's middle, level with the lamp
+  (`SchoolRig.lampLabelCenter`). If you also change `lampCanvasPoint` or draw a Scene label, tell the App so there is
+  one label, not two.
+- **P0-3 (optional marker):** no marker was added. The miss now shows while the bird is down the face (from where the
+  wings opened early, ≥ 300 pt below crest A, until 1.2 s after Core's verdict at the trough); a small gold tick on the
+  wave where the open happened would be yours if wanted (sea x = where `missedAt` was set; the App could pass it).
+
+## Scene → App (Round 12)
+Scene's side of ROUND-12 is in `design/notes/scene-R12.md`. Nothing here blocks; the items marked **Ask** are small.
+- **P0-1, `ringScreenRect`:** it is now nil unless the ring is ahead of the bird, wholly on the visible canvas and
+  faded in. It is first reported once its whole rect is inboard, then kept while it stays ahead and on screen. It still
+  covers the ellipse and its drop marker. Your `SchoolRingRule.ringInView` agrees with it, so keep both.
+  - **The storm step always has a ring.** A ring flown past is missed at once and respawns on the next downslope ahead.
+    After a Perfect in the storm step's ring (`.landingAhead`) another is placed ahead 0.8 s later. The land step's
+    `.landing(at:)` ring is not repeated.
+  - **The held s1-12/s1-13 frames (sea x 6300) name a ring.** The bird has just passed the first ring (5650) there.
+    On the held frame's wall time it fades, the next is placed at 7650 (≈ 1350 pt ahead), the camera frames it inboard
+    and it is reported. That takes about 0.5 s after the freeze.
+  - **Ask:** if the capture can't wait that long, freezing the storm frames at about x 6700 instead gives a ring about
+    950 pt ahead with room to spare.
+- **P0-2:** the camera keeps the ring's whole rect inside the visible canvas inset 200 pt at both sides, 160 pt at the
+  bottom and 120 pt at the top (capped at 25 % / 30 % / 20 % on a phone's short canvas). The rule is symmetric, so it
+  holds with Skip and the dots in the trailing corner. Nothing to call.
+  - `scene.ringInboard` is true while the ring is ahead and inboard.
+  - `ringInboardRect()` (canvas, y up) is the box.
+- **P0-3, the early-open tick: done in Scene, nothing to pass.** Each fold zone draws a gold tick across the foam line
+  where the bird opened inside it, which is where its band turns grey (`scene.foldMissMarks`, sea x). A fresh attempt
+  (back at crest A) clears it. Your s1-06 frame shows it once the bird is partway down the face.
+- **P1-6:** the guide gull and its dotted path are drawn only while it is wholly on screen and ahead of or level with
+  the bird. `ghostScreenPoint` is nil while it isn't, and `scene.ghostShown` says which. Nothing to call.
+- **P1-7:** no Scene label; yours is the only one.
+  - In school, Gull Point is sized so its apex stays ≥ 46 pt under the visible top. On the iPhone it is ~38 pt tall
+    instead of 63, so there is room above it.
+  - `lampCanvasPoint` is unchanged (the lamp).
+  - The new `scene.lighthouseTopCanvasPoint` (canvas, y up) is the tower's apex.
+  - **Ask (optional):** anchor the label's baseline 8 pt above `lighthouseTopCanvasPoint` rather than a fixed 22 pt
+    over the lamp. Your beside-the-tower fallback can stay for safety.

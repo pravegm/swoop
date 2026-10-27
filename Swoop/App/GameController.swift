@@ -503,7 +503,14 @@ final class GameController: ObservableObject, SceneDriver {
             if session.isPractice { session.timeScale = sc.timeScale } else { step *= sc.timeScale }
         }
         let prevChain = session.snapshot.chain
-        let tuck = activeSource.tuck(at: now)
+        var tuck = activeSource.tuck(at: now)
+        #if DEBUG
+        // R12 P0-3: the s1-06 frame (`school=dive:fail`) is a real early open: folded off the crest, opened a third
+        // of the way down the face, held partway down (`demoSchoolFreezeX`).
+        if schoolSeaRun, let demo, demo.schoolStep == .dive, demo.schoolPhase == "fail" {
+            tuck = Self.demoEarlyOpenTuck(seaX: Double(session.snapshot.position.x))
+        }
+        #endif
         if input == .hinge && !homeLoop { strokeCounter.note(tuck) }
         // Feel R4: the end-stop detent when the tuck first reaches full in a stroke.
         if input == .hinge && hinge.consumeEndStop() { feedback.cue(.endStop) }
@@ -1192,6 +1199,8 @@ final class GameController: ObservableObject, SceneDriver {
         var input = SchoolInput(time: now, landscape: pose == .play, angle: hinge.hasHinge ? hinge.angle : nil,
                                 still: hinge.hasHinge && hinge.isStill(at: now, window: 0.5), tuck: tuck, slope: slope,
                                 skimming: s.skimming, flying: flying, events: schoolSeaRun ? events : [])
+        // R12 P0-3: how far down the face the bird has gone (the early open is said there, never on the crest).
+        if schoolSeaRun, Double(s.position.x).isFinite { input.seaX = Double(s.position.x) }
         if schoolSeaRun, let session, session.isPractice {
             input.practice = true
             input.signals = session.practiceSignals
@@ -1344,6 +1353,13 @@ final class GameController: ObservableObject, SceneDriver {
             d.words = w.text
             d.wordsAnchor = w.anchor
             d.wordsSub = sc.subWords(at: now)
+            // R12 P0-1: the words for the frames where the named ring is not fully on screen ahead of the bird (the
+            // view decides per frame with `SchoolRingRule`, from Scene's `ringScreenRect` and the bird point).
+            if w.anchor == .ring, let o = sc.words(at: now, ringInView: false) {
+                d.noRingWords = o.text
+                d.noRingAnchor = o.anchor
+                d.noRingSub = sc.subWords(at: now, ringInView: false)
+            }
         }
         d.showsDots = sc.showsDots
         d.stepStartedAt = sc.stepStartedAt
@@ -2310,7 +2326,8 @@ final class GameController: ObservableObject, SceneDriver {
     /// landing ~3150–3760, the rhythm waves 4300–10300). nil = no hold (the bird waits on crest A). Pure; tested.
     nonisolated static func demoSchoolFreezeX(step: SchoolStep, phase: String?, autopilot: Bool) -> Double? {
         switch step {
-        case .dive: return autopilot ? 750 : nil
+        // R12 P0-3: the miss frame holds partway down the face (crest A 0, trough 1500), wings open since x 450.
+        case .dive: return phase == "fail" ? demoEarlyOpenFreezeX : (autopilot ? 750 : nil)
         case .soar: return 1_850
         case .land: return phase == "done" ? 3_850 : 2_650
         case .rhythm: return 7_300
@@ -2318,6 +2335,15 @@ final class GameController: ObservableObject, SceneDriver {
         case .storm: return 6_300
         case .hold, .wings, .wingCheck: return nil
         }
+    }
+
+    /// R12 P0-3: the `dive:fail` frame's wings: folded off crest A (the crest hold releases at 0.6), open from
+    /// `demoEarlyOpenAt` (a third of the way down), so the school sees the early open on the face. Pure; tested.
+    nonisolated static let demoEarlyOpenAt: Double = 450
+    nonisolated static let demoEarlyOpenFreezeX: Double = 1_000
+    nonisolated static func demoEarlyOpenTuck(seaX x: Double) -> Double {
+        guard x.isFinite else { return 1 }
+        return x < demoEarlyOpenAt ? 1 : 0
     }
 
     /// R7 P0-3 `session=first:<stage>`: one coherent first session. Returns false for `school` with a `school=` step
