@@ -104,3 +104,28 @@ founder playing TF 7 on the Duo.
 - The resume ring waits for mostly-open wings, within its grace.
 - The Duo checks are now DEEP-FOLD (holding 75° keeps flying) and HOLD-50 (holding 50° pauses). OVERSHOOT and
   HOLD-85 are gone.
+
+### 27 Oct, afternoon: final QA, release build and App Store Connect
+
+**Final QA.** Four audits (`design/qa/QA-FINAL-*.md`) found 5 P0s, 22 P1s and 61 P2s. Every P0 and P1 was fixed
+(`FINAL-FIXES.md`), along with the small P2s. Then:
+- the smallest iPhone (SE) and iPad compatibility mode were captured and checked;
+- two more bugs were found in those frames and fixed: the SE's unnamed landing ring, and an orphaned Daily line on
+  Results.
+
+**Release build:** 1.0 (12), commit `c117b2d`. CI is green, every Duo hinge check passes (including DEEP-FOLD and
+HOLD-50), and the founder smoke-tested it on the Duo.
+
+**App Store Connect** was filled in by `asc.yml`, with a final read-back showing 0 gaps:
+- the listing in en-GB and en-US;
+- categories: Casual + Action (Apple dropped Arcade);
+- age rating 4+, release automatically on approval (the founder's decision);
+- the review notes and contact;
+- 12 achievements with badges and 2 leaderboards (daily from 28 Oct), attached to the submission;
+- £1.99, all territories except China mainland and Vietnam;
+- screenshots: 6.9", 6.3" and the iPhone Duo slot, 8 each;
+- the product page header and search results art;
+- the featuring nomination, submitted for 30 Oct.
+
+**The founder** turned on Pages and did App Privacy, Mac/Vision Pro, Family Sharing and DSA. The review submission
+is READY_FOR_REVIEW with 14 items; it only needs Add for Review → Submit.
