@@ -55,11 +55,11 @@ struct SettingsView: View {
                 // "Tuck by" shows wherever touch flies the bird.
                 if controller.hasHinge {
                     toggleRow("Play with touch", icon: "hand.point.up.left.fill", isOn: $settings.playWithTouch,
-                              footnote: "Hold the screen to tuck instead of folding your Duo.")
+                              footnote: "Hold the screen instead of folding your Duo.")
                     divider
                 }
                 if Self.showsTuckBy(hasHinge: controller.hasHinge, playWithTouch: settings.playWithTouch) {
-                    segmentRow("Tuck by", icon: "hand.tap.fill", options: ["Holding", "Tapping"],
+                    segmentRow("Wings by", icon: "hand.tap.fill", options: ["Holding", "Tapping"],
                                selected: settings.tuckByTapping ? 1 : 0,
                                footnote: "Tapping: one tap tucks, the next opens. Made for Switch Control and VoiceOver.") { i in
                         settings.tuckByTapping = i == 1
@@ -199,7 +199,7 @@ struct SettingsView: View {
                         .foregroundStyle(SwoopTheme.foam)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Text("Hold your Duo like a book. Fold a little to tuck and dive down the swells; open to soar off the crests. Outfly the storm. On other iPhones, press and hold to tuck.")
+                Text("Hold your Duo like a book. Fold going down a wave, open going up. Outfly the storm. On other iPhones, hold going down and let go going up.")
                     .font(SwoopTheme.text(14))
                     .foregroundStyle(SwoopTheme.mist)
                     .fixedSize(horizontal: false, vertical: true)

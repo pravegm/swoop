@@ -57,8 +57,7 @@ struct PlayLayer: View {
                         LeadMeter(lead: hud.lead, stormClose: false, mirrored: info.mirrored)
                             .frame(width: l.meter.width, height: l.meter.height)
                             .position(x: l.meter.midX, y: l.meter.midY)
-                        GoalChip(index: 0, metersLeft: RouteRules.meters(0), mirrored: info.mirrored, compact: c)
-                            .position(x: l.meter.midX, y: l.meter.maxY + 34)
+                        // R8: no goal chip here (its 4.00 km never moved, so the lesson seemed not to count).
                     }
                     .allowsHitTesting(false)
                     .transition(.opacity.animation(.easeOut(duration: 0.4)))
@@ -176,8 +175,8 @@ struct PlayLayer: View {
             .accessibilityElement()
             .accessibilityLabel("Wings")
             .accessibilityValue(touching ? "Tucked" : "Spread")
-            .accessibilityHint("Touch and hold to tuck and dive. Let go to open and soar. "
-                               + "With VoiceOver, swipe down to tuck and up to open.")
+            .accessibilityHint("Touch and hold to fold the wings. Let go to open them. "
+                               + "With VoiceOver, swipe down to fold and up to open.")
             .accessibilityAddTraits(.allowsDirectInteraction)
             .accessibilityAdjustableAction { direction in
                 switch direction {
@@ -195,7 +194,7 @@ struct PlayLayer: View {
         Color.clear
             .accessibilityElement()
             .accessibilityLabel("Wings")
-            .accessibilityHint("Fold your Duo to tuck, or swipe down to tuck and up to open.")
+            .accessibilityHint("Fold your Duo to fold the wings, or swipe down to fold and up to open.")
             .accessibilityAdjustableAction { direction in
                 switch direction {
                 case .decrement: controller.accessibleTuck(true)
@@ -259,7 +258,7 @@ struct DeckPlayView: View {
                             .fill(touching ? SwoopTheme.gold : SwoopTheme.foam.opacity(0.7))
                             .frame(width: 72, height: 40)
                             .animation(.easeOut(duration: 0.12), value: touching)
-                        Text("Hold to dive · let go to soar")
+                        Text("Hold going down · let go going up")
                             .font(SwoopType.headline(true))
                             .foregroundStyle(SwoopTheme.mist)
                     }
@@ -282,7 +281,7 @@ struct DeckPlayView: View {
             .position(x: pad.midX, y: pad.midY)
             .accessibilityElement()
             .accessibilityLabel("Wings")
-            .accessibilityHint("Touch and hold to tuck and dive. Let go to open and soar.")
+            .accessibilityHint("Touch and hold to fold the wings. Let go to open them.")
             .accessibilityAddTraits(.allowsDirectInteraction)
             .accessibilityAdjustableAction { direction in
                 switch direction {

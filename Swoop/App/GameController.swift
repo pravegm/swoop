@@ -974,6 +974,8 @@ final class GameController: ObservableObject, SceneDriver {
     #if DEBUG
     /// Demo `school=`: the frame is held (the machine isn't stepped).
     private var schoolHeld = false
+    /// Demo school frames: the practice sea freezes once the bird passes this sea x (the step's moment).
+    private var demoSchoolFreezeX: Double?
     /// Demo `school=wingcheck:<phase>`: the Settings check is held at its phase (the hinge doesn't move it on).
     private var demoWingHeld = false
     #endif
@@ -1839,8 +1841,6 @@ final class GameController: ObservableObject, SceneDriver {
         built.hingeRun = wasHinge
         built.firstRealRun = firstRealRun
         built.explainsDaily = !store.data.learnedHints.contains(AppRules.dailyRowHint)
-        // R7 P1-8: an iPhone hears about the Duo once, positively, after its first results (never on first launch).
-        built.funFact = !hasHinge && !demoDuo && store.data.runs == 1
         firstRealRun = false
         built.dailyBest = Self.isDailyBest(result, data: store.data)
         if wasHinge && store.data.foldToFlyShown < 5 {
@@ -2075,7 +2075,11 @@ final class GameController: ObservableObject, SceneDriver {
         if let step = demo.schoolStep {
             startSchool(replay: false, at: step)
             school?.demo(phase: demo.schoolPhase, time: CACurrentMediaTime())
-            schoolHeld = demo.schoolPhase != nil || !step.isSea
+            // R8 P0-2: every demo school frame holds its step (a running machine walked on to later steps, so
+            // frames showed "7 of 7" and "Go" out of order), and the practice sea stops where the step is seen.
+            schoolHeld = true
+            demoSchoolFreezeX = Self.demoSchoolFreezeX(step: step, phase: demo.schoolPhase,
+                                                       autopilot: demo.autopilot != nil)
             publishSchool(CACurrentMediaTime())
             AppTrace.t("SWOOP-T school \(step.key) \(demo.schoolPhase ?? "prompt")")
             // UX §7 #11 / #24: the school's pause card, and the cover's "Flight School paused".
@@ -2162,6 +2166,19 @@ final class GameController: ObservableObject, SceneDriver {
         }
     }
 
+    /// Where each school frame's practice sea holds (Core's knots: crest A 0, trough 1500, launch 2104, the guided
+    /// landing ~3150–3760, the rhythm waves 4300–10300). nil = no hold (the bird waits on crest A). Pure; tested.
+    nonisolated static func demoSchoolFreezeX(step: SchoolStep, phase: String?, autopilot: Bool) -> Double? {
+        switch step {
+        case .dive: return autopilot ? 750 : nil
+        case .soar: return 1_850
+        case .land: return phase == "done" ? 3_850 : 2_650
+        case .rhythm: return 7_300
+        case .storm: return 5_000
+        case .hold, .wings, .wingCheck: return nil
+        }
+    }
+
     /// R7 P0-3 `session=first:<stage>`: one coherent first session. Returns false for `school` with a `school=` step
     /// (the school branch shows it, on the same fresh progress).
     private func launchFirstSession(_ stage: DemoConfig.FirstSession, demo: DemoConfig, today: Int) -> Bool {
@@ -2177,6 +2194,30 @@ final class GameController: ObservableObject, SceneDriver {
         case .run:
             firstRealRun = true
             start(mode: .flight)
+        case .caught:
+            // R8 P1-12: the first session shows the catch: run 1 (casual, seed 7) flown headless until the storm is
+            // all but on the bird, then live (`autopilot=casual`) into the catch (`freezeOn=caught`).
+            firstRealRun = true
+            start(mode: .flight)
+            if let session {
+                session.skipCountdown()
+                DemoRunner.fly(session, skill: .casual, seed: DemoConfig.defaultSeed, maxSeconds: 900,
+                               onEvent: { _, _ in },
+                               until: { s in
+                                   if case .flying = s.phase { return s.lead <= 0.05 }
+                                   if case .countdown = s.phase { return false }
+                                   return true
+                               })
+                flightStart = 0
+                if case .countdown = session.snapshot.phase {
+                } else if !DemoRunner.isFlying(session.snapshot) {
+                    // Caught already in the headless part: hold the caught frame as it is.
+                    hud.setCaught(true)
+                    publishHUD(session.snapshot, now: CACurrentMediaTime(), force: true)
+                    freeze("caught", session.snapshot)
+                }
+                AppTrace.t("SWOOP-T session first caught seeded m=\(AppTrace.int(session.snapshot.distanceMeters))")
+            }
         case .results:
             firstRealRun = true
             presentDemoResults(demo, today: today)
@@ -2261,7 +2302,6 @@ final class GameController: ObservableObject, SceneDriver {
         built.firstRealRun = firstRealRun
         firstRealRun = false
         built.explainsDaily = !store.data.learnedHints.contains(AppRules.dailyRowHint)
-        built.funFact = !hasHinge && !demoDuo && store.data.runs == 1
         if demo.duo || hasHinge || demo.foldFill != nil {
             built.hingeRun = true
             built.showsFoldHelper = true
@@ -2275,6 +2315,10 @@ final class GameController: ObservableObject, SceneDriver {
 
     /// `freezeOn=` / `freezeAt=`: hold the frame once the moment has come.
     private func demoAfterStep(_ s: FlightSnapshot, events: [FlightEvent]) {
+        if !frozen, schoolSeaRun, let fx = demoSchoolFreezeX, Double(s.position.x) >= fx {
+            freeze("school", s)
+            return
+        }
         guard let demo, !frozen, !homeLoop else { return }
         let flightTime = flightStart.map { s.time - $0 } ?? -1
         if let at = demo.freezeAt, flightStart != nil, flightTime >= at {

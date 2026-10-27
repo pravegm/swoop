@@ -409,7 +409,7 @@ struct FlightSchool: Equatable {
             } else if u >= 0.4 || folded {
                 subline = touch ? "…and let go." : "…and open again."
             } else if !touch && t - lastMoveAt >= Self.idleHelpAfter {
-                subline = "Fold both halves in a little, like a book a third shut."
+                subline = "Fold both halves in a little."
             } else {
                 subline = nil
             }
@@ -460,8 +460,8 @@ struct FlightSchool: Equatable {
             }
             if upFace && input.skimming && input.slope < -0.05 && !pendingSuccess { soarMissed(out: &out) }
         case .land:
-            if input.flying && !input.skimming { subline = touch ? "Hold to drop sooner, let go to float."
-                : "Fold to drop sooner, open to float." }
+            if input.flying && !input.skimming { subline = touch ? "Hold to come down, let go to glide."
+                : "Fold to come down, open to glide." }
             var landings: [TouchdownQuality] = []
             if input.practice {
                 for sig in input.signals { if case let .landed(q) = sig { landings.append(q) } }
@@ -527,7 +527,7 @@ struct FlightSchool: Equatable {
             subline = "Good enough. Let's fly."
             pendingSuccess = true
         } else {
-            subline = touch ? "You let go too soon. Keep holding to the bottom." : "You opened too soon. Keep it folded to the bottom."
+            subline = FlightSchoolCopy.failure(.dive, touch: touch)
             out.rewind = true
         }
     }
@@ -539,7 +539,7 @@ struct FlightSchool: Equatable {
         if fails >= Self.maxFails {
             pendingSuccess = true
         } else {
-            subline = touch ? "Let go to take off." : "Open your wings to take off."
+            subline = FlightSchoolCopy.failure(.soar, touch: touch)
             out.rewind = true
         }
     }
@@ -597,45 +597,44 @@ struct WingCheckFlow: Equatable {
 
 /// Flight School's words (UX §1.2), one place. Pure; tested.
 enum FlightSchoolCopy {
+    /// R8 P1-7/P1-8: every prompt is 7 words or fewer, and one vocabulary: "fold" / "open" on the Duo, "hold" /
+    /// "let go" on iPhone (never tuck, dive or drop in an instruction). Pure; tested.
     static func prompt(_ step: SchoolStep, touch: Bool, tapping: Bool = false, elapsed: Double = 0) -> String {
         switch step {
         case .hold:
-            // R7: the tester was already sideways when told to "turn".
-            return touch ? "Hold your iPhone sideways, in both hands." : "Hold your Duo open like a book."
+            return touch ? "Hold your iPhone sideways." : "Hold your Duo open like a book."
         case .wings:
-            if tapping { return "These are your wings. Tap to fold… tap again to open." }
-            return touch ? "Press and hold anywhere to fold the wings…" : "These are your wings. Fold a little…"
+            if tapping { return "Tap to fold. Tap to open." }
+            return touch ? "Hold anywhere. The wings fold." : "These are your wings. Fold a little."
         case .wingCheck:
             return "One quick check."
         case .dive:
-            if tapping { return "Tap, and stay folded all the way down." }
-            return touch ? "Hold the screen all the way down the wave." : "Hold the fold all the way down the wave."
+            if tapping { return "Tap once. Stay folded down." }
+            return touch ? "Keep holding all the way down." : "Stay folded all the way down."
         case .soar:
-            if tapping { return "Tap again at the bottom… and fly!" }
-            return touch ? "Let go at the bottom… and fly!" : "Open at the bottom… and fly!"
+            if tapping { return "Tap at the bottom. Fly!" }
+            return touch ? "Let go at the bottom. Fly!" : "Open at the bottom. Fly!"
         case .land:
-            return "Now land on the downslope ahead, in the ring."
+            return "Land in the ring ahead."
         case .rhythm:
-            if tapping { return "One tap down, one tap up, per wave." }
+            if tapping { return "Tap down, tap up, each wave." }
             if elapsed >= FlightSchool.rhythmSwapAfter { return touch ? "Hold down, let go up." : "Fold down, open up." }
-            // R7 P1-7: "Press and hold" everywhere; no "no tapping" (nobody was told to tap).
-            return touch ? "That's it: one press and hold per wave." : "That's it: one fold per wave. You never flap."
+            return touch ? "One hold per wave." : "One fold per wave. Never flap."
         case .storm:
             let line = FlightSchool.stormLineSeconds
-            if elapsed < line { return "A storm is chasing you out to sea." }
-            if elapsed < 2 * line { return "Stay ahead of it: Perfects push it back." }
-            return "Reach the first lighthouse: \(RouteRules.name(0)) · \(ShareText.target(RouteRules.meters(0)))."
+            if elapsed < line { return "A storm is chasing you." }
+            if elapsed < 2 * line { return "Perfects push the storm back." }
+            return "Fly to \(RouteRules.name(0)) · \(ShareText.target(RouteRules.meters(0)))."
         }
     }
 
-    /// The help line after a miss (UX §1.2), per step.
+    /// The help line after a miss (UX §1.2), per step. Optional and muted.
     static func failure(_ step: SchoolStep, touch: Bool) -> String? {
         switch step {
         case .hold: return touch ? "Turn it sideways." : "A little less than flat."
         case .wings: return touch ? nil : "Not that far. Just a little."
-        case .dive: return touch ? "You let go too soon. Keep holding to the bottom."
-            : "You opened too soon. Keep it folded to the bottom."
-        case .soar: return touch ? "Let go to take off." : "Open your wings to take off."
+        case .dive: return touch ? "You let go too soon. Keep holding." : "You opened too soon. Stay folded."
+        case .soar: return touch ? "Let go to take off." : "Open to take off."
         case .land: return "Splash! Aim for the downslope."
         case .wingCheck, .rhythm, .storm: return nil
         }
@@ -643,8 +642,8 @@ enum FlightSchoolCopy {
 
     static func praise(_ step: SchoolStep, wingCheck: WingCheckFlow = WingCheckFlow()) -> String {
         switch step {
-        case .hold: return "Perfect grip."
-        case .wings: return "That's a tuck."
+        case .hold: return "Good grip."
+        case .wings: return "Wings folded!"
         case .wingCheck:
             return wingCheck.skipped ? "No problem. You can check it in Settings."
                 : "Got it. Your bird flies on the sharp side."
@@ -655,7 +654,6 @@ enum FlightSchoolCopy {
         case .storm: return ""
         }
     }
-
     /// R7 P0-2: the line under the praise, where a step teaches a word. Step 5 names the Perfect outright.
     static func praiseLine(_ step: SchoolStep) -> String? {
         switch step {
@@ -733,10 +731,14 @@ enum RouteRules {
     /// Results' headline (UX §4.6): "Reached Kestrel Head!" (and the short-of line), or "Caught 0.8 km short of
     /// Saltlight".
     static func headline(reachedThisRun: Int, meters: Double) -> (title: String, sub: String?, reached: Bool) {
-        let shortOf = metersLeft(nextIndex: reachedThisRun, metersFlown: meters)
-        let caught = "Caught \(ShareText.distance(shortOf, roundUp: true)) short of \(name(reachedThisRun))"
-        if reachedThisRun >= 1 { return ("Reached \(name(reachedThisRun - 1))!", caught, true) }
-        return (caught, nil, false)
+        // R8 P0-3: one story. A reach is the headline and the catch is told as what happened next; with no reach, the
+        // catch is the headline.
+        let shortOf = ShareText.distance(metersLeft(nextIndex: reachedThisRun, metersFlown: meters), roundUp: true)
+        if reachedThisRun >= 1 {
+            return ("Reached \(name(reachedThisRun - 1))!",
+                    "The storm caught you \(shortOf) before \(name(reachedThisRun)).", true)
+        }
+        return ("Caught \(shortOf) short of \(name(reachedThisRun))", nil, false)
     }
 
     /// The "Next time" tip (UX §4.6), the first rule that applies.
@@ -774,6 +776,7 @@ enum RouteRules {
     }
 
     static func nodeLabel(index: Int, routeReached: Int) -> String {
-        nodeState(index: index, routeReached: routeReached) == .unknown ? "Lighthouse \(index + 1)" : name(index)
+        // R8 P0-1: every lighthouse by its real fixed name ("Lighthouse 5" read as a placeholder).
+        name(index)
     }
 }

@@ -268,8 +268,6 @@ struct ResultSummary: Equatable {
     var firstRealRun = false
     /// D4: the Daily row's one-time sub-line is due (captured when the card is built).
     var explainsDaily = false
-    /// R7 P1-8: "Fun fact: on iPhone Duo, you fold the phone to fly." (an iPhone's first results).
-    var funFact = false
 }
 
 /// A run paused mid-flight (the cover display's Paused state, UX-D1), built at the pause.
@@ -840,7 +838,7 @@ enum AppRules {
 
     /// The countdown's line (UX-A4).
     static func countdownLine(touch: Bool, flat: Bool, nudge: Bool = false) -> String {
-        if touch { return "Hold to dive · let go to soar" }
+        if touch { return "Hold going down · let go going up" }
         if nudge { return "Open a little wider" }
         return flat ? "Bend it a little, like a book" : "Wings open, hold steady"
     }

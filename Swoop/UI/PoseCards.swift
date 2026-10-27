@@ -73,8 +73,8 @@ struct TurnCard: View {
                 .font(SwoopType.title(false))
                 .foregroundStyle(SwoopTheme.foam)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(isDuo ? "The two halves are your wings. Fold a little to dive, open to soar."
-                       : "Hold to dive. Let go to soar.")
+            Text(isDuo ? "The two halves are your wings. Fold going down, open going up."
+                       : "Hold going down. Let go going up.")
                 .font(SwoopType.body(false))
                 .foregroundStyle(SwoopTheme.mist)
                 .fixedSize(horizontal: false, vertical: true)

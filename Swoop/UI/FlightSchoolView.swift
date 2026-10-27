@@ -14,7 +14,20 @@ struct SchoolLayout: Equatable {
     var seaPrompt: CGRect
     /// R7 P0-4: step 7's prompt, under the meter and the goal chip that fade in there (they overlapped the card).
     var stormPrompt: CGRect
+    /// R8 P1-9: the Sea prompt's low place on the bird page, used while the bird is under the usual one.
+    var seaPromptLow: CGRect
     var skip: CGRect
+
+    /// R8 P1-9: the card never covers the bird: the bird's rect plus a 60 pt margin. Switches to the low place when
+    /// the bird is under the usual one, and back only once the bird is under the low one (no flicker). Pure; tested.
+    nonisolated static func usesLowPrompt(usual: CGRect, low: CGRect, bird: CGPoint?, radius: CGFloat = 44,
+                                         wasLow: Bool) -> Bool {
+        guard let bird else { return wasLow }
+        let r = CGRect(x: bird.x - radius - 60, y: bird.y - radius - 60, width: 2 * (radius + 60),
+                       height: 2 * (radius + 60))
+        if wasLow { return !r.intersects(low) || r.intersects(usual) }
+        return r.intersects(usual) && !r.intersects(low)
+    }
 
     /// The Duo diagram's drawing height (ART §1: 240 × 170); the gauge adds 66 under it.
     static let diagramDrawingHeight: CGFloat = 170
@@ -36,8 +49,12 @@ struct SchoolLayout: Equatable {
         let ph: CGFloat = compact ? 92 : 128
         let pTop = min(diagram.maxY + 8, c.bottom - ph)
         let prompt = CGRect(x: bp.midX - pw / 2, y: pTop, width: pw, height: ph)
-        let seaPrompt = CGRect(x: bp.midX - pw / 2, y: max(c.size.height * 0.22 - ph / 2, c.top + 28), width: pw,
+        // R8: clear of the pause button and the dots (they overlapped the card on the iPhone).
+        let chromeBottom = max(PlayLayout.make(c).pause.maxY, dots.maxY) + 8
+        let seaPrompt = CGRect(x: bp.midX - pw / 2, y: max(c.size.height * 0.22 - ph / 2, chromeBottom), width: pw,
                                height: ph)
+        let seaPromptLow = CGRect(x: bp.midX - pw / 2, y: max(c.bottom - ph - 12, seaPrompt.maxY + 8), width: pw,
+                                  height: ph)
         let meter = PlayLayout.make(c).meter
         let stormPrompt = CGRect(x: seaPrompt.minX, y: min(max(meter.maxY + 62, seaPrompt.minY), c.bottom - ph),
                                  width: pw, height: ph)
@@ -45,7 +62,7 @@ struct SchoolLayout: Equatable {
         let skipX = c.mirrored ? fp.minX : fp.maxX - skipW
         let skip = CGRect(x: skipX, y: c.bottom - AppCanvas.minTap, width: skipW, height: AppCanvas.minTap)
         return SchoolLayout(dots: dots, titleBird: titleBird, diagram: diagram, prompt: prompt, seaPrompt: seaPrompt,
-                            stormPrompt: stormPrompt, skip: skip)
+                            stormPrompt: stormPrompt, seaPromptLow: seaPromptLow, skip: skip)
     }
 }
 
@@ -71,6 +88,9 @@ struct SchoolDots: View {
 struct SchoolPrompt: View {
     let display: SchoolDisplay
     var compact = false
+
+    /// The card's navy backing opacity (R8 P1-10).
+    nonisolated static let backingOpacity: Double = 0.86
 
     var body: some View {
         VStack(spacing: 6) {
@@ -123,8 +143,9 @@ struct SchoolPrompt: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity)
+        // R8 P1-10: the navy backing (foam on it is ≥ 4.5 : 1 over the brightest sky; the grey faded into it).
         .background(RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .fill(SwoopTheme.surface.opacity(0.55)))
+            .fill(Color(swoopHex: Contrast.scrim).opacity(SchoolPrompt.backingOpacity)))
         .animation(.easeInOut(duration: 0.4), value: display.prompt)
         .animation(.easeInOut(duration: 0.3), value: display.praise)
         .accessibilityElement(children: .combine)
@@ -154,18 +175,22 @@ struct SchoolStudioView: View {
             } else {
                 TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { _ in
                     let now = CACurrentMediaTime()
-                    let tuck = d.touch ? controller.touchTuck(now: now)
+                    // R8 P0-6: "Wings folded!" shows its answer: the title bird fully folded and the diagram and
+                    // gauge at the fold target, whatever the hand does during the praise (live and in the demo).
+                    let doneFold = Self.showsDoneFold(d)
+                    let liveTuck = d.touch ? controller.touchTuck(now: now)
                         : controller.titleTuck(now: now, heldSince: heldSince, releasedAt: releasedAt)
+                    let tuck = doneFold ? 1 : liveTuck
                     ZStack(alignment: .topLeading) {
                         TitleBirdView(bird: controller.bird, tuck: tuck)
                             .frame(width: l.titleBird.width, height: l.titleBird.height)
                             .position(x: l.titleBird.midX, y: l.titleBird.midY)
                         Group {
                             if d.touch {
-                                PhoneTouchDiagram(pressed: touching, showsFinger: d.step != .hold)
+                                PhoneTouchDiagram(pressed: touching || doneFold, showsFinger: d.step != .hold)
                             } else {
-                                DuoDiagram(angle: controller.hingeAngleForDiagram,
-                                           target: d.step == .hold ? 140 : (d.step == .wings ? 118 : nil),
+                                DuoDiagram(angle: doneFold ? Self.foldTarget : controller.hingeAngleForDiagram,
+                                           target: d.step == .hold ? 140 : (d.step == .wings ? Self.foldTarget : nil),
                                            mirrored: info.mirrored)
                             }
                         }
@@ -210,9 +235,19 @@ struct SchoolStudioView: View {
         )
     }
 
+    /// The fold the wings step asks for (the diagram's target ghost).
+    nonisolated static let foldTarget: Double = 118
+
+    /// The wings step's praise shows the fold done. Pure; tested.
+    nonisolated static func showsDoneFold(_ d: SchoolDisplay) -> Bool { d.step == .wings && d.praise != nil }
+
     private func skipButton(_ l: SchoolLayout) -> some View {
         SwoopButton(kind: .quiet, height: 44, compact: info.isCompact, action: { controller.skipSchool() }) {
             Text("Skip").lineLimit(1)
+                .foregroundStyle(SwoopTheme.foam)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(Color(swoopHex: Contrast.scrim).opacity(0.72)))
         }
         .frame(width: l.skip.width, height: l.skip.height)
         .position(x: l.skip.midX, y: l.skip.midY)
@@ -233,23 +268,17 @@ struct SchoolSeaChrome: View {
             SchoolDots(current: d.dotIndex, count: d.stepCount)
                 .position(x: l.dots.midX, y: l.dots.midY)
                 .allowsHitTesting(false)
-            let promptRect = d.step == .storm ? l.stormPrompt : l.seaPrompt
-            SchoolPrompt(display: d, compact: info.isCompact)
-                .frame(width: promptRect.width)
-                .position(x: promptRect.midX, y: promptRect.midY)
-                .allowsHitTesting(false)
-            if d.step == .dive && !d.touch {
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { _ in
-                    DuoDiagram(angle: controller.hingeAngleForDiagram, target: 118, showsGauge: false,
-                               mirrored: info.mirrored)
-                }
-                    .frame(width: 120, height: 84)
-                    .position(x: l.seaPrompt.midX, y: l.seaPrompt.maxY + 50)
-                    .allowsHitTesting(false)
-            }
+            SchoolSeaPrompt(hud: controller.hud, display: d, usual: d.step == .storm ? l.stormPrompt : l.seaPrompt,
+                            low: l.seaPromptLow, compact: info.isCompact)
+            // R8 P1-7/P1-9: the sea teaches the dive (the fold ribbon, the Faster! fill); the mini diagram that sat
+            // over the sea is cut.
             if d.canSkip {
                 SwoopButton(kind: .quiet, height: 44, compact: info.isCompact, action: { controller.skipSchool() }) {
                     Text("Skip").lineLimit(1)
+                .foregroundStyle(SwoopTheme.foam)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(Color(swoopHex: Contrast.scrim).opacity(0.72)))
                 }
                 .frame(width: l.skip.width, height: l.skip.height)
                 .position(x: l.skip.midX, y: l.skip.midY)
@@ -440,8 +469,9 @@ struct FasterCapsule: View {
             Text("Faster!")
                 .font(SwoopType.chip(compact))
                 .foregroundStyle(f >= 0.7 ? SwoopTheme.rewardGold : SwoopTheme.foam)
-                .opacity(f > 0.15 ? 1 : 0.6)
-                .swoopLegible()
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(Color(swoopHex: Contrast.scrim).opacity(0.8)))
             ZStack(alignment: mirrored ? .trailing : .leading) {
                 Capsule().fill(SwoopTheme.abyss.opacity(0.55))
                 Capsule()
@@ -500,5 +530,32 @@ struct RhythmBar: View {
                 }
             }
         }
+    }
+}
+
+/// R8 P1-9: the Sea steps' prompt, kept off the bird (`SchoolLayout.usesLowPrompt`).
+struct SchoolSeaPrompt: View {
+    @ObservedObject var hud: HUDState
+    let display: SchoolDisplay
+    let usual: CGRect
+    let low: CGRect
+    let compact: Bool
+
+    @State private var isLow = false
+
+    var body: some View {
+        let r = isLow ? low : usual
+        SchoolPrompt(display: display, compact: compact)
+            .frame(width: r.width)
+            .position(x: r.midX, y: r.midY)
+            .allowsHitTesting(false)
+            .animation(.easeInOut(duration: 0.3), value: isLow)
+            .onAppear { update() }
+            .onChange(of: hud.birdPoint) { _, _ in update() }
+    }
+
+    private func update() {
+        let next = SchoolLayout.usesLowPrompt(usual: usual, low: low, bird: hud.birdPoint, wasLow: isLow)
+        if next != isLow { isLow = next }
     }
 }

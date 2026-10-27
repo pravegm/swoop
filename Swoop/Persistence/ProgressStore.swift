@@ -69,6 +69,8 @@ struct RecordOutcome: Equatable {
     var starEarned = false
     /// R6: this run reached a lighthouse the route had never reached ("New on your route").
     var newOnRoute = false
+    /// R8 P0-4: after a rank-up, the new rank's goals as this run leaves them (already-met ones ticked now).
+    var nextGoals: [GoalRowOutcome] = []
     /// Lighthouses entered in the logbook for the first time by this run.
     var newLogbook: [String] = []
     /// Achievements this run earned for the first time.
@@ -466,6 +468,17 @@ enum ProgressRules {
             data.rank = reached
             // The finished rank's goal ids are done with; the next rank starts fresh.
             for row in rows { data.goalProgress.removeValue(forKey: row.goal.id) }
+            // R8 P0-4: the rank the cascade stopped at starts from this run's bests, so a goal they already meet
+            // ticks on this results screen ("Fly 3 km" is never handed out after 12.83 km).
+            if data.rank < maxRank {
+                outcome.nextGoals = goals(data.rank).map { g in
+                    var p = bestProgress(g, data: data)
+                    if GoalEvaluator.isMet(g, bests: bests) { p = 1 }
+                    p = min(max(p.isFinite ? p : 0, 0), 1)
+                    if p > 0 { data.goalProgress[g.id] = max(data.goalProgress[g.id] ?? 0, p) }
+                    return GoalRowOutcome(goal: g, before: 0, after: p)
+                }
+            }
             let opened = unlocks(rankBefore, data.rank)
             outcome.rankUp = AppRankUp(from: rankBefore, to: data.rank, birds: opened.birds, skies: opened.skies,
                                        trails: trailUnlocks(rankBefore, data.rank))

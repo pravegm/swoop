@@ -93,8 +93,9 @@ struct DemoConfig: Equatable {
     enum ResultsFrame: String, Equatable { case caught, reached, newroute, first }
     /// `session=first:<stage>`: ONE fresh install walked forward (no mixed presets): `home` (first launch), `school`
     /// (with `school=` for the step), `run` (the first real run after the school), `results` (run 1's card),
-    /// `home2` / `route` / `goals` (after run 1, which is flown headless with the casual pilot and recorded).
-    enum FirstSession: String, Equatable { case home, school, run, results, home2, route, goals }
+    /// `caught` (run 1 flown headless to just before the storm catches it, then live to the catch), `home2` / `route` /
+    /// `goals` (after run 1, which is flown headless with the casual pilot and recorded).
+    enum FirstSession: String, Equatable { case home, school, run, caught, results, home2, route, goals }
     enum CoverState: String, Equatable { case home, midrun, results }
     enum ModeKey: String, Equatable { case flight, daily, attract }
     enum Freeze: String, Equatable {

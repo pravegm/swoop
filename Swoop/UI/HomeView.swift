@@ -197,9 +197,9 @@ struct HomeView: View {
         if duo && lowRest { return "Open it a little wider." }
         // R6 D3: a returning player's caption is the objective (UX §4.1).
         if returning { return RouteRules.objective }
-        if duo { return folded ? "Fold to dive. Open to soar." : "Hold your Duo like a book. These are your wings." }
+        if duo { return folded ? "Fold going down. Open going up." : "Hold your Duo like a book. These are your wings." }
         // R7 P1-7: "Press and hold" everywhere (anywhere on the screen, not only the bird).
-        return folded ? "Hold to dive. Let go to soar." : "Press and hold anywhere. That's a tuck."
+        return folded ? "Hold going down. Let go going up." : "Hold anywhere. The wings fold."
     }
 
     private var caption: some View {
@@ -208,7 +208,8 @@ struct HomeView: View {
         let text = Self.captionText(duo: isDuo, folded: folded, flat: controller.homeFlat,
                                     lowRest: isDuo && controller.homeLowRest,
                                     returning: !fresh && store.data.routeReached > 0)
-        let gold = folded && !(isDuo && (controller.homeFlat || controller.homeLowRest))
+        // R8: one colour for the line on every visit (it changed from white to yellow between visits).
+        let gold = false
         return VStack(alignment: info.mirrored ? .trailing : .leading, spacing: 8) {
             Text(text)
                 .font(SwoopType.headline(info.isCompact))
@@ -237,21 +238,32 @@ struct HomeView: View {
                     .accessibilitySortPriority(9)
                 // R6 D4: plain names and pictures (Goals = checklist, Route = the lighthouse, Birds = the bird).
                 menuTile(l.flocks, title: goalsTitle, icon: .symbol("checklist"), detail: goalsDoneLine,
-                         dot: !store.data.seenDestinations.contains("goals")) { controller.show(.goals) }
+                         dot: newBadge == "goals") { controller.show(.goals) }
                     .modifier(PopIn(shown: appeared, index: 1, reduceMotion: reduceMotion))
                     .accessibilitySortPriority(8)
                 menuTile(l.route, title: "Route", icon: .lighthouse,
                          detail: store.data.routeReached == 1 ? "1 reached" : "\(store.data.routeReached) reached",
-                         dot: !store.data.seenDestinations.contains("route")) { controller.show(.route) }
+                         dot: newBadge == "route") { controller.show(.route) }
                     .modifier(PopIn(shown: appeared, index: 2, reduceMotion: reduceMotion))
                     .accessibilitySortPriority(7.5)
                 menuTile(l.birds, title: "Birds", icon: .bird, detail: BirdCatalog.bird(store.activeBird).name,
-                         dot: !store.data.seenDestinations.contains("birds")) { controller.show(.birds) }
+                         dot: newBadge == "birds") { controller.show(.birds) }
                     .modifier(PopIn(shown: appeared, index: 3, reduceMotion: reduceMotion))
                     .accessibilitySortPriority(7)
             }
         }
         .frame(width: info.size.width, height: info.size.height, alignment: .topLeading)
+    }
+
+    /// R8 P0-5: at most one "New" badge, on the most relevant unseen place: the Route once a lighthouse is reached,
+    /// then Goals, the Daily, the Birds. Pure; tested.
+    nonisolated static func newBadge(seen: Set<String>, routeReached: Int) -> String? {
+        let order = (routeReached > 0 ? ["route"] : []) + ["goals", "daily", "birds"]
+        return order.first { !seen.contains($0) }
+    }
+
+    private var newBadge: String? {
+        Self.newBadge(seen: store.data.seenDestinations, routeReached: store.data.routeReached)
     }
 
     /// R5 (every critic): the tile is always "Goals"; the sub-line "1 of 3 · Crest Hopper" truncates at its tail.
@@ -291,11 +303,9 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Fly")
                         .font(.system(size: r.height > 64 ? 30 : 25, weight: .black, design: .rounded))
-                    HStack(spacing: 4) {
-                        LighthouseIcon(state: .next, size: 16)
-                        Text(Self.flySubtitle(best: store.data.bestMeters, routeReached: store.data.routeReached,
-                                              compact: c))
-                    }
+                    // R8 P0-5: no 16 pt icon (it rendered as a yellow sliver); the words alone.
+                    Text(Self.flySubtitle(best: store.data.bestMeters, routeReached: store.data.routeReached,
+                                          compact: c))
                         .font(SwoopType.caption(c).weight(.bold))
                         .foregroundStyle(SwoopTheme.ink.opacity(0.75))
                         .lineLimit(1)
@@ -344,7 +354,7 @@ struct HomeView: View {
                 }
                 Spacer(minLength: 0)
                 if streak >= 2 { StreakLabel(days: streak, compact: info.isCompact) }
-                if !store.data.seenDestinations.contains("daily") { NewCapsule() }
+                if newBadge == "daily" { NewCapsule() }
             }
             .padding(.horizontal, 6)
         }
@@ -468,7 +478,7 @@ struct HomeView: View {
 
     private var tapOffer: some View {
         VStack(spacing: 12) {
-            Text("Tap to tuck instead of holding?")
+            Text("Tap instead of holding?")
                 .font(SwoopType.headline(info.isCompact))
                 .foregroundStyle(SwoopTheme.foam)
                 .multilineTextAlignment(.center)

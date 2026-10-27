@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// R6 D3 (UX §4.4, ART §5 AP7): the Route. A sea chart strip of the lighthouses in the flight direction from the harbour
-/// (where the storm comes from), what you've reached, the next one, your best; the summary and Fly on the bird page.
+/// R6 D3 (UX §4.4, ART §5 AP7): the Route. A sea chart of the lighthouses in the flight direction from the harbour
+/// (where the storm comes from): what you've reached, the next one and two more, your best. R8 P0-1: every lighthouse
+/// by its real name, Gull Point always on it, and the chart fills the whole screen (both pages on the Duo) behind the
+/// header and the summary.
 struct RouteView: View {
     @ObservedObject var controller: GameController
     @ObservedObject var store: ProgressStore
@@ -14,23 +16,25 @@ struct RouteView: View {
         let reached = store.data.routeReached
         let mapTop = info.top + (c ? 54 : 84)
         let summaryH: CGFloat = c ? 64 : 150
-        let mapH = max(info.bottom - mapTop - summaryH - 16, 120)
+        let band = max(info.bottom - mapTop - summaryH - 16, 120)
+        let edge = max(info.insets.leading, info.insets.trailing)
+        let fold: ClosedRange<CGFloat>? = info.hasFold ? (info.foldMinX - 24)...(info.foldMaxX + 24) : nil
         ZStack(alignment: .topLeading) {
             SwoopTheme.backdrop
+                .frame(width: info.size.width, height: info.size.height)
+            RouteStrip(routeReached: reached, best: store.data.bestMeters, mirrored: info.mirrored, compact: c,
+                       viewWidth: info.size.width, bandTop: mapTop, bandHeight: band, edge: edge, foldBand: fold)
                 .frame(width: info.size.width, height: info.size.height)
             HStack(spacing: 12) {
                 SwoopIconButton(systemName: "chevron.left", compact: c, label: "Back") { controller.goHome() }
                 Text("Route")
                     .font(SwoopType.title(c))
                     .foregroundStyle(SwoopTheme.foam)
+                    .swoopLegible()
                 Spacer(minLength: 0)
             }
             .frame(width: bp.width)
             .position(x: bp.midX, y: info.top + 28)
-            RouteStrip(routeReached: reached, best: store.data.bestMeters, mirrored: info.mirrored, compact: c,
-                       focusX: info.farPage.midX / max(info.size.width, 1))
-                .frame(width: info.size.width, height: mapH)
-                .position(x: info.size.width / 2, y: mapTop + mapH / 2)
             summary(reached: reached)
                 .frame(width: min(bp.width, 440))
                 .position(x: bp.midX, y: info.bottom - summaryH / 2)
@@ -39,9 +43,10 @@ struct RouteView: View {
     }
 
     private func summary(reached: Int) -> some View {
-        // R7 P0-4: a phone's 64 pt summary holds two lines (four were cut to "1 lighthouse r…").
         let all = RouteRules.summary(routeReached: reached, best: store.data.bestMeters)
-        let lines = c ? [all.first, all.first(where: { $0.hasPrefix("Next") })].compactMap { $0 } : all
+        // A phone's 64 pt summary holds two short lines: reached and Next.
+        var lines = c ? [all.first, all.first(where: { $0.hasPrefix("Next") })].compactMap { $0 } : all
+        if c, reached > 0, !lines.isEmpty { lines[0] = "\(reached) reached" }
         return HStack(spacing: 14) {
             LighthouseIcon(state: .next, size: c ? 26 : 30)
             VStack(alignment: .leading, spacing: 2) {
@@ -51,7 +56,6 @@ struct RouteView: View {
                         .foregroundStyle(item.offset == 0 ? SwoopTheme.foam : SwoopTheme.mist)
                         .lineLimit(1)
                         .minimumScaleFactor(0.6)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .layoutPriority(1)
@@ -64,78 +68,113 @@ struct RouteView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(RoundedRectangle(cornerRadius: SwoopTheme.cardRadius(c), style: .continuous)
-            .fill(SwoopTheme.surface.opacity(0.9)))
+            .fill(SwoopTheme.surface.opacity(0.92)))
         .accessibilityElement(children: .contain)
     }
 }
 
-/// The strip: a coast along the top, the sea below, lighthouses on headlands at equal spacing by index, the route line
-/// (gold where flown, dashed after), your best as a pin, the harbour and the storm at the start.
+/// The chart: the coast along the top (land filled to the screen's top edge), the sea with its depth contours to the
+/// bottom, lighthouses on headlands spaced to fit the screen, the route line (gold where flown, dashed after), your
+/// best as a pin, and the harbour with the storm at the start.
 struct RouteStrip: View {
     let routeReached: Int
     let best: Double
     let mirrored: Bool
     let compact: Bool
-    /// Where on screen (0…1 of the width) the next lighthouse is centred on open: the sea page's middle.
-    var focusX: CGFloat = 0.25
+    var viewWidth: CGFloat = 951
+    /// The band (screen y) the coast and the route are drawn in, between the header and the summary.
+    var bandTop: CGFloat = 84
+    var bandHeight: CGFloat = 300
+    /// The safe-area inset at the screen's sides (the start pad clears it).
+    var edge: CGFloat = 0
+    /// The Duo's fold band (screen x): no lighthouse is centred in it.
+    var foldBand: ClosedRange<CGFloat>?
 
-    /// Equal spacing by index (ART §5), and the nodes shown: the reached ones, the next, then three more.
+    /// The start pad from the harbour end (the storm and the quay sit in it).
+    nonisolated static let startPad: CGFloat = 110
+    nonisolated static let endPad: CGFloat = 140
+
+    /// R6 spacing floor by device (ART §5); R8 fits the shown nodes to the screen instead when they fit.
     nonisolated static func spacing(_ c: Bool) -> CGFloat { c ? 130 : 150 }
-    nonisolated static func nodeCount(routeReached: Int) -> Int { max(routeReached, 0) + 4 }
+
+    /// R8 P0-1: every reached lighthouse (Gull Point included), the next one, then two more, all named.
+    nonisolated static func nodeCount(routeReached: Int) -> Int { max(routeReached, 0) + 3 }
+
+    /// The spacing that fits `count` lighthouses across `viewWidth` (no half-empty screen), never under the R6 floor
+    /// minus 20 and never over 230. Pure; tested.
+    nonisolated static func fittedSpacing(viewWidth: CGFloat, count: Int, compact: Bool, edge: CGFloat = 0) -> CGFloat {
+        let room = viewWidth - (startPad + edge) - endPad
+        let fit = room / CGFloat(max(count, 1))
+        return min(max(fit, spacing(compact) - 20), 230)
+    }
 
     /// Node i's x along a strip `width` wide, from the harbour end in the flight direction. Pure; tested.
-    nonisolated static func nodeX(_ i: Int, width: CGFloat, spacing: CGFloat, mirrored: Bool) -> CGFloat {
-        let fromStart = 110 + CGFloat(i) * spacing
+    nonisolated static func nodeX(_ i: Int, width: CGFloat, spacing: CGFloat, mirrored: Bool, pad: CGFloat = startPad)
+        -> CGFloat {
+        let fromStart = pad + CGFloat(i) * spacing
         return mirrored ? width - fromStart : fromStart
     }
 
     /// The best pin's x: interpolated by metres between the lighthouses either side. Pure; tested.
-    nonisolated static func bestX(best: Double, width: CGFloat, spacing: CGFloat, mirrored: Bool) -> CGFloat? {
+    nonisolated static func bestX(best: Double, width: CGFloat, spacing: CGFloat, mirrored: Bool,
+                                  pad: CGFloat = startPad) -> CGFloat? {
         guard best > 0, best.isFinite else { return nil }
         let n = RouteRules.reached(within: best)
         let before = n == 0 ? 0 : RouteRules.meters(n - 1)
         let after = RouteRules.meters(n)
         let f = after > before ? (best - before) / (after - before) : 0
-        let startX = n == 0 ? (mirrored ? width - 40 : 40) : nodeX(n - 1, width: width, spacing: spacing, mirrored: mirrored)
-        let endX = nodeX(n, width: width, spacing: spacing, mirrored: mirrored)
+        let startX = n == 0 ? (mirrored ? width - 40 : 40)
+            : nodeX(n - 1, width: width, spacing: spacing, mirrored: mirrored, pad: pad)
+        let endX = nodeX(n, width: width, spacing: spacing, mirrored: mirrored, pad: pad)
         return startX + (endX - startX) * CGFloat(min(max(f, 0), 1))
     }
 
+    /// The vertical scale for the coast art (drawn for a ~230 pt band) in a taller band. Pure; tested.
+    nonisolated static func verticalScale(bandHeight: CGFloat) -> CGFloat { min(max(bandHeight / 230, 1), 1.7) }
+
     var body: some View {
         let count = Self.nodeCount(routeReached: routeReached)
-        let s = Self.spacing(compact)
-        let width = 110 + CGFloat(count) * s + 140
-        let heads = (0..<count).map { Self.nodeX($0, width: width, spacing: s, mirrored: mirrored) }
-        let startX: CGFloat = mirrored ? width - 44 : 44
-        let route = RouteArt.routePoints(headlands: heads)
-        let routeY = route.first?.y ?? (RouteArt.coastBase + RouteArt.routeDrop)
+        let s = Self.fittedSpacing(viewWidth: viewWidth, count: count, compact: compact, edge: edge)
+        let pad = Self.startPad + edge
+        let width = max(viewWidth, pad + CGFloat(count) * s + Self.endPad)
+        let raw = (0..<count).map { Self.nodeX($0, width: width, spacing: s, mirrored: mirrored, pad: pad) }
+        // Fits on one screen: shift the lot (into the pads) so no lighthouse sits in the fold band.
+        let shift: CGFloat = width <= viewWidth + 0.5 && foldBand != nil
+            ? -RouteArt.snapOffset(proposed: 0, centres: raw, band: foldBand!) : 0
+        let heads = raw.map { $0 + shift }
+        let startX: CGFloat = (mirrored ? width - 44 - edge : 44 + edge)
+        let k = Self.verticalScale(bandHeight: bandHeight)
+        let toScreen = CGAffineTransform(a: 1, b: 0, c: 0, d: k, tx: 0, ty: bandTop)
+        let y: (CGFloat) -> CGFloat = { bandTop + $0 * k }
+        let routeY = y((RouteArt.routePoints(headlands: heads).first?.y) ?? (RouteArt.coastBase + RouteArt.routeDrop))
         GeometryReader { geo in
             let h = geo.size.height
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     ZStack(alignment: .topLeading) {
-                        chart(width: width, height: h, heads: heads, startX: startX)
+                        chart(width: width, height: h, heads: heads, startX: startX, transform: toScreen, k: k)
                         ForEach(0..<count, id: \.self) { i in
                             let tip = RouteArt.headlandTip(x: heads[i], headlands: heads)
-                            let size: CGFloat = RouteRules.nodeState(index: i, routeReached: routeReached) == .next ? 44 : 30
+                            let size: CGFloat = RouteRules.nodeState(index: i, routeReached: routeReached) == .next
+                                ? 44 : 32
                             LighthouseIcon(state: iconState(i), size: size)
-                                .position(x: tip.x, y: tip.y - size * 0.5 + 4)
+                                .position(x: tip.x, y: y(tip.y) - size * 0.5 + 4)
                                 .id(i)
                             nodeLabels(i)
-                                .position(x: tip.x, y: RouteArt.routePoint(at: tip.x, headlands: heads).y + 30)
+                                .position(x: tip.x, y: y(RouteArt.routePoint(at: tip.x, headlands: heads).y) + 34)
                         }
-                        if let bx = Self.bestX(best: best, width: width, spacing: s, mirrored: mirrored) {
-                            let pin = RouteArt.routePoint(at: bx, headlands: heads)
+                        if let bx = Self.bestX(best: best, width: width, spacing: s, mirrored: mirrored, pad: pad) {
+                            let pin = RouteArt.routePoint(at: bx + shift, headlands: heads)
                             YouGlyph(facingLeft: mirrored)
                                 .fill(SwoopTheme.foam)
-                                .frame(width: 24, height: 15)
-                                .position(x: pin.x, y: pin.y - 2)
+                                .frame(width: 26, height: 16)
+                                .position(x: pin.x, y: y(pin.y) - 2)
                             Text("Best \(ShareText.distance(best))")
                                 .font(SwoopType.chip(compact))
                                 .foregroundStyle(SwoopTheme.foam)
                                 .swoopChip(compact)
                                 .fixedSize()
-                                .position(x: pin.x, y: pin.y + 70)
+                                .position(x: pin.x, y: y(pin.y) + 84)
                         }
                         // The harbour (the quay) with the storm over it: where every flight starts.
                         Path(RouteArt.stormGlyph(size: 40))
@@ -153,15 +192,18 @@ struct RouteStrip: View {
                             .position(x: startX, y: routeY + 30)
                         Text("…and on, as far as you can fly.")
                             .font(SwoopType.caption(compact))
-                            .foregroundStyle(SwoopTheme.haze)
+                            .foregroundStyle(SwoopTheme.mist)
                             .fixedSize()
-                            .position(x: Self.nodeX(count, width: width, spacing: s, mirrored: mirrored)
-                                        + (mirrored ? 30 : -30), y: routeY + 30)
+                            .position(x: (heads.last ?? startX) + (mirrored ? -1 : 1) * min(s * 0.5, 90),
+                                      y: routeY + 84)
                     }
                     .frame(width: width, height: h)
                 }
+                .scrollDisabled(width <= viewWidth + 0.5)
                 .onAppear {
-                    proxy.scrollTo(min(routeReached, count - 1), anchor: UnitPoint(x: focusX, y: 0.5))
+                    if width > viewWidth + 0.5 {
+                        proxy.scrollTo(min(routeReached, count - 1), anchor: UnitPoint(x: 0.5, y: 0.5))
+                    }
                 }
             }
         }
@@ -177,29 +219,33 @@ struct RouteStrip: View {
         }
     }
 
-    /// Scene's AP7 chart (`RouteArt`): the land with a headland under each lighthouse, the cliff rim and foam line, the
-    /// depth contours, then the route (gold where flown, dashed after).
-    private func chart(width: CGFloat, height h: CGFloat, heads: [CGFloat], startX: CGFloat) -> some View {
+    /// Scene's AP7 chart (`RouteArt`), scaled into the band and filled edge to edge: land to the top, sea and depth
+    /// contours to the bottom.
+    private func chart(width: CGFloat, height h: CGFloat, heads: [CGFloat], startX: CGFloat,
+                       transform: CGAffineTransform, k: CGFloat) -> some View {
         Canvas { ctx, size in
             ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .linearGradient(
                 Gradient(colors: [Color(swoopHex: 0x12405C), Color(swoopHex: 0x0B2A40)]),
                 startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
-            for contour in RouteArt.contours(width: width, headlands: heads) {
-                ctx.stroke(Path(contour), with: .color(Color.white.opacity(0.06)), lineWidth: 1)
+            let deep = max((h - transform.ty) / k, 300)
+            let offsets = stride(from: CGFloat(30), through: deep, by: 45).map { $0 }
+            for contour in RouteArt.contours(width: width, headlands: heads, offsets: offsets) {
+                ctx.stroke(Path(contour).applying(transform), with: .color(Color.white.opacity(0.06)), lineWidth: 1)
             }
-            ctx.fill(Path(RouteArt.coastPath(width: width, headlands: heads)), with: .linearGradient(
-                Gradient(colors: [Color(swoopHex: 0x34544A), Color(swoopHex: 0x26403A)]),
-                startPoint: .zero, endPoint: CGPoint(x: 0, y: RouteArt.coastBase + RouteArt.headlandBulge)))
-            ctx.stroke(Path(RouteArt.coastline(width: width, headlands: heads, offset: 4)),
+            ctx.fill(Path(RouteArt.coastPath(width: width, headlands: heads, top: -transform.ty / k)).applying(transform),
+                     with: .linearGradient(Gradient(colors: [Color(swoopHex: 0x34544A), Color(swoopHex: 0x26403A)]),
+                                           startPoint: .zero,
+                                           endPoint: CGPoint(x: 0, y: transform.ty + (RouteArt.coastBase + 30) * k)))
+            ctx.stroke(Path(RouteArt.coastline(width: width, headlands: heads, offset: 4)).applying(transform),
                        with: .color(SwoopTheme.foam.opacity(0.5)), lineWidth: 1.5)
-            ctx.stroke(Path(RouteArt.coastline(width: width, headlands: heads)),
+            ctx.stroke(Path(RouteArt.coastline(width: width, headlands: heads)).applying(transform),
                        with: .color(Color(swoopHex: 0xC9B98F)), lineWidth: 3)
             let reachedX = routeReached > 0 ? heads[min(routeReached, heads.count) - 1] : startX
             let endX = heads.last ?? startX
-            let flown = Path(RouteArt.routePath(headlands: heads, from: startX, to: reachedX))
+            let flown = Path(RouteArt.routePath(headlands: heads, from: startX, to: reachedX)).applying(transform)
             ctx.stroke(flown, with: .color(SwoopTheme.rewardGold.opacity(0.25)), lineWidth: 6)
             ctx.stroke(flown, with: .color(SwoopTheme.rewardGold), lineWidth: 2.5)
-            ctx.stroke(Path(RouteArt.routePath(headlands: heads, from: reachedX, to: endX)),
+            ctx.stroke(Path(RouteArt.routePath(headlands: heads, from: reachedX, to: endX)).applying(transform),
                        with: .color(SwoopTheme.mist.opacity(0.45)), style: StrokeStyle(lineWidth: 2, dash: [6, 8]))
         }
         .frame(width: width, height: h)
@@ -210,7 +256,7 @@ struct RouteStrip: View {
         return VStack(spacing: 2) {
             Text(RouteRules.nodeLabel(index: i, routeReached: routeReached))
                 .font(SwoopType.body(compact).weight(.semibold))
-                .foregroundStyle(state == .reached ? SwoopTheme.foam : (state == .next ? SwoopTheme.rewardGold : SwoopTheme.haze))
+                .foregroundStyle(state == .reached ? SwoopTheme.foam : (state == .next ? SwoopTheme.rewardGold : SwoopTheme.mist))
                 .lineLimit(1)
                 .fixedSize()
             HStack(spacing: 4) {
@@ -222,6 +268,7 @@ struct RouteStrip: View {
             .font(SwoopType.caption(compact))
             .foregroundStyle(SwoopTheme.mist)
         }
+        .swoopLegible()
         .accessibilityElement(children: .combine)
     }
 }

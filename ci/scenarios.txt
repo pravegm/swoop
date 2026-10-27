@@ -115,6 +115,7 @@ s1-12-school-storm-2|session=first:school;school=storm:2|6
 s1-13-school-storm-3|session=first:school;school=storm:3|6
 s1-14-run-countdown|session=first:run;freezeOn=countdown|6
 s1-15-run|session=first:run;autopilot=casual;freezeAt=1|9
+s1-15b-caught|session=first:caught;autopilot=casual;freezeOn=caught;freezeAfter=0|25
 s1-16-results|session=first:results|10
 s1-17-home|session=first:home2|8
 s1-18-route|session=first:route|8

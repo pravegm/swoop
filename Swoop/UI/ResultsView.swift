@@ -285,7 +285,7 @@ struct ResultsView: View {
                 .minimumScaleFactor(0.8)
         }
         if plan.hasStats {
-            Text(AppRules.statsLine(perfects: result.perfects, chain: result.bestChain, lighthouses: result.lighthouses))
+            Text(AppRules.statsLine(perfects: result.perfects, chain: 0, lighthouses: 0))
                 .font(SwoopType.body(c).monospacedDigit())
                 .foregroundStyle(SwoopTheme.mist)
                 .lineLimit(1)
@@ -335,7 +335,7 @@ struct ResultsView: View {
                 StreakDots(flown: Self.lastSevenDays(controller.store.data, today: today), today: today, compact: c)
             }
             if plan.rankUp, let rankUp = outcome.rankUp {
-                RankUpBanner(rankUp: rankUp, compact: c)
+                RankUpBanner(rankUp: rankUp, compact: c, nextGoals: outcome.nextGoals)
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
             } else if plan.goals > 0 {
                 VStack(alignment: .leading, spacing: c ? 6 : 10) {
@@ -371,11 +371,8 @@ struct ResultsView: View {
         // R6 (UX §4.6): "New in the logbook" is cut; the headline's "New on your route" chip carries it.
         if s.outcome.starEarned { out.append("Star goals done ★") }
         if s.showsRestLine { out.append("Long flight. Your wings can rest; the Daily will wait.") }
-        if s.funFact { out.append(ResultsView.funFactLine) }
         return Array(out.prefix(max(limit, 0)))
     }
-
-    nonisolated static let funFactLine = "Fun fact: on iPhone Duo, you fold the phone to fly."
 
     /// The last 7 days, oldest first: true where a scored Daily was flown. Pure; tested.
     nonisolated static func lastSevenDays(_ data: ProgressData, today: Int) -> [Bool] {
@@ -420,7 +417,7 @@ struct ResultsView: View {
                 }
             }
             if plan.dailyRow && plan.dailyExplain {
-                Text("Daily: everyone flies the same sea today. One scored try.")
+                Text("Daily Flight: one try a day, same sea for everyone. Not flown yet.")
                     .font(SwoopType.caption(c))
                     .foregroundStyle(SwoopTheme.mist)
                     .lineLimit(1)
@@ -643,8 +640,7 @@ struct ResultsPlan: Equatable {
         p.routeStrip = p.headline && !c
         p.routeNote = p.hasHook && s.firstRealRun && !kind.isDaily
         p.dailyExplain = s.explainsDaily
-        p.hasStats = kind != .dailySpent && !AppRules.statsLine(perfects: s.result.perfects, chain: s.result.bestChain,
-                                                                lighthouses: s.result.lighthouses).isEmpty
+        p.hasStats = kind != .dailySpent && !AppRules.statsLine(perfects: s.result.perfects, chain: 0, lighthouses: 0).isEmpty
         p.spentLine = false    // the spent card says it in its hero (R5 P1-4)
         p.dailyRow = (kind == .flight || kind == .firstFlight) && dailyRowAllowed
         p.helper = (kind == .flight || kind == .firstFlight) && s.showsFoldHelper
@@ -909,7 +905,7 @@ struct FoldHelperText: View {
     var compact: Bool = false
 
     var body: some View {
-        Text("or fold and open")
+        Text("Or fold and open to fly again")
             .font(SwoopType.caption(compact))
             .foregroundStyle(hud.foldArmed ? SwoopTheme.foam : SwoopTheme.mist)
             .lineLimit(1)
@@ -1035,6 +1031,8 @@ struct GoalProgressRow: View {
 struct RankUpBanner: View {
     let rankUp: AppRankUp
     var compact: Bool = false
+    /// R8 P0-4: the new rank's goals as this run left them (met ones ticked).
+    var nextGoals: [GoalRowOutcome] = []
 
     nonisolated static func height(_ c: Bool) -> CGFloat {
         2 * (c ? 10 : 14) + 2 * ResultsPlan.line(ResultsPlan.headline(c)) + 3 + 2 * ResultsPlan.line(ResultsPlan.body(c))
@@ -1068,6 +1066,14 @@ struct RankUpBanner: View {
         return parts.joined(separator: " · ")
     }
 
+    /// R8 P0-4: "Next goals: ✓ Fly 3 km · Chain 5", the ones this run already met ticked. Pure; tested.
+    nonisolated static func newGoalsLine(rows: [GoalRowOutcome]) -> String {
+        guard !rows.isEmpty else { return "" }
+        let all = rows.allSatisfy { $0.after >= 1 }
+        let parts = rows.map { ($0.after >= 1 ? "✓ " : "") + $0.goal.text }
+        return (all ? "Next goals, all done: " : "Next goals: ") + parts.joined(separator: " · ")
+    }
+
     /// "New goals: A · B · C" for the rank reached (star goals past the top). Pure; tested.
     nonisolated static func newGoalsLine(rank: Int) -> String {
         let goals = ProgressRules.currentGoals(rank: rank, starFlocks: 0)
@@ -1080,7 +1086,7 @@ struct RankUpBanner: View {
         let unlocks = Self.unlockLine(birds: rankUp.birds.map { BirdCatalog.bird($0).name },
                                       skies: rankUp.skies.map { SkyCatalog.sky($0).name }, trails: rankUp.trailNames)
         let rank = Self.rankLine(rank: rankUp.to, title: GoalCatalog.rankTitle(rankUp.to))
-        let goals = Self.newGoalsLine(rank: rankUp.to)
+        let goals = nextGoals.isEmpty ? Self.newGoalsLine(rank: rankUp.to) : Self.newGoalsLine(rows: nextGoals)
         HStack(alignment: .top, spacing: compact ? 10 : 14) {
             YouGlyph()
                 .fill(SwoopTheme.ink)
