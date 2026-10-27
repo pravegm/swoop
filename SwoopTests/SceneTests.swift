@@ -758,7 +758,13 @@ struct SceneTests {
             scene.update(now)
             now += 1.0 / 120.0
         }
-        #expect(scene.ghostActive && scene.ghostScreenPoint != nil)
+        // R12 P1-6: the ghost flies while driven, and reports a screen point exactly while it is drawn (wholly on
+        // screen, ahead of or level with the bird); this path runs up to ~870 pt ahead, off the Duo's leading edge.
+        let active = scene.ghostActive
+        let shown = scene.ghostShown
+        let point = scene.ghostScreenPoint
+        #expect(active)
+        #expect((point != nil) == shown)
         #expect(SceneGhostMove(name: "land") == .land && SceneGhostMove(name: "fly") == nil)
         scene.guideGhost = nil
         scene.update(now)
