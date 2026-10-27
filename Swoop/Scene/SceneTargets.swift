@@ -48,14 +48,27 @@ enum SceneTargets {
                       height: max(box.height - ringBelow - ringAbove, 1))
     }
 
+    /// Final QA (iPhone SE, 667 × 375): the ring sits low on the wave, so on a short canvas the camera settles it just
+    /// under the inboard box's bottom inset and it was never named ("Land here" fell back). Naming needs the inboard
+    /// sides and top, but only this much room at the bottom (Skip and the dots sit in the trailing corner, behind).
+    static let ringReportBottom: CGFloat = 48
+
+    /// Where a ring may first be named: the inboard box with the bottom inset relaxed to `ringReportBottom`.
+    static func ringReportRect(visible v: CGRect) -> CGRect {
+        let i = ringInsets(visible: v)
+        let bottom = min(i.bottom, ringReportBottom)
+        return CGRect(x: v.minX + i.side, y: v.minY + bottom, width: max(v.width - 2 * i.side, 1),
+                      height: max(v.height - bottom - i.top, 1))
+    }
+
     /// ROUND-12 P0-1: whether the ring may be named now. `wasReported`: whether it was reported last frame.
     /// - Behind the bird (or level with it), or any part of it off the visible canvas: never.
-    /// - Otherwise: once it is inboard, and from then on while it stays fully on screen (no flicker at the inboard
-    ///   line as the camera eases).
+    /// - Otherwise: once it is inside `ringReportRect` (the inboard box, bottom relaxed), and from then on while it
+    ///   stays fully on screen (no flicker at the line as the camera eases).
     static func reportsRing(ringX: Double, birdX: Double, rect: CGRect, visible v: CGRect, wasReported: Bool) -> Bool {
         guard ringX > birdX else { return false }
         guard v.insetBy(dx: -0.5, dy: -0.5).contains(rect) else { return false }
-        return wasReported || ringInboardRect(visible: v).contains(rect)
+        return wasReported || ringReportRect(visible: v).contains(rect)
     }
 
     // MARK: The guide gull

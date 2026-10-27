@@ -1351,6 +1351,20 @@ struct SceneTests {
         #expect(SceneTargets.ringCentreRect(visible: phone).height > 20)
     }
 
+    /// Final QA (iPhone SE 667 × 375): a ring sitting low on the wave, 60 pt above the bottom (under the 112 pt inboard
+    /// bottom inset) but clear of the sides and the top, is still named, so "Land here" shows on the smallest iPhone.
+    @Test func lowRingIsNamedOnTheSmallestIPhone() {
+        let v = CGRect(x: 0, y: 0, width: 667, height: 375)
+        let rect = SceneTargets.ringCanvasRect(center: CGPoint(x: 390, y: 60 + SceneTargets.ringBelow))
+        let fitsUnderTop = rect.maxY <= v.maxY - SceneTargets.ringInsets(visible: v).top
+        #expect(fitsUnderTop)
+        #expect(!SceneTargets.ringInboardRect(visible: v).contains(rect))
+        #expect(SceneTargets.reportsRing(ringX: 1000, birdX: 500, rect: rect, visible: v, wasReported: false))
+        // Lower than the report line (40 pt up): not first named there.
+        let low = SceneTargets.ringCanvasRect(center: CGPoint(x: 390, y: 40 + SceneTargets.ringBelow))
+        #expect(!SceneTargets.reportsRing(ringX: 1000, birdX: 500, rect: low, visible: v, wasReported: false))
+    }
+
     /// ROUND-12 P0-1 (pure): a ring is named only ahead of the bird and wholly on screen, and first only once inboard.
     @Test func ringIsNamedOnlyAheadAndOnScreen() {
         let v = SceneTests.duo.visibleRect
