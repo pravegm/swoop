@@ -36,7 +36,7 @@ struct SettingsData: Codable, Equatable {
     var mirrored = false
     /// The one-time "Tap to tuck instead of holding?" offer (Switch Control / VoiceOver) was answered.
     var tapOfferAnswered = false
-    /// R4 P1-15: the founder's hinge readout overlay (TestFlight / Debug builds only).
+    /// R4 P1-15: the founder's hinge readout overlay (Debug builds only, FINAL-FIXES #1; ignored in Release).
     var hingeReadout = false
     /// R5 P1-7: the player's resting book angle (Feel's calibrated "open"), restored at launch. nil = never learned.
     var hingeOpenAngle: Double?

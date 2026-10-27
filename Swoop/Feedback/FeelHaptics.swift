@@ -267,6 +267,55 @@ enum FeelHapticBook {
                                                  .tap(1.0, 0.9, at: 0.3)])
 }
 
+/// Tags every haptic engine start (QA-FINAL P2-1). The engine's "stopped" signal hops to the main actor late, so it
+/// can land after a newer start has already built fresh players; a stop from before the latest start began is stale
+/// and ignored. A start that runs off the main thread (QA-FINAL P2-10) is tagged with a generation: its completion
+/// counts only if no newer start (or a stop) superseded it. Pure, with explicit times, so it is tested.
+struct FeelEngineStarts: Sendable, Equatable {
+    /// An off-main start not heard back from within this long (s) no longer blocks a new attempt.
+    static let pendingTimeout: Double = 2
+
+    private(set) var generation = 0
+    /// When the latest start began (the tag a stop is compared with).
+    private(set) var startedAt = -Double.infinity
+    /// When the latest off-main start began, while it hasn't completed.
+    private(set) var pendingSince: Double?
+
+    init() {}
+
+    /// A start begins at `time`; returns its generation.
+    mutating func begin(at time: Double, offMain: Bool) -> Int {
+        generation &+= 1
+        startedAt = time
+        pendingSince = offMain ? time : nil
+        return generation
+    }
+
+    /// The start `generation` completed. True when it is still the latest (build its players); false when stale.
+    mutating func finish(_ generation: Int) -> Bool {
+        guard generation == self.generation else { return false }
+        pendingSince = nil
+        return true
+    }
+
+    /// An off-main start is still on its way at `time`.
+    func isPending(at time: Double) -> Bool {
+        guard let since = pendingSince, time.isFinite else { return false }
+        return time - since < Self.pendingTimeout
+    }
+
+    /// A stop that fired at `time` belongs to the latest start (not to an older one).
+    func stopIsCurrent(stoppedAt time: Double) -> Bool {
+        time >= startedAt
+    }
+
+    /// Whatever start is on its way no longer counts (the engine stopped, or haptics were switched off).
+    mutating func cancel() {
+        generation &+= 1
+        pendingSince = nil
+    }
+}
+
 /// Core Haptics for Swoop: two looping advanced players carry the continuous feel (the speed rumble and the skim
 /// texture, steered by dynamic parameters at ≤ 30 Hz), and every moment plays as its own short pattern. Self-healing
 /// after stops and server resets (Squish's/Brim's pattern). Phones without Core Haptics fall back to
@@ -283,10 +332,14 @@ final class FeelHaptics {
                 if engine == nil { start() } else { restart() }
             } else {
                 // QA-1 P2-12: switched off mid-session, the hardware goes to sleep at once (not at the next menu).
-                setContinuous(rumble: 0, sharpness: 0.5, skim: 0, now: CACurrentMediaTime(), force: true)
+                let now = CACurrentMediaTime()
+                setContinuous(rumble: 0, sharpness: 0.5, skim: 0, now: now, force: true)
                 stopPlayers()
                 perfectPlayer = nil
-                if let engine, isRunning { engine.stop(completionHandler: nil) }
+                // A start still on its way must not build players after this.
+                let starting = starts.isPending(at: now)
+                starts.cancel()
+                if let engine, isRunning || starting { engine.stop(completionHandler: nil) }
                 isRunning = false
             }
         }
@@ -327,6 +380,8 @@ final class FeelHaptics {
     /// The Perfect cue, prebuilt per engine start so it fires with no setup in front of it.
     private var perfectPlayer: CHHapticPatternPlayer?
     private var isRunning = false
+    /// QA-FINAL P2-1, P2-10: every engine start is tagged (stale stops and superseded starts are ignored).
+    private var starts = FeelEngineStarts()
     private var wantsStart = false
     private var lastRecovery: CFTimeInterval = 0
     private var lastSend: CFTimeInterval = 0
@@ -353,24 +408,19 @@ final class FeelHaptics {
             let engine = try CHHapticEngine()
             engine.playsHapticsOnly = true
             engine.isAutoShutdownEnabled = idle
-            // Both handlers arrive on an engine-internal queue: hop to the main actor.
+            // Both handlers arrive on an engine-internal queue: hop to the main actor. The stop is stamped where it
+            // fires, so a hop that lands after a newer start is recognised as stale (QA-FINAL P2-1).
             engine.stoppedHandler = { [weak self] _ in
+                let stoppedAt = CACurrentMediaTime()
                 guard let self else { return }
                 Task { @MainActor in
-                    self.isRunning = false
-                    self.rumblePlayer = nil
-                    self.skimPlayer = nil
-                    self.perfectPlayer = nil
+                    self.engineStopped(at: stoppedAt)
                 }
             }
             engine.resetHandler = { [weak self] in
                 guard let self else { return }
                 Task { @MainActor in
-                    self.isRunning = false
-                    self.rumblePlayer = nil
-                    self.skimPlayer = nil
-                    self.perfectPlayer = nil
-                    self.restart()
+                    self.engineReset()
                 }
             }
             self.engine = engine
@@ -383,34 +433,89 @@ final class FeelHaptics {
 
     /// The app became active again: the system stops the engine on suspension.
     func resume() {
+        recover(offMain: false)
+    }
+
+    /// Throttled recovery from the frame loop (the director calls it only in flight, so the start runs off the main
+    /// thread).
+    func heal() {
+        guard enabled, engine != nil, !isRunning || (!idle && rumblePlayer == nil) else { return }
+        guard UIApplication.shared.applicationState != .background else { return }
+        restart(offMain: !idle)
+    }
+
+    private func recover(offMain: Bool) {
         guard supportsHaptics, enabled, wantsStart else { return }
         if engine == nil {
             start()
         } else if !isRunning || (!idle && rumblePlayer == nil) {
-            restart()
+            restart(offMain: offMain)
         }
     }
 
-    /// Throttled recovery from the frame loop.
-    func heal() {
-        guard enabled, engine != nil, !isRunning || (!idle && rumblePlayer == nil) else { return }
-        guard UIApplication.shared.applicationState != .background else { return }
+    /// The engine stopped by itself (a stamp from `stoppedHandler`). A stop from before the latest start is stale:
+    /// that start's players are live, so they stay. Otherwise the players are stopped (never just dropped) and
+    /// `heal()` or the next cue starts the engine again.
+    private func engineStopped(at time: CFTimeInterval) {
+        guard starts.stopIsCurrent(stoppedAt: time) else { return }
+        starts.cancel()
+        isRunning = false
+        stopPlayers()
+        perfectPlayer = nil
+    }
+
+    /// The haptic server restarted: every player is dead. Start again.
+    private func engineReset() {
+        isRunning = false
+        stopPlayers()
+        perfectPlayer = nil
         restart()
     }
 
-    private func restart() {
+    /// Starts the engine and builds the players. QA-FINAL P2-1: the looping players are stopped first, never just
+    /// dropped (a dropped player keeps looping at its last intensity, where `quiet()` can't reach it).
+    ///
+    /// QA-FINAL P2-10: `offMain` (mid-flight recovery: `heal()` and a cue finding the engine stopped) uses
+    /// `start(completionHandler:)`, because the synchronous `start()` can block the main thread for tens of
+    /// milliseconds, a dropped frame right on a Perfect. The players are built when it completes, on the main actor,
+    /// unless a newer start or a stop superseded it. Menus, the app becoming active and leaving idle start
+    /// synchronously as before, so the cue that asked for the start still plays.
+    private func restart(offMain: Bool = false) {
         guard enabled, let engine else { return }
+        let now = CACurrentMediaTime()
+        // A recovery start already on its way: let it land (a synchronous start supersedes it).
+        if offMain && starts.isPending(at: now) { return }
+        stopPlayers()
+        perfectPlayer = nil
+        let generation = starts.begin(at: now, offMain: offMain)
+        if offMain {
+            engine.start(completionHandler: { [weak self] error in
+                guard let self else { return }
+                Task { @MainActor in
+                    self.engineStarted(generation, error: error)
+                }
+            })
+            return
+        }
+        var failure: Error?
         do {
             try engine.start()
-            isRunning = true
         } catch {
+            failure = error
+        }
+        engineStarted(generation, error: failure)
+    }
+
+    /// A start (`generation`) completed: build the prebuilt Perfect and, in flight, the two looping players.
+    private func engineStarted(_ generation: Int, error: Error?) {
+        guard starts.finish(generation) else { return }
+        if let error {
             isRunning = false
             record("Couldn't start the haptic engine", error)
             return
         }
-        rumblePlayer = nil
-        skimPlayer = nil
-        perfectPlayer = nil
+        guard enabled, let engine else { return }
+        isRunning = true
         do {
             perfectPlayer = try engine.makePlayer(with: try Self.pattern(for: FeelHapticBook.perfect(for: profile)))
         } catch {
@@ -527,7 +632,8 @@ final class FeelHaptics {
             let now = CACurrentMediaTime()
             if now - lastRecovery > 0.5 {
                 lastRecovery = now
-                resume()
+                // In flight the start runs off the main thread (this cue is skipped); in menus it is synchronous.
+                recover(offMain: !idle)
             }
         }
         guard let engine, isRunning else { return }

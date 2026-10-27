@@ -230,17 +230,6 @@ struct ResultsView: View {
             .lineLimit(2)
     }
 
-    private func goldChip(_ s: String, compact c: Bool) -> some View {
-        Text(s)
-            .font(SwoopType.chip(c))
-            .foregroundStyle(SwoopTheme.ink)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(Capsule().fill(SwoopTheme.rewardGold))
-            .lineLimit(1)
-            .fixedSize()
-    }
-
     /// R9: one tip, on the first 5 flights only (no lightbulb, no Route link: the strip opens the Route).
     private var hook: String? {
         Self.nextTip(summary)
@@ -278,7 +267,7 @@ struct ResultsView: View {
         guard !rows.isEmpty else { return nil }
         let done = rows.filter { $0.isMet }.count
         if let next = rows.first(where: { !$0.isMet }) {
-            return "\(done) of \(rows.count) goals · next: \(next.goal.text)"
+            return "\(done) of \(rows.count) goals · next: \(AppRules.goalText(next.goal.text))"
         }
         return "\(done) of \(rows.count) goals"
     }
@@ -326,7 +315,8 @@ struct ResultsView: View {
                 VStack(alignment: .leading, spacing: c ? 6 : 10) {
                     SwoopOverline(text: "Goals", compact: c)
                     ForEach(Self.sideGoalRows(summary)) { row in
-                        GoalLineRow(text: row.goal.text, done: goalsShown ? row.isMet : row.before >= 1, compact: c)
+                        GoalLineRow(text: AppRules.goalText(row.goal.text), done: goalsShown ? row.isMet : row.before >= 1,
+                                    compact: c)
                     }
                 }
             }
@@ -1000,7 +990,7 @@ struct GoalProgressRow: View {
             .scaleEffect(justMet ? 1.12 : 1)
             .animation(.spring(response: 0.35, dampingFraction: 0.5), value: done)
             VStack(alignment: .leading, spacing: 2) {
-                Text(goal.text)
+                Text(AppRules.goalText(goal.text))
                     .font(SwoopType.body(compact))
                     .foregroundStyle(SwoopTheme.foam)
                     .lineLimit(compact ? 1 : 2)
@@ -1021,39 +1011,17 @@ struct GoalProgressRow: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(goal.text), \(done ? "done" : "\(Int((min(max(progress, 0), 1) * 100).rounded())) percent")"
+        .accessibilityLabel("\(AppRules.goalText(goal.text)), "
+                            + "\(done ? "done" : "\(Int((min(max(progress, 0), 1) * 100).rounded())) percent")"
                             + (caption.map { ", \($0)" } ?? ""))
     }
 }
 
-/// "You ranked up!" / "New bird: Tern" / "Rank 2 · Puddle Hopper" / "New goals: Fly 3 km · 3 Perfects in one flight · Chain 2": the
-/// finished goals collapse into this. Every line has a limit, so `height` bounds it (R4 P0-1).
-struct RankUpBanner: View {
-    let rankUp: AppRankUp
-    var compact: Bool = false
-    /// R8 P0-4: the new rank's goals as this run left them (met ones ticked).
-    var nextGoals: [GoalRowOutcome] = []
-
-    nonisolated static func height(_ c: Bool) -> CGFloat {
-        2 * (c ? 10 : 14) + 2 * ResultsPlan.line(ResultsPlan.headline(c)) + 3 + 2 * ResultsPlan.line(ResultsPlan.body(c))
-            + 3 + 3 * ResultsPlan.line(ResultsPlan.caption(c))
-    }
-
-    /// R7 P1-5 (plain words): "You ranked up!", after a cascade (R5 P1-9) "You ranked up twice!". Pure; tested.
-    nonisolated static func title(from: Int, to: Int) -> String {
-        switch to - from {
-        case ...1: return "You ranked up!"
-        case 2: return "You ranked up twice!"
-        case 3: return "You ranked up three times!"
-        case let n: return "You ranked up \(n) times!"
-        }
-    }
-
-    /// "Rank 2 · Puddle Hopper" (the rank title is flavour, never a header alone). Pure; tested.
-    nonisolated static func rankLine(rank: Int, title: String) -> String { "Rank \(rank + 1) · \(title)" }
-
-    /// R7 P1-5: "New bird: Tern · New trail: Coral" (each reward named for what it is; empty when nothing unlocked).
-    /// Pure; tested.
+/// R7 P1-5: the rewards a level opens, named for what they are ("New bird: Tern · New trail: Coral"). FINAL-FIXES #18:
+/// the old rank-up banner ("You ranked up!", "Rank 2 · …") was dead code holding banned copy and is gone; only this
+/// line (the Goals page uses it) is kept.
+enum RewardWords {
+    /// "New bird: Tern · New trail: Coral" (empty when nothing unlocked). Pure; tested.
     nonisolated static func unlockLine(birds: [String], skies: [String], trails: [String] = []) -> String {
         var parts: [String] = []
         func add(_ names: [String], _ one: String, _ many: String) {
@@ -1064,73 +1032,6 @@ struct RankUpBanner: View {
         add(skies, "New sky", "New skies")
         add(trails, "New trail", "New trails")
         return parts.joined(separator: " · ")
-    }
-
-    /// R8 P0-4: "Next goals: ✓ Fly 3 km · Chain 5", the ones this run already met ticked. Pure; tested.
-    nonisolated static func newGoalsLine(rows: [GoalRowOutcome]) -> String {
-        guard !rows.isEmpty else { return "" }
-        let all = rows.allSatisfy { $0.after >= 1 }
-        let parts = rows.map { ($0.after >= 1 ? "✓ " : "") + $0.goal.text }
-        return (all ? "Next goals, all done: " : "Next goals: ") + parts.joined(separator: " · ")
-    }
-
-    /// "New goals: A · B · C" for the rank reached (star goals past the top). Pure; tested.
-    nonisolated static func newGoalsLine(rank: Int) -> String {
-        let goals = ProgressRules.currentGoals(rank: rank, starFlocks: 0)
-        guard !goals.isEmpty else { return "" }
-        return "New goals: " + goals.map(\.text).joined(separator: " · ")
-    }
-
-    var body: some View {
-        let title = Self.title(from: rankUp.from, to: rankUp.to)
-        let unlocks = Self.unlockLine(birds: rankUp.birds.map { BirdCatalog.bird($0).name },
-                                      skies: rankUp.skies.map { SkyCatalog.sky($0).name }, trails: rankUp.trailNames)
-        let rank = Self.rankLine(rank: rankUp.to, title: GoalCatalog.rankTitle(rankUp.to))
-        let goals = nextGoals.isEmpty ? Self.newGoalsLine(rank: rankUp.to) : Self.newGoalsLine(rows: nextGoals)
-        HStack(alignment: .top, spacing: compact ? 10 : 14) {
-            YouGlyph()
-                .fill(SwoopTheme.ink)
-                .frame(width: compact ? 22 : 28, height: compact ? 14 : 17)
-                .frame(width: compact ? 36 : 46, height: compact ? 36 : 46)
-                .background(Circle().fill(SwoopTheme.rewardGold))
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(SwoopType.headline(compact))
-                    .foregroundStyle(SwoopTheme.foam)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-                    .fixedSize(horizontal: false, vertical: true)
-                if !unlocks.isEmpty {
-                    Text(unlocks)
-                        .font(SwoopType.body(compact))
-                        .foregroundStyle(SwoopTheme.goldLight)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                // The rank title never stands alone: "Rank 3 · Spray Chaser".
-                Text(rank)
-                    .font(SwoopType.caption(compact))
-                    .foregroundStyle(SwoopTheme.mist)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                if !goals.isEmpty {
-                    Text(goals)
-                        .font(SwoopType.caption(compact))
-                        .foregroundStyle(SwoopTheme.mist)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(compact ? 10 : 14)
-        .background(
-            RoundedRectangle(cornerRadius: SwoopTheme.tileRadius(compact), style: .continuous)
-                .fill(SwoopTheme.surfaceRaised)
-                .overlay(RoundedRectangle(cornerRadius: SwoopTheme.tileRadius(compact), style: .continuous)
-                    .stroke(SwoopTheme.stroke, lineWidth: 1))
-        )
-        .accessibilityElement(children: .combine)
     }
 }
 

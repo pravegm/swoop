@@ -701,22 +701,88 @@ enum AppRules {
     /// R4 P1-13: the Daily is numbered from launch day (#1), so day one never reads "#298". The seed is unchanged.
     static var launchDay: Int { DailySeed.launchDay }
 
-    /// The Daily's on-screen tag: its date, "26 Oct", always (R9 glossary, UX-ROUND-9 §4.1: "Daily Flight · 27 Oct",
-    /// never "Daily #n" on screen; the share line keeps its "#12" via `dailyNumber`). Pure; tested.
-    static func dailyTag(day: Int) -> String {
-        var c = DateComponents()
-        c.year = 2026
-        c.month = 1
-        c.day = 1
-        c.hour = 12
-        guard let epoch = DailySeed.utc.date(from: c),
-              let date = DailySeed.utc.date(byAdding: .day, value: day, to: epoch) else { return "#1" }
+    /// FINAL-FIXES #19: the Daily tag's formatter, built once (`dailyTag` runs in the HUD's tag up to 15 Hz).
+    /// DateFormatter is thread-safe for formatting; it is never mutated after this.
+    private static let dailyTagFormatter: DateFormatter = {
         let f = DateFormatter()
         f.calendar = DailySeed.utc
         f.timeZone = DailySeed.utc.timeZone
         f.locale = Locale(identifier: "en_GB")
         f.dateFormat = "d MMM"
-        return f.string(from: date)
+        return f
+    }()
+
+    /// The Daily days' epoch, 1 Jan 2026 12:00 UTC (built once).
+    private static let dailyTagEpoch: Date? = {
+        var c = DateComponents()
+        c.year = 2026
+        c.month = 1
+        c.day = 1
+        c.hour = 12
+        return DailySeed.utc.date(from: c)
+    }()
+
+    /// The Daily's on-screen tag: its date, "26 Oct", always (R9 glossary, UX-ROUND-9 §4.1: "Daily Flight · 27 Oct",
+    /// never "Daily #n" on screen; the share line keeps its "#12" via `dailyNumber`). Pure; tested.
+    static func dailyTag(day: Int) -> String {
+        guard let epoch = dailyTagEpoch,
+              let date = DailySeed.utc.date(byAdding: .day, value: day, to: epoch) else { return "#1" }
+        return dailyTagFormatter.string(from: date)
+    }
+
+    /// FINAL-FIXES #2: what Home's Daily button does at the moment of the tap, for today's day (never a cached one):
+    /// today's card once today has a try (flown or spent), else today's Daily. Pure; tested.
+    enum DailyTap: Equatable { case play, card }
+
+    static func dailyTap(data: ProgressData, day: Int) -> DailyTap {
+        data.dailyAttempted.contains(day) || data.daily[day] != nil ? .card : .play
+    }
+
+    /// FINAL-FIXES #6: fold-to-fly arms on a hinge run's results, never on the Daily card nor a scored Daily's results
+    /// (its card has no Fly again; a fold there started a hidden practice Daily). A practice Daily keeps it. Pure;
+    /// tested.
+    static func foldToFlyArms(hingeRun: Bool, isDailyCard: Bool, dailyDay: Int?, practice: Bool) -> Bool {
+        guard hingeRun, !isDailyCard else { return false }
+        return dailyDay == nil || practice
+    }
+
+    /// FINAL-FIXES #5: Auto-Lock is held off while the player flies without touching the screen: a live run (not
+    /// paused, no results), and Flight School while it runs (the Studio and the practice sea), except when its Studio
+    /// is paused. Pure; tested.
+    static func keepsScreenAwake(route: AppRoute, homeLoop: Bool, paused: Bool, hasSummary: Bool,
+                                 schoolRunning: Bool, studioPaused: Bool) -> Bool {
+        guard !paused else { return false }
+        if route == .playing { return !homeLoop && !hasSummary }
+        if route == .school { return schoolRunning && !studioPaused }
+        return false
+    }
+
+    /// FINAL-FIXES #9: whether "Go" keeps waiting `pastHold` seconds after the Ready hold ran out. Within
+    /// `stillGrace` it waits while the hinge still moves or the wings read folded (start tuck > 0.5); after the
+    /// closing pause it also waits for the wings to read open for up to `closingGrace`, whichever comes first.
+    /// Pure; tested.
+    static func readyWaits(pastHold: Double, moving: Bool, startTuck: Double, afterClosing: Bool,
+                           stillGrace: Double = 1.0, closingGrace: Double = 3.0) -> Bool {
+        guard pastHold.isFinite else { return false }
+        let folded = startTuck.isFinite && startTuck > maxStartTuck
+        if afterClosing && folded && pastHold < closingGrace { return true }
+        return (moving || folded) && pastHold < stillGrace
+    }
+
+    /// FINAL-FIXES #16 (UX-ROUND-9 §3/§4.1): a goal's words as shown. Core's ladder text says "3 Perfects in one
+    /// flight" and "Chain 10 Perfects in one flight"; on screen they read "3 perfect landings in one flight" and
+    /// "10 perfect landings in a row" ("Perfect" alone stays the landing's name: "Land a Perfect…"). Pure; tested.
+    static func goalText(_ text: String) -> String {
+        var s = text
+        let chained = " Perfects in one flight"
+        if s.hasPrefix("Chain "), s.hasSuffix(chained) {
+            let count = s.dropFirst("Chain ".count).dropLast(chained.count)
+            if !count.isEmpty && count.allSatisfy({ $0.isNumber || $0 == "," }) {
+                return "\(count) perfect landings in a row"
+            }
+        }
+        s = s.replacingOccurrences(of: "Perfects", with: "perfect landings")
+        return s
     }
 
     /// The weekday initial ("M", "T"…) of a Daily day number (UTC), for the 7-day dots. Pure; tested.

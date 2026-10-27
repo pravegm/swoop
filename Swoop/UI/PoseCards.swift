@@ -290,7 +290,8 @@ struct ClosedCard: View {
                     row(icon: "flag.fill", title: "Best flight", value: ShareText.distance(store.data.bestMeters))
                     divider
                 }
-                row(icon: "calendar", title: "Daily \(AppRules.dailyTag(day: today))", value: dailyValue)
+                // FINAL-FIXES #16 (UX-ROUND-9 §4.1): the one name, "Daily Flight · 27 Oct".
+                row(icon: "calendar", title: AppRules.dailyTitle(day: today), value: dailyValue)
                 if store.data.dailyStreak(today: today) >= 2 {
                     divider
                     row(icon: "flame.fill", title: "Daily streak", value: "\(store.data.dailyStreak(today: today))-day streak")
@@ -368,7 +369,7 @@ struct ClosedCard: View {
                     .font(SwoopType.caption(false))
                     .foregroundStyle(SwoopTheme.mist)
                 if run.isScoredDaily, let day = run.day {
-                    Text("Daily \(AppRules.dailyTag(day: day)) · your one try is paused")
+                    Text("\(AppRules.dailyTitle(day: day)) · your one try is paused")
                         .font(SwoopType.caption(false))
                         .foregroundStyle(SwoopTheme.mist)
                 }

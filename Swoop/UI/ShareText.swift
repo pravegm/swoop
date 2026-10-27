@@ -104,11 +104,15 @@ enum ShareText {
         return "Swoop Daily #\(day) \(body(meters: meters, perfects: perfects, lastLighthouse: lastLighthouse))\(flame)"
     }
 
-    /// The line for a finished run.
+    /// FINAL-FIXES #13: a practice Daily's line never reads as the day's one scored try.
+    static let practicePrefix = "Practice · "
+
+    /// The line for a finished run. A practice Daily (`scored: false`) is prefixed "Practice · " and carries no streak.
     static func line(for result: RunResult, streak: Int) -> String {
-        if case let .daily(day, _) = result.mode {
-            return daily(day: AppRules.dailyNumber(day: day), meters: result.meters, perfects: result.perfects,
-                         lastLighthouse: result.lastLighthouseName, streak: streak)
+        if case let .daily(day, scored) = result.mode {
+            let line = daily(day: AppRules.dailyNumber(day: day), meters: result.meters, perfects: result.perfects,
+                             lastLighthouse: result.lastLighthouseName, streak: scored ? streak : 0)
+            return scored ? line : practicePrefix + line
         }
         return flight(meters: result.meters, perfects: result.perfects, lastLighthouse: result.lastLighthouseName)
     }

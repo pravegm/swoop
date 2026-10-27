@@ -254,7 +254,9 @@ struct ProgressRulesTests {
         }
         #expect(data.dailyStreak(today: 300) == 3)
         #expect(data.dailyStreak(today: 301) == 3)          // still alive until today's is flown
-        #expect(data.dailyStreak(today: 302) == 0)
+        // FINAL-FIXES #14: one missed day (301) is bridged once 302 is flown, so the streak shows kept on 302 too.
+        #expect(data.dailyStreak(today: 302) == 3)
+        #expect(data.dailyStreak(today: 303) == 0)
         #expect(data.bestDailyStreak == 3)
         let practice = ProgressRules.record(makeRun(mode: .daily(day: 300, scored: false), meters: 9_000), into: &data,
                                             today: 300, goals: fakeGoals, maxRank: 15, evaluate: fakeEvaluate,
@@ -281,6 +283,11 @@ struct ProgressRulesTests {
         data.bestLighthousesInRun = 3
         data.totalCloudTouches = 1
         data.bestDailyStreak = 3
+        // FINAL-FIXES #14: "three days in a row" means three consecutive Daily days.
+        for day in [300, 301, 302] {
+            data.daily[day] = DailyRecord(meters: 1_000, perfects: 0, lighthouses: 0, lastLighthouseName: "",
+                                          finished: true)
+        }
         data.rank = 10
         #expect(ProgressRules.earnedAchievements(data, allBirdsRank: 10)
                 == Set(ProgressRules.allAchievements).subtracting([ProgressRules.achievementKm10]))
@@ -437,10 +444,10 @@ struct PoseRuleTests {
         #expect(HintBubble.text(.fold, touch: false, mirrored: true) == "↙ Fold on the way down")
         #expect(HintBubble.text(.land, touch: true) == "Land on the way down")
         #expect(HintBubble.text(.keepBend, touch: false) == "Keep a little bend")
-        #expect(RankUpBanner.unlockLine(birds: ["Tern"], skies: ["Rose Dusk"]) == "New bird: Tern · New sky: Rose Dusk")
-        #expect(RankUpBanner.unlockLine(birds: ["Tern"], skies: [], trails: ["Coral"]) == "New bird: Tern · New trail: Coral")
-        #expect(RankUpBanner.unlockLine(birds: ["Tern", "Heron"], skies: []) == "New birds: Tern, Heron")
-        #expect(RankUpBanner.unlockLine(birds: [], skies: []) == "")
+        #expect(RewardWords.unlockLine(birds: ["Tern"], skies: ["Rose Dusk"]) == "New bird: Tern · New sky: Rose Dusk")
+        #expect(RewardWords.unlockLine(birds: ["Tern"], skies: [], trails: ["Coral"]) == "New bird: Tern · New trail: Coral")
+        #expect(RewardWords.unlockLine(birds: ["Tern", "Heron"], skies: []) == "New birds: Tern, Heron")
+        #expect(RewardWords.unlockLine(birds: [], skies: []) == "")
         #expect(HomeView.dailyStatus(record: nil, attempted: false, nextIn: "6 h") == "Same waves for everyone · 1 try")
         #expect(HomeView.dailyStatus(record: nil, attempted: true, nextIn: "6 h") == "Tried · next in 6 h")
         let flown = DailyRecord(meters: 7_480, perfects: 23, lighthouses: 1, lastLighthouseName: "", finished: true)
@@ -831,7 +838,6 @@ struct RoundThreeRuleTests {
         #expect(ResultsView.smallLines(summary, limit: 1).count == 1)
         summary.outcome.starEarned = true
         #expect(ResultsView.smallLines(summary).contains("Star goals done ★"))
-        #expect(RankUpBanner.newGoalsLine(rank: 1).hasPrefix("New goals: "))
     }
 
     @Test func pagesCopy() {
@@ -944,8 +950,12 @@ struct RoundThreeStoreTests {
             q = GameCenterManager.enqueue(GameCenterManager.encode(leaderboard: longest, score: i, day: nil,
                                                                    token: "l\(i)"), into: q, cap: 20)
         }
-        #expect(q.count == 20)
-        #expect(q.compactMap { GameCenterManager.parse($0) }.allSatisfy { $0.leaderboard == longest })
+        // FINAL-FIXES #11: one pending `longest` entry, the highest; the Daily entry stays.
+        #expect(q.count == 2)
+        let longs = q.compactMap { GameCenterManager.parse($0) }.filter { $0.leaderboard == longest }
+        #expect(longs.count == 1)
+        #expect(longs.first?.score == 24)
+        #expect(q.compactMap { GameCenterManager.parse($0) }.contains { $0.leaderboard == daily && $0.score == 2_000 })
     }
 
     @Test func hapticLevelPersistsOnlyWhenChosen() throws {
@@ -1199,17 +1209,7 @@ struct RoundFourTests {
         #expect(!GameController.isDailyBest(makeRun(mode: .daily(day: 401, scored: true), meters: 4_000), data: data))
         #expect(!GameController.isDailyBest(makeRun(mode: .daily(day: 401, scored: false), meters: 9_000), data: data))
         #expect(!GameController.isDailyBest(makeRun(meters: 9_000), data: data))
-        let c = canvas(874, 402, fold: false, insets: EdgeInsets(top: 0, leading: 62, bottom: 21, trailing: 62))
-        let g = TouchWingFeedback.glyphCenter(birdPage: c.birdPage, height: c.size.height)
-        #expect(abs(g.x - (c.birdPage.minX + c.birdPage.width * 0.25)) < 0.01)    // off the thumb, off the centre
-        let glyphY: CGFloat = 402 - 28                                            // under the skim line
-        #expect(abs(g.y - glyphY) < 0.5)
-        #expect(TouchWingFeedback.glyphAlpha(tuck: 0) == 0.55)
-        #expect(abs(TouchWingFeedback.glyphAlpha(tuck: 1) - 0.9) < 1e-9)
-        #expect(TouchWingFeedback.glyphAlpha(tuck: 1, birdNear: true) == 0.15)
-        #expect(TouchWingFeedback.birdNear(bird: CGPoint(x: g.x + 20, y: g.y - 30), glyph: g))
-        #expect(!TouchWingFeedback.birdNear(bird: CGPoint(x: g.x, y: g.y - 200), glyph: g))
-        #expect(!TouchWingFeedback.birdNear(bird: nil, glyph: g))
+        // (FINAL-FIXES #18: the touch glyph's placement code is deleted; its view was cut in R11.)
     }
 
     #if DEBUG
@@ -1381,11 +1381,7 @@ struct RoundFiveTests {
         #expect(out.rankUp?.from == 1)
         #expect(out.rankUp?.to == 7)
         #expect(data.rank == 7)
-        // R7 P1-5: plain words.
-        #expect(RankUpBanner.title(from: 1, to: 7) == "You ranked up 6 times!")
-        #expect(RankUpBanner.title(from: 1, to: 3) == "You ranked up twice!")
-        #expect(RankUpBanner.title(from: 1, to: 2) == "You ranked up!")
-        #expect(RankUpBanner.rankLine(rank: 1, title: "Puddle Hopper") == "Rank 2 · Puddle Hopper")
+        // (FINAL-FIXES #18: the "You ranked up" banner is deleted; the level-up is `ResultsView.unlockMoment`.)
     }
 
     @Test func unknownGoalIDsAreDropped() {
@@ -1521,11 +1517,13 @@ struct RoundSixTests {
         outs = driveSchool(&s, from: 1.3, to: 2.7) { SchoolInput(time: $0, landscape: true, angle: 150) }
         #expect(outs.contains { $0.advanced })
         #expect(s.stepNow == .wings)
-        // Too flat / too shut help lines.
+        // Help lines. FINAL-FIXES #3: flat is fine (no help line); too shut and portrait get one.
         var h = FlightSchool(touch: false, asksWingCheck: false)
         h.start(at: .hold, time: 0)
         _ = h.step(SchoolInput(time: 0.1, landscape: true, angle: 178))
-        #expect(h.subline == "A little less than flat.")
+        #expect(h.subline == nil)
+        _ = h.step(SchoolInput(time: 0.15, landscape: true, angle: 100))
+        #expect(h.subline == "Open it wider.")
         _ = h.step(SchoolInput(time: 0.2, landscape: false, angle: 150))
         #expect(h.subline == "Turn it sideways.")
         // Step 1: fold (0.8 for 0.2 s), then open.
@@ -1864,12 +1862,10 @@ struct RoundSevenTests {
         #expect(HomeView.tilePlan(width: 70, height: 58, title: "Goals", detail: "1 of 3 done", compact: false).stacked)
     }
 
-    /// P1-5: plain reward words; the rank title always with its number.
+    /// P1-5: plain reward words. FINAL-FIXES #18: the banner's "You ranked up" / "Rank 3" lines are gone with it.
     @Test func plainRewardCopy() {
-        #expect(RankUpBanner.title(from: 1, to: 3) + " "
-                + RankUpBanner.unlockLine(birds: ["Tern"], skies: [], trails: ["Coral"])
-                == "You ranked up twice! New bird: Tern · New trail: Coral")
-        #expect(RankUpBanner.rankLine(rank: 2, title: "Spray Chaser") == "Rank 3 · Spray Chaser")
+        #expect(RewardWords.unlockLine(birds: ["Tern"], skies: [], trails: ["Coral"])
+                == "New bird: Tern · New trail: Coral")
     }
 
     /// P1-6 / P1-8: the goal sentence early; the Duo only as a fun fact, after an iPhone's first results.
@@ -1954,9 +1950,8 @@ struct RoundEightTests {
         #expect(data.goalProgress["r2.m"] == 1)
         #expect(data.goalProgress["r2.c"] == 1)
         #expect((data.goalProgress["r2.p"] ?? 0) < 1)
-        let line = RankUpBanner.newGoalsLine(rows: out.nextGoals)
-        #expect(line.hasPrefix("Next goals: "))
-        #expect(line.contains("✓ Fly 3 km"))
+        // R9: the bird page shows only the new level's unmet goals (the met ones are credited, never pre-ticked).
+        #expect(out.nextGoals.filter { $0.after < 1 }.map(\.goal.id) == ["r2.p"])
     }
 
     /// R9 (UX-ROUND-9 §2.2): every case of the Results table, as progress. R11 P0-2 / P1-10: the one quiet line says

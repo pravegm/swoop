@@ -101,6 +101,9 @@ enum HingeTuckTuning {
     /// the counter re-arms only below `flatOpenRearm`.
     static let flatOpenAngle = 174.0
     static let flatOpenRearm = 166.0
+    /// QA-FINAL P2-15: on `reset()` (the app active again) a last reading older than this (s) is stale: the ready
+    /// snap waits for a fresh report.
+    static let staleReportAge = 1.0
 
     /// Tuck for a hinge angle: smoothstep((open − θ) / 36°). 0 at and above `open` (and always at ≥ 175°, flat),
     /// 1 at and below open − 36°. NaN → 0.
@@ -246,6 +249,11 @@ final class HingeTuckSource: TuckSource {
         hasHinge = true
         lastRawAngle = raw
         lastSampleTime = stamp
+        if awaitingFreshReport {
+            // The first report after the background: forget the stale reading (no glide from it).
+            awaitingFreshReport = false
+            predictor.reset()
+        }
         predictor.sample(raw, at: stamp)
         stabiliser.sample(raw, at: stamp)
         let tracked = predictor.estimate ?? raw
@@ -306,16 +314,28 @@ final class HingeTuckSource: TuckSource {
 
     /// Forget the motion history (keeps `hasHinge`, the calibration and the closing latch): e.g. after the app returns
     /// from the background.
-    func reset() {
+    ///
+    /// QA-FINAL P2-15: a reading older than `staleReportAge` is stale now (the player may have changed pose while
+    /// away), so the hinge doesn't count as still, and no ready snap, Home snap or low-rest snap happens, until a fresh
+    /// report arrives (HingeReader's re-enable normally delivers one within ~30 ms). That report replaces the stale
+    /// reading outright. Until then the tuck still reads from the last reading, as before. A reading from the last
+    /// second (the launch's first sample, a brief inactive blip) is kept as it is.
+    /// `time` defaults to now (`CACurrentMediaTime()`, the clock of the hinge samples); tests pass their own.
+    func reset(at time: TimeInterval = CACurrentMediaTime()) {
         predictor.reset()
         smoother.reset()
         stabiliser.reset()
         lastQuery = nil
         stillSince = nil
+        awaitingFreshReport = false
         if let raw = lastRawAngle, let stamp = lastSampleTime {
             predictor.sample(raw, at: stamp)
+            awaitingFreshReport = !(time.isFinite && time - stamp <= T.staleReportAge)
         }
     }
+
+    /// True after `reset()` until the next hinge report.
+    private(set) var awaitingFreshReport = false
 
     /// Tuck for a hinge angle (see `HingeTuckTuning.tuck(forAngle:open:)`).
     nonisolated static func tuck(forAngle angle: Double, open: Double) -> Double {
@@ -328,7 +348,7 @@ final class HingeTuckSource: TuckSource {
     ///
     /// Round 2 (QA-1 P1-4): it snaps only while the hinge is still (the last 0.3 s of reports span ≤ 1.5°; a resting
     /// Duo sends none), and only from the filtered angle, never from a raw ±5° report. So a hand still
-    /// reopening after a closing pause (102° → 158° over 2–3 s) never makes a mid-reopen angle "open"; the snap lands
+    /// reopening after a closing pause (65° → 158° over 3–4 s) never makes a mid-reopen angle "open"; the snap lands
     /// once the hand has come to rest, and if it never rests inside the hold the previous calibration stays.
     /// Ignored when the phone is clearly being folded (below `calibrationLow`) or there is no reading yet.
     /// `time` defaults to now (`CACurrentMediaTime()`, the clock of the hinge samples); tests pass their own.
@@ -421,7 +441,7 @@ final class HingeTuckSource: TuckSource {
 
     /// Still over a chosen window (Round 6, Flight School step 0: ≤ 1.5° spread over 0.5 s).
     func isStill(at time: TimeInterval, window: TimeInterval) -> Bool {
-        guard hasHinge, time.isFinite, window.isFinite else { return false }
+        guard hasHinge, time.isFinite, window.isFinite, !awaitingFreshReport else { return false }
         return stabiliser.spread(over: max(window, 0.05), at: time) <= T.snapStillSpread
     }
 

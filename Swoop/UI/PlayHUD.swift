@@ -170,28 +170,25 @@ struct PlayLayer: View {
     }
 
     private var touchLayer: some View {
-        Color.clear
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        guard !touching else { return }
-                        touching = true
-                        controller.touchBegan()
-                        // UX §10: a soft ripple marks the touch on the first 3 runs.
-                        if controller.store.data.runs < 3 && !reduceMotion {
-                            rippleSerial += 1
-                            ripple = value.startLocation
-                        }
-                    }
-                    .onEnded { _ in
-                        touching = false
-                        controller.touchEnded()
-                    }
-            )
+        // FINAL-FIXES #7: a UIKit pad that counts every finger. The wings fold on the first finger down and open when
+        // the last one lifts (a two-thumb hand-off keeps the tuck), and a touch the system cancels or that outlives
+        // the layer (a pause, the catch, Control Center) counts as a lift, so the next press always tucks.
+        HoldPad(onDown: { location in
+            touching = true
+            controller.touchBegan()
+            // UX §10: a soft ripple marks the touch on the first 3 runs.
+            if controller.store.data.runs < 3 && !reduceMotion {
+                rippleSerial += 1
+                ripple = location
+            }
+        }, onUp: {
+            touching = false
+            controller.touchEnded()
+        })
             .accessibilityElement()
             .accessibilityLabel("Wings")
-            .accessibilityValue(touching ? "Tucked" : "Spread")
+            // FINAL-FIXES #16 (glossary): the wings fold and open, never "tuck".
+            .accessibilityValue(touching ? "Folded" : "Open")
             .accessibilityHint("Touch and hold to fold the wings. Let go to open them. "
                                + "With VoiceOver, swipe down to fold and up to open.")
             .accessibilityAddTraits(.allowsDirectInteraction)
@@ -282,18 +279,18 @@ struct DeckPlayView: View {
                 }
             }
             .frame(width: pad.width, height: pad.height)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in
-                        guard !touching, !paused else { return }
-                        touching = true
-                        controller.touchBegan()
-                    }
-                    .onEnded { _ in
-                        touching = false
-                        controller.touchEnded()
-                    }
+            // FINAL-FIXES #7: the same finger-counting pad as book pose (hand-offs keep the tuck; a cancelled touch
+            // is a lift, so the first press after a pause or the catch always tucks).
+            .overlay(
+                HoldPad(onDown: { _ in
+                    guard !paused else { return }
+                    touching = true
+                    controller.touchBegan()
+                }, onUp: {
+                    guard touching else { return }
+                    touching = false
+                    controller.touchEnded()
+                })
             )
             .position(x: pad.midX, y: pad.midY)
             .accessibilityElement()
@@ -490,6 +487,8 @@ struct LeadMeter: View {
     }
 
     @State private var pulse = false
+    /// FINAL-FIXES #17: Reduce Motion: no pulse and no shake; the storm-close ring is drawn steady.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geo in
@@ -565,7 +564,8 @@ struct LeadMeter: View {
                 .frame(width: w, height: h)
                 .overlay(
                     Capsule()
-                        .stroke(SwoopTheme.coral.opacity(stormClose ? (pulse ? 0.95 : 0.35) : 0), lineWidth: 3)
+                        .stroke(SwoopTheme.coral.opacity(stormClose ? (pulse || reduceMotion ? 0.95 : 0.35) : 0),
+                                lineWidth: 3)
                 )
                 if mirrored { stormIcon.frame(width: iconW) }
             }
@@ -574,12 +574,15 @@ struct LeadMeter: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.5), value: gapPop)
         .onAppear { setPulse(stormClose) }
         .onChange(of: stormClose) { _, close in setPulse(close) }
+        .onChange(of: reduceMotion) { _, _ in setPulse(stormClose) }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Lead over the storm, \(Int((lead * 100).rounded())) percent")
     }
 
     private func setPulse(_ close: Bool) {
-        if close {
+        if reduceMotion {
+            pulse = false
+        } else if close {
             withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) { pulse = true }
         } else {
             withAnimation(.easeOut(duration: 0.2)) { pulse = false }
@@ -593,7 +596,7 @@ struct LeadMeter: View {
             .foregroundStyle(stormClose ? SwoopTheme.coral : SwoopTheme.foam)
             .frame(width: 26, height: 26)
             .background(Circle().fill(SwoopTheme.surface.opacity(0.62)))
-            .offset(x: stormClose && pulse ? 1.5 : 0)
+            .offset(x: stormClose && pulse && !reduceMotion ? 1.5 : 0)
             .overlay(alignment: .top) {
                 if showsLabels {
                     Text("Storm")
@@ -618,6 +621,8 @@ struct ChainPill: View {
     var teach: Bool = false
 
     @State private var shake: CGFloat = 0
+    /// FINAL-FIXES #17: Reduce Motion: "×4 lost" fades without the shake.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// The pill's text, or nil when hidden. Pure; tested.
     nonisolated static func text(chain: Int, tailwind: Bool, teach: Bool = false) -> String? {
@@ -638,6 +643,7 @@ struct ChainPill: View {
                     .offset(x: shake)
                     .id(lost.serial)
                     .onAppear {
+                        guard !reduceMotion else { return }
                         withAnimation(.linear(duration: 0.06).repeatCount(5, autoreverses: true)) { shake = 6 }
                         Task { @MainActor in
                             try? await Task.sleep(nanoseconds: 320_000_000)
@@ -883,10 +889,27 @@ struct CenterStage: View {
     }
 
     private var countdownLine: some View {
-        // R10 P0-2: the first real flight's countdown states the goal, in the same one pill, above the hands line.
-        linePill(AppRules.countdownText(touch: touch, flat: hud.flatHold, nudge: hud.openNudge,
-                                        firstFlight: hud.countdownGoal),
-                 highlight: hud.flatHold || hud.openNudge)
+        VStack(spacing: 6) {
+            linePill(AppRules.countdownText(touch: touch, flat: hud.flatHold, nudge: hud.openNudge,
+                                            firstFlight: hud.countdownGoal),
+                     highlight: hud.flatHold || hud.openNudge)
+            // R10 P0-2 / FINAL-FIXES #12: compact (iPhone) Home has no room for the goal sentence, so the first real
+            // flight's countdown states it, as its own muted line (never squeezed into the pill, R11 P1-10).
+            if hud.countdownGoal && compact {
+                Text(RouteRules.objective)
+                    .font(SwoopType.caption(compact))
+                    .foregroundStyle(SwoopTheme.foam)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(swoopHex: Contrast.scrim).opacity(Contrast.scrimAlpha)))
+                    .swoopLegible()
+            }
+        }
     }
 
     private func linePill(_ text: String, highlight: Bool = false) -> some View {
@@ -1127,47 +1150,22 @@ struct ToastPill: View {
 
 // MARK: - The iPhone wing (ART A13, UX §10; R4 P1-12)
 
-/// Touch feedback: the bird mark, 56 pt, bottom-centre of the bird page (off the left thumb), folding with the tuck and
-/// charging from foam at 0.35 α (spread) to gold `#F7C75B` at 0.9 α (full tuck), with a 1 pt `#10233A` outline so it
-/// reads over the foam line; plus the soft wing-shaped vignette from both side edges (`#04121F` at 0.08 × tuck).
+/// Touch feedback: the soft wing-shaped vignette from both side edges (`#04121F` at 0.08 × tuck). R11 P1-13 cut the
+/// bird-mark glyph; FINAL-FIXES #18 deleted its leftover placement code.
 struct TouchWingFeedback: View {
     @ObservedObject var controller: GameController
     let info: AppCanvas
     let reduceMotion: Bool
 
-    static let glyphSize: CGFloat = 56
     static let vignetteDepth: CGFloat = 90
     static let vignetteAlpha: Double = 0.08
-
-    /// Where the glyph sits (R5): a quarter into the bird page from its outer edge, 28 pt above the bottom, below the
-    /// skim line and off the left thumb. Pure; tested.
-    nonisolated static func glyphCenter(birdPage: CGRect, height: CGFloat, mirrored: Bool = false) -> CGPoint {
-        let x = mirrored ? birdPage.maxX - birdPage.width * 0.25 : birdPage.minX + birdPage.width * 0.25
-        return CGPoint(x: x, y: height - 28)
-    }
-
-    /// The glyph's alpha with the tuck: 0.55 → 0.9 (it vanished on the sea at 0.35); 0.15 while the bird's rect + 24
-    /// pt overlaps it, so it never sits on the bird. Pure; tested.
-    nonisolated static func glyphAlpha(tuck: Double, birdNear: Bool = false) -> Double {
-        if birdNear { return 0.15 }
-        return 0.55 + 0.35 * min(max(tuck.isFinite ? tuck : 0, 0), 1)
-    }
-
-    /// Whether the bird (radius ~44 pt) plus 24 pt meets the glyph's box. Pure; tested.
-    nonisolated static func birdNear(bird: CGPoint?, glyph: CGPoint) -> Bool {
-        guard let bird else { return false }
-        let r: CGFloat = 44 + 24
-        let side: CGFloat = 56    // glyphSize
-        let box = CGRect(x: glyph.x - side / 2, y: glyph.y - side * 0.3, width: side, height: side * 0.6)
-        return box.insetBy(dx: -r, dy: -r).contains(bird)
-    }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { _ in
             let u = controller.touchTuck(now: CACurrentMediaTime())
             // R11 P1-13: the round gull disc at the bottom corner is gone. Testers read it as an unlabelled button
             // ("can I tap it?") that came and went; the hold's feedback is this vignette, the wings, and in Flight
-            // School the one diagram. (`glyphCenter`, `glyphAlpha` and `birdNear` stay, pure, for the tests.)
+            // School the one diagram.
             HStack(spacing: 0) {
                 LinearGradient(colors: [SwoopTheme.shadowBase.opacity(Self.vignetteAlpha * u), .clear],
                                startPoint: .leading, endPoint: .trailing)
@@ -1547,5 +1545,139 @@ struct CaughtLine: View {
         .frame(width: info.size.width, height: info.size.height, alignment: .topLeading)
         .animation(.easeOut(duration: 0.3).delay(hud.caught ? Self.delay : 0), value: hud.caught)
         .accessibilityHidden(!hud.caught)
+    }
+}
+// MARK: - The hold pad (FINAL-FIXES #7)
+
+/// The fingers on the hold pad, by touch id. The wings fold when the first finger goes down and open when the last
+/// one lifts, so a two-thumb hand-off (the second thumb down before the first lifts) keeps the tuck. A cancelled touch
+/// is a lift; `releaseAll` (the pad leaving the screen: a pause, the catch) lifts everything. Pure; tested.
+struct HoldCount: Equatable {
+    private(set) var down: Set<Int> = []
+
+    var isHeld: Bool { !down.isEmpty }
+
+    /// Fingers went down. True when this is the first one (0 → 1): fold.
+    mutating func began(_ ids: [Int]) -> Bool {
+        let was = isHeld
+        for id in ids { down.insert(id) }
+        return !was && isHeld
+    }
+
+    /// Fingers lifted (or were cancelled). True when the last one lifted (1 → 0): open.
+    mutating func ended(_ ids: [Int]) -> Bool {
+        let was = isHeld
+        for id in ids { down.remove(id) }
+        return was && !isHeld
+    }
+
+    /// Drops ids that are no longer touching (a lift the pad never heard about). True when that emptied it.
+    mutating func keepOnly(_ live: Set<Int>) -> Bool {
+        let was = isHeld
+        down.formIntersection(live)
+        return was && !isHeld
+    }
+
+    /// Every finger counts as lifted. True when one was down.
+    mutating func releaseAll() -> Bool {
+        let was = isHeld
+        down.removeAll()
+        return was
+    }
+}
+
+/// The hold-anywhere surface (book pose and the split deck's pad): a plain UIKit view with multi-touch on, so every
+/// finger counts, and with `touchesCancelled` and leaving the window treated as lifts. SwiftUI's `DragGesture` follows
+/// one touch and never ends when it is cancelled, which left the next press swallowed and dropped the tuck on a
+/// thumb hand-off.
+struct HoldPad: UIViewRepresentable {
+    /// The first finger went down (its location in the pad).
+    var onDown: (CGPoint) -> Void
+    /// The last finger lifted, or the touches were cancelled.
+    var onUp: () -> Void
+
+    func makeUIView(context: Context) -> HoldPadView {
+        let view = HoldPadView()
+        view.onDown = onDown
+        view.onUp = onUp
+        return view
+    }
+
+    func updateUIView(_ uiView: HoldPadView, context: Context) {
+        uiView.onDown = onDown
+        uiView.onUp = onUp
+    }
+
+    static func dismantleUIView(_ uiView: HoldPadView, coordinator: ()) {
+        uiView.releaseAll()
+    }
+}
+
+/// The UIKit side of `HoldPad`.
+final class HoldPadView: UIView {
+    var onDown: ((CGPoint) -> Void)?
+    var onUp: (() -> Void)?
+    private var count = HoldCount()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        isOpaque = false
+        isMultipleTouchEnabled = true
+        isExclusiveTouch = false
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        backgroundColor = .clear
+        isOpaque = false
+        isMultipleTouchEnabled = true
+    }
+
+    private static func ids(_ touches: Set<UITouch>) -> [Int] {
+        touches.map { Int(bitPattern: ObjectIdentifier($0)) }
+    }
+
+    /// The fingers still on this pad, from the event (a touch whose end was never delivered is dropped).
+    private func liveIDs(_ event: UIEvent?) -> Set<Int>? {
+        guard let all = event?.allTouches else { return nil }
+        let live = all.filter { $0.view === self && $0.phase != .ended && $0.phase != .cancelled }
+        return Set(Self.ids(live))
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if let live = liveIDs(event) {
+            // Only stale ids can go here (the new touches are live), so this never opens a held tuck.
+            _ = count.keepOnly(live.union(Self.ids(touches)))
+        }
+        if count.began(Self.ids(touches)), let first = touches.first {
+            onDown?(first.location(in: self))
+        }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        lift(touches, event: event)
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        lift(touches, event: event)
+    }
+
+    private func lift(_ touches: Set<UITouch>, event: UIEvent?) {
+        var opened = count.ended(Self.ids(touches))
+        if !opened, let live = liveIDs(event) { opened = count.keepOnly(live) }
+        if opened { onUp?() }
+    }
+
+    /// Every finger counts as lifted (the pad left the screen). The lift is reported on the next main-queue turn: this
+    /// runs while SwiftUI removes the pad, when its state must not change.
+    func releaseAll() {
+        guard count.releaseAll(), let up = onUp else { return }
+        DispatchQueue.main.async { up() }
+    }
+
+    override func willMove(toWindow newWindow: UIWindow?) {
+        super.willMove(toWindow: newWindow)
+        if newWindow == nil { releaseAll() }
     }
 }

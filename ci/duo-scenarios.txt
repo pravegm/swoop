@@ -54,7 +54,7 @@
 # Round 6 (design/UX-FLIGHT-SCHOOL.md §7). The Duo default: the sharp half is screen-right in the orientation the app
 # first runs in (stored as the reference); `orient=landscapeLeft` turns it 180° so the bird hops to the left.
 46-school-hold|school=hold|5
-47-school-hold-flat|school=hold:fail|5
+47-school-hold-wider|school=hold:fail|5
 48-school-wings|school=wings|5
 49-school-wings-done|school=wings:done|5
 50-wingcheck-explain|school=wingcheck:explain|5

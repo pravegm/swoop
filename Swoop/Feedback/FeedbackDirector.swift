@@ -126,6 +126,7 @@ final class FeedbackDirector: FeedbackSink {
     private let haptics = FeelHaptics()
     private var started = false
     private var activationObserver: NSObjectProtocol?
+    private var backgroundObserver: NSObjectProtocol?
     private var dice = FeelDice(seed: 0x5300_B1D5)
     private var lastBedSend: CFTimeInterval = 0
     private var lastHeal: CFTimeInterval = 0
@@ -193,6 +194,14 @@ final class FeedbackDirector: FeedbackSink {
             MainActor.assumeIsolated {
                 self?.audio.resume()
                 self?.haptics.resume()
+            }
+        }
+        // QA-FINAL P2-8: the audio engine pauses explicitly in the background (`didBecomeActive` above resumes it).
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.audio.enterBackground()
             }
         }
     }

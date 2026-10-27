@@ -1,14 +1,15 @@
 import Foundation
 
-/// Which channel this build came from. The hinge readout (R4 P1-15) is for the founder's device test only: Debug,
-/// TestFlight and sandbox builds, never an App Store build.
+/// Which channel this build came from. The hinge readout (R4 P1-15) is for the founder's device test only.
+/// FINAL-FIXES #1: Debug builds only. App Review, TestFlight and the App Store all run the same Release binary, so no
+/// run-time check (the sandbox receipt) can tell them apart; the readout and its Settings card are compiled out of
+/// Release entirely (every "Hinge readout" string sits inside `#if DEBUG`; testflight.yml checks the binary).
 enum BuildChannel {
     static let isTestBuild: Bool = {
         #if DEBUG
         return true
         #else
-        // TestFlight and Xcode-installed sandbox builds carry a sandbox receipt; App Store builds never do.
-        return Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
+        return false
         #endif
     }()
 }

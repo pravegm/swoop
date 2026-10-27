@@ -167,7 +167,7 @@ struct BirdsView: View {
         }
         .buttonStyle(SwoopPressStyle())
         .accessibilityLabel(unlocked ? "\(bird.name)\(chosen ? ", chosen" : "")"
-                                     : "\(bird.name), locked until rank \(bird.unlockRank + 1)")
+                                     : "\(bird.name), locked until level \(bird.unlockRank + 1)")
     }
 
     private func skyTile(_ sky: Sky) -> some View {
@@ -193,7 +193,7 @@ struct BirdsView: View {
         }
         .buttonStyle(SwoopPressStyle())
         .accessibilityLabel(unlocked ? "\(sky.name) sky\(chosen ? ", chosen" : "")"
-                                     : "\(sky.name) sky, locked until rank \(sky.unlockRank + 1)")
+                                     : "\(sky.name) sky, locked until level \(sky.unlockRank + 1)")
     }
 
     private func trailTile(_ trail: AppTrail) -> some View {
@@ -226,7 +226,7 @@ struct BirdsView: View {
         }
         .buttonStyle(SwoopPressStyle())
         .accessibilityLabel(unlocked ? "\(trail.name) trail\(chosen ? ", chosen" : "")"
-                                     : "\(trail.name) trail, locked until rank \(trail.unlockRank + 1)")
+                                     : "\(trail.name) trail, locked until level \(trail.unlockRank + 1)")
     }
 
     /// A tile's caption: the name, or a lock (with "Rank N" only for the next unlock). 13 pt at least (UX-A11).

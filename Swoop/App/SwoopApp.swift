@@ -33,6 +33,8 @@ struct SwoopApp: App {
                 .onAppear {
                     settings.apply()
                     FeedbackDirector.shared.start()
+                    // FINAL-FIXES #11: every sign-in resends the best and the earned achievements from the progress.
+                    GameCenterManager.shared.progress = { [store] in store.data }
                     GameCenterManager.shared.authenticate()
                 }
         }

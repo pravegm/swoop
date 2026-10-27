@@ -41,10 +41,10 @@ struct FlocksView: View {
         // R11 P1-10: a noun phrase like every other level (it was the sentence "You start with …").
         if r <= 0 { return "Starter bird: Gull · Sky: Golden Hour" }
         let opened = ProgressRules.unlocks(from: r - 1, to: r)
-        let line = RankUpBanner.unlockLine(birds: opened.birds.map { BirdCatalog.bird($0).name },
-                                           skies: opened.skies.map { SkyCatalog.sky($0).name },
-                                           trails: ProgressRules.trailUnlocks(from: r - 1, to: r)
-                                               .map { ProgressRules.trailName($0) })
+        let line = RewardWords.unlockLine(birds: opened.birds.map { BirdCatalog.bird($0).name },
+                                          skies: opened.skies.map { SkyCatalog.sky($0).name },
+                                          trails: ProgressRules.trailUnlocks(from: r - 1, to: r)
+                                              .map { ProgressRules.trailName($0) })
         return line.isEmpty ? "A new title" : line
     }
 
@@ -213,7 +213,7 @@ struct FlocksView: View {
         // UX R3 P2-13: rewards past the next rank stay named but step back.
         .opacity(r > rank + 1 ? 0.5 : 1)
         .accessibilityElement(children: .combine)
-        .accessibilityValue(current ? "Current rank" : (reached ? "Reached" : "Locked"))
+        .accessibilityValue(current ? "Current level" : (reached ? "Reached" : "Locked"))
     }
 
     /// "Logbook 12 of 40". Pure; tested.

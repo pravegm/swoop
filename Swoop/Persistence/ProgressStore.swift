@@ -289,13 +289,26 @@ enum ProgressRules {
     static let longFlightSeconds: Double = 20 * 60
 
     /// The streak with UX §4's grace: one missed day per rolling 7 doesn't break it ("Calm sea: streak kept").
-    /// Counts back from today (or yesterday while today's isn't flown yet). Returns the streak and whether the most
-    /// recent gap was bridged by the grace.
+    /// Counts back from today (or yesterday while today's isn't flown yet). FINAL-FIXES #14:
+    /// - yesterday missed and today not flown yet: the streak is still alive (today's flight will bridge yesterday),
+    ///   so it counts back from the day before yesterday with the grace already spent on yesterday;
+    /// - `graceKept` is true only on the day the grace bridges: today is flown and the gap it bridged is yesterday
+    ///   (it used to repeat on every Daily after any bridged gap).
     static func streakWithGrace(days: Set<Int>, today: Int) -> (streak: Int, graceKept: Bool) {
-        var day = days.contains(today) ? today : today - 1
-        var count = 0
+        var day: Int
         var lastGrace = Int.max
-        var graceKept = false
+        if days.contains(today) {
+            day = today
+        } else if days.contains(today - 1) {
+            day = today - 1
+        } else if days.contains(today - 2) {
+            day = today - 2
+            lastGrace = today - 1
+        } else {
+            return (0, false)
+        }
+        var count = 0
+        var bridged: Int?
         var steps = 0
         while steps < 4000 {
             steps += 1
@@ -307,14 +320,30 @@ enum ProgressRules {
             // A single missing day, bridged only if the day before it was flown and no grace was used in the 7 days
             // after it.
             if count > 0 && days.contains(day - 1) && (lastGrace == Int.max || lastGrace - day >= 7) {
-                if lastGrace == Int.max { graceKept = true }
+                if bridged == nil { bridged = day }
                 lastGrace = day
                 day -= 1
                 continue
             }
             break
         }
-        return (count, graceKept)
+        return (count, days.contains(today) && bridged == today - 1)
+    }
+
+    /// FINAL-FIXES #14: the longest run of consecutive Daily days with no gap at all (no grace): `swoop.ach.daily3`
+    /// ("three days in a row") needs 3. Pure; tested.
+    static func longestStrictStreak(days: Set<Int>) -> Int {
+        var best = 0
+        for start in days where start == Int.min || !days.contains(start - 1) {
+            var n = 1
+            var d = start
+            while n < 4000 && d < Int.max && days.contains(d + 1) {
+                n += 1
+                d += 1
+            }
+            best = max(best, n)
+        }
+        return best
     }
 
     /// Every achievement id (Game Center, docs/appstore style `swoop.ach.*`).
@@ -355,7 +384,10 @@ enum ProgressRules {
         if data.bestLighthousesInRun >= 1 { out.insert(achievementLighthouse) }
         if data.bestLighthousesInRun >= 3 { out.insert(achievementLighthouse3) }
         if data.totalCloudTouches > 0 { out.insert(achievementCloud) }
-        if data.bestDailyStreak >= 3 { out.insert(achievementDaily3) }
+        // FINAL-FIXES #14: three days in a row, strictly (a streak the grace bridged doesn't earn it).
+        if data.bestDailyStreak >= 3 && longestStrictStreak(days: Set(data.daily.keys)) >= 3 {
+            out.insert(achievementDaily3)
+        }
         if data.runs > 0 && data.rank >= allBirdsRank { out.insert(achievementAllBirds) }
         return out
     }

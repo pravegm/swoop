@@ -126,7 +126,7 @@ The `FlightSession` behaviour is specified in `design/GAME-DESIGN.md` §5–§6.
     var hasHinge: Bool { get }                            // true once any real sample arrived (never goes back to false)
     var angle: Double? { get }                            // display-rate filtered hinge angle (180 = flat)
     var openAngle: Double { get }                         // the auto-calibrated "wings spread" angle (150…172)
-    var isClosing: Bool { get }                           // filtered angle < 95° (pause), hysteresis back above 102°
+    var isClosing: Bool { get }                           // filtered angle < 55° for 0.2 s or < 40° at once (pause), back above 65°
 }
 @MainActor final class TouchTuckSource: TuckSource {     // hold anywhere = tuck, with 0.12 s / 0.10 s ramps
     func began(at time: TimeInterval); func ended(at time: TimeInterval)

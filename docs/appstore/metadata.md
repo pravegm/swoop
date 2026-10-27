@@ -181,7 +181,7 @@ Smoother folds on iPhone Duo, [one real change], and small fixes. Thanks for eve
 | Game subcategory 2 | **Arcade** | `GAMES_ARCADE` |
 | Secondary category | **Entertainment** | `ENTERTAINMENT` |
 
-**Why:** Casual is where paid one-input games chart, and its paid chart is shallow enough for a launch spike to show. Arcade is what Swoop is underneath (an endless distance chase, perfect landings in a row, top scores), and it puts us next to the momentum flyers people already know. Entertainment (optional) catches people browsing for "look what my phone does" apps, the same choice as Brim.
+**Why:** Casual is where paid one-input games chart, and its paid chart is shallow enough for a launch spike to show. Arcade is what Swoop is underneath (an endless distance chase, perfect landings in a row, top scores), and it puts us next to the momentum flyers people already know. Entertainment (optional) catches people browsing for "look what my phone does" apps, the same choice as Brim. **If Apple's live list no longer offers Arcade** (it was missing on 26 Oct, Brim run 40340641267), the tool uses **Action** instead.
 
 ## 8. Age rating: 4+
 
@@ -227,9 +227,9 @@ Why each risky item is None:
 | Field | Value |
 |---|---|
 | Price | Base country **United Kingdom, £1.99**; Apple equalises every other storefront (check the US shows **$1.99**). No launch discount |
-| Availability | Every country or region **except China mainland** (paid games there need a government ISBN licence) |
+| Availability | Every country or region **except China mainland and Vietnam** (paid games there need a government game licence) |
 | Pre-order | **No** |
-| Release | **Manually release this version**. The founder presses Release on **Tue 24 Nov 2026 at about 08:00 UK time** (runbook §7) |
+| Release | **Automatically release this version after App Review approval, no earlier than** Tue 24 Nov 2026, 08:00 UTC (a scheduled release: nothing to press on launch day) |
 | Family Sharing | **On** (permanent once on) |
 | Small Business Program | Account-level; already enrolled for Squish (just confirm it shows Active) |
 | Copyright | `© 2026 pravegm` |

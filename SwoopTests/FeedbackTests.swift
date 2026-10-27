@@ -914,4 +914,81 @@ struct FeedbackTests {
         for cue in cues { director.cue(cue) }
         #expect(director.hapticsOn == false)
     }
+
+    // MARK: QA-FINAL (27 Oct): haptic start tags, audio self-repair
+
+    /// QA-FINAL P2-1: the engine's "stopped" hop can land after a newer start built fresh players. A stop from before
+    /// the latest start began is stale and must leave them alone; a stop after it is real.
+    @Test func aStaleHapticStopNeverOrphansTheNewPlayers() {
+        var starts = FeelEngineStarts()
+        let first = starts.begin(at: 10, offMain: false)
+        let firstDone = starts.finish(first)
+        #expect(firstDone)
+        // The engine stops at 20 s; `resume()` starts it again at 20.5 s before the stop's hop arrives.
+        let second = starts.begin(at: 20.5, offMain: false)
+        let secondDone = starts.finish(second)
+        #expect(secondDone)
+        #expect(second != first)
+        #expect(starts.stopIsCurrent(stoppedAt: 20) == false)
+        #expect(starts.stopIsCurrent(stoppedAt: 20.5))
+        #expect(starts.stopIsCurrent(stoppedAt: 21))
+        // Never started: any stop counts.
+        #expect(FeelEngineStarts().stopIsCurrent(stoppedAt: 0))
+    }
+
+    /// QA-FINAL P2-10: a mid-flight start runs off the main thread. Its completion builds players only if no newer
+    /// start, stop or switch-off superseded it, and a second recovery waits for it (up to 2 s).
+    @Test func anOffMainHapticStartLandsOnlyIfNothingSupersededIt() {
+        var starts = FeelEngineStarts()
+        let a = starts.begin(at: 1, offMain: true)
+        #expect(starts.isPending(at: 1.5))
+        #expect(starts.isPending(at: 1 + FeelEngineStarts.pendingTimeout) == false)
+        #expect(starts.isPending(at: Double.nan) == false)
+        // A synchronous start (the app active again) supersedes it: the late completion is ignored.
+        let b = starts.begin(at: 1.2, offMain: false)
+        #expect(starts.isPending(at: 1.3) == false)
+        let lateA = starts.finish(a)
+        let doneB = starts.finish(b)
+        #expect(lateA == false)
+        #expect(doneB)
+        // A stop (or haptics switched off) cancels a start on its way.
+        let c = starts.begin(at: 5, offMain: true)
+        starts.cancel()
+        let lateC = starts.finish(c)
+        #expect(lateC == false)
+        #expect(starts.isPending(at: 5.1) == false)
+        // An undisturbed off-main start lands.
+        let d = starts.begin(at: 6, offMain: true)
+        let doneD = starts.finish(d)
+        #expect(doneD)
+        #expect(starts.isPending(at: 6.1) == false)
+    }
+
+    /// QA-FINAL P2-2: a late "app was suspended" `.began` (no `.ended` ever follows) must never switch self-repair off.
+    @Test func aLateWasSuspendedInterruptionIsIgnored() {
+        #expect(FeelAudioRules.isLiveInterruption(began: true, reason: nil, wasSuspended: false))
+        #expect(FeelAudioRules.isLiveInterruption(began: true, reason: 0, wasSuspended: false))
+        #expect(FeelAudioRules.isLiveInterruption(began: true, reason: FeelAudioRules.appWasSuspendedReason,
+                                                  wasSuspended: false) == false)
+        #expect(FeelAudioRules.isLiveInterruption(began: true, reason: nil, wasSuspended: true) == false)
+        #expect(FeelAudioRules.isLiveInterruption(began: false, reason: nil, wasSuspended: false) == false)
+        #expect(FeelAudioRules.appWasSuspendedReason == 1)
+        #expect(FeelAudioRules.soundRetryGap <= 0.5)
+    }
+
+    /// QA-FINAL P2-6 and P2-8: a 10 ms IO buffer, and the background pauses the engine until the app is active again
+    /// (nothing plays in between). The engine is never started here (no audio hardware is needed).
+    @Test func audioUsesATenMillisecondBufferAndRestsInTheBackground() {
+        #expect(abs(FeelAudioEngine.ioBufferDuration - 0.01) < 1e-9)
+        let audio = FeelAudioEngine()
+        audio.enterBackground()
+        #expect(audio.inBackground)
+        audio.play(FeelSoundBook.uiTap())
+        audio.setBed(FeelSoundBook.idleBed(master: FeelAudioEngine.masterGain))
+        audio.heal()
+        #expect(audio.isRunning == false)
+        audio.resume()
+        #expect(audio.inBackground == false)
+        #expect(audio.isRunning == false)
+    }
 }

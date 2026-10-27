@@ -559,6 +559,7 @@ struct SchoolBirdRig: View {
     let display: SchoolDisplay
     let info: AppCanvas
     let layout: SchoolLayout
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let bird = hud.birdPoint ?? SceneAdapter.defaultBirdPoint(info)
@@ -609,7 +610,9 @@ struct SchoolBirdRig: View {
                 if let big = display.bigWord {
                     SchoolBigWord(text: big, compact: info.isCompact)
                         .position(SchoolRig.bigWordCenter(bird: bird, canvas: info))
-                        .transition(.scale(scale: 1.6).combined(with: .opacity))
+                        // FINAL-FIXES #17: Reduce Motion: a fade, not the 1.6× scale.
+                        .transition(reduceMotion ? AnyTransition.opacity
+                                                 : AnyTransition.scale(scale: 1.6).combined(with: .opacity))
                 }
                 // Step 6: the in-world name by Gull Point's lamp as it rises (Scene `schoolLighthouse`).
                 if display.step == .storm, let lamp = hud.lampPoint {
@@ -654,7 +657,8 @@ struct SchoolStudioView: View {
                 .allowsHitTesting(false)
             if d.step == .wingCheck {
                 WingCheckPages(controller: controller, info: info, phase: d.wingPhase,
-                               needsFlatHelp: d.wingNeedsFlatHelp, onAnswer: { controller.answerWingCheck($0) })
+                               needsFlatHelp: d.wingNeedsFlatHelp, avoidsSkip: d.canSkip,
+                               onAnswer: { controller.answerWingCheck($0) })
             } else {
                 TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { _ in
                     let now = CACurrentMediaTime()
@@ -840,7 +844,41 @@ struct WingCheckPages: View {
     let info: AppCanvas
     let phase: WingCheckFlow.Phase
     var needsFlatHelp = false
+    /// FINAL-FIXES #10: Flight School's own Skip is on screen too (the school's check, not the Settings one).
+    var avoidsSkip = false
     let onAnswer: (ScreenSide?) -> Void
+
+    /// FINAL-FIXES #10: the check's way out. "Skip" is only ever the lesson's.
+    nonisolated static let notSureTitle = "Not sure"
+    /// The smallest gap between the check's button and Skip (tap areas, never overlapping).
+    nonisolated static let skipGap: CGFloat = 8
+
+    /// Where "Not sure" goes: centred on the bird page 40 pt above the bottom (its tap area is 56 tall whatever it
+    /// draws), shifted (and narrowed if it must) to keep `skipGap` from Skip's tap area beside it. Pure; tested.
+    nonisolated static func notSureRect(_ info: AppCanvas, big: Bool, avoiding skip: CGRect?) -> CGRect {
+        let bp = info.birdPage
+        let tapH = AppCanvas.minTap
+        var w = max(min(bp.width - 40, big ? 200 : 120), 0)
+        var x = bp.midX - w / 2
+        let y = info.size.height - 40 - tapH / 2
+        if let skip, skip.minY < y + tapH + skipGap, skip.maxY > y - skipGap {
+            if skip.midX <= bp.midX {
+                // Skip at the left: start right of it.
+                let minX = skip.maxX + skipGap
+                if x < minX { x = minX }
+                if x + w > bp.maxX { w = max(bp.maxX - x, 0) }
+            } else {
+                // Skip at the right (mirrored): end left of it.
+                let maxX = skip.minX - skipGap
+                if x + w > maxX { x = maxX - w }
+                if x < bp.minX {
+                    w = max(maxX - bp.minX, 0)
+                    x = bp.minX
+                }
+            }
+        }
+        return CGRect(x: x, y: y, width: w, height: tapH)
+    }
 
     nonisolated static func words(_ phase: WingCheckFlow.Phase) -> String? {
         switch phase {
@@ -883,15 +921,17 @@ struct WingCheckPages: View {
                 .position(x: card.midX, y: card.midY)
             }
             if phase != .confirm {
-                let bp = info.birdPage
+                // FINAL-FIXES #10: the check's own way out says what it does ("Not sure"), so the one "Skip" on screen
+                // is the lesson's (it skips the whole of Flight School), and its tap area keeps ≥ 8 pt from Skip's.
                 let big = needsFlatHelp
+                let r = Self.notSureRect(info, big: big, avoiding: avoidsSkip ? SchoolLayout.make(info).skip : nil)
                 SwoopButton(kind: big ? .secondary : .quiet, height: big ? 56 : 44, compact: c,
                             action: { onAnswer(nil) }) {
-                    Text("Skip").lineLimit(1)
+                    Text(Self.notSureTitle).lineLimit(1).minimumScaleFactor(0.8)
                 }
-                .frame(width: min(bp.width - 40, big ? 200 : 120))
-                .position(x: bp.midX, y: info.size.height - 40)
-                .accessibilityLabel("Not sure, skip")
+                .frame(width: r.width)
+                .position(x: r.midX, y: r.midY)
+                .accessibilityLabel("Not sure, skip this check")
             }
         }
         .frame(width: info.size.width, height: info.size.height, alignment: .topLeading)

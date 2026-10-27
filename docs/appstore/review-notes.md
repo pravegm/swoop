@@ -70,7 +70,7 @@ Checked against the code on Tue 27 Oct (commit `a036bc4`). Re-tick the **RC** co
 | Auto-calibrated resting angle, ~30° fold | `Input/HingeTuckSource.swift` | [x] | [ ] update if tuning moves them |
 | Bird on the sharp half, default screen-right on a Duo, flight right to left; the one-tap clear-side check in Flight School; **Bird side**: Sharp side (auto) · Left · Right | `Input/SharpHalf.swift`, `UI/SettingsView.swift`, ROUND-6 D1 | [x] | [ ] |
 | Settings **"Play with touch"** (Duo) | `UI/SettingsView.swift` | [x] exact label | [ ] |
-| Pause below ~95° "Open your wings to keep flying"; cover "Open your wings"; portrait card with "Play with touch" | `Input/HingeTuckSource.swift` (`isClosing`), `UI/PoseCards.swift` | [x] exact wording | [ ] |
+| Pause below ~55° (held 0.2 s; at once under 40°; resumes above 65°) "Open your wings to keep flying"; cover "Open your wings"; portrait card with "Play with touch" | `Input/HingeTuckSource.swift` (`isClosing`), `UI/PoseCards.swift` | [x] exact wording | [ ] |
 | One-time "no need to open flat" tip | ROUND-6 D1.4 | [ ] confirm in the RC | [ ] |
 | Never uses `status == .closed` in play | `CLAUDE.md` hinge facts | [ ] grep | [ ] |
 | Daily: one try that counts, then practice; share as text | `UI/HomeView.swift`, `UI/ShareText.swift` | [x] | [ ] |

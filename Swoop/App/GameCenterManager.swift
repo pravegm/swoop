@@ -27,6 +27,9 @@ final class GameCenterManager {
     private let pendingScoresKey = "swoop.gc.pendingScores"
     /// Scores submitted and not yet confirmed (by entry), so a second flush doesn't send them twice.
     private var inFlight: Set<String> = []
+    /// FINAL-FIXES #11: the player's progress (set by the app at launch), read on every sign-in to resend the best and
+    /// every earned achievement.
+    var progress: (@MainActor () -> ProgressData)?
 
     private init() {}
 
@@ -161,9 +164,38 @@ final class GameCenterManager {
     private func authenticationChanged(signIn: UIViewController?) {
         if let signIn { signInController = signIn }
         isAuthenticated = GKLocalPlayer.local.isAuthenticated
-        if isAuthenticated { signInController = nil }
+        if isAuthenticated {
+            signInController = nil
+            syncAfterSignIn()
+        }
         GKAccessPoint.shared.isActive = false
         flush()
+    }
+
+    /// FINAL-FIXES #11: on every successful sign-in the best goes to `swoop.longest` again and every earned
+    /// achievement is re-reported at 100 % (Game Center de-duplicates both, and banners only show on a first
+    /// completion). TestFlight runs against the Game Center sandbox, so a tester's sandbox-confirmed set must not stop
+    /// the same achievements reaching production.
+    private func syncAfterSignIn() {
+        guard !disabled, let data = progress?() else { return }
+        let plan = Self.signInSync(data: data,
+                                   queue: UserDefaults.standard.stringArray(forKey: pendingScoresKey) ?? [],
+                                   token: UUID().uuidString)
+        UserDefaults.standard.set(plan.queue, forKey: pendingScoresKey)
+        UserDefaults.standard.set(plan.achievements, forKey: pendingKey)
+    }
+
+    /// The sign-in resend (FINAL-FIXES #11): the queue with the best queued for `swoop.longest` (the queue keeps only
+    /// the highest pending one), and every earned achievement, whatever was reported before. Pure; tested.
+    nonisolated static func signInSync(data: ProgressData, queue: [String], token: String)
+        -> (queue: [String], achievements: [String]) {
+        var out = queue
+        let best = data.bestMeters.isFinite ? Int(max(data.bestMeters, 0)) : 0
+        if best > 0 {
+            out = enqueue(encode(leaderboard: Leaderboard.longest, score: best, day: nil, token: token), into: out)
+        }
+        let earned = ProgressRules.earnedAchievements(data, allBirdsRank: ProgressRules.allBirdsRankDefault())
+        return (out, earned.filter { ProgressRules.allAchievements.contains($0) }.sorted())
     }
 
     private func queueScore(_ score: Int, leaderboard: String, day: Int?) {
@@ -173,27 +205,31 @@ final class GameCenterManager {
         flush()
     }
 
-    /// QA-2 P2-4: one pending Daily entry per day (the larger wins, an in-flight one is kept), and the cap of 20 never
-    /// evicts a `longest` best: the oldest Daily entries go first. Pure; tested.
+    /// QA-2 P2-4: one pending Daily entry per day (the larger wins). FINAL-FIXES #11: one pending `swoop.longest`
+    /// entry, the highest (the board keeps a player's best, so a lower one adds nothing), which the cap never evicts:
+    /// the oldest other entries go first. Pure; tested.
     nonisolated static func enqueue(_ entry: String, into queue: [String], cap: Int = 20) -> [String] {
         guard let new = parse(entry) else { return queue }
         var out = queue
-        if new.leaderboard == Leaderboard.daily {
-            if let i = out.firstIndex(where: { e in
-                guard let p = parse(e) else { return false }
-                return p.leaderboard == Leaderboard.daily && p.day == new.day
-            }) {
-                if let old = parse(out[i]), old.score >= new.score { return out }
-                out.remove(at: i)
+        if new.leaderboard == Leaderboard.daily || new.leaderboard == Leaderboard.longest {
+            let same: (String) -> Bool = { e in
+                guard let p = parse(e), p.leaderboard == new.leaderboard else { return false }
+                return new.leaderboard == Leaderboard.longest || p.day == new.day
             }
+            let olds = out.filter(same)
+            if olds.contains(where: { (parse($0)?.score ?? Int.min) >= new.score }) {
+                // Keep only the best of what is already there.
+                if olds.count > 1, let keep = olds.max(by: { (parse($0)?.score ?? 0) < (parse($1)?.score ?? 0) }) {
+                    out.removeAll { same($0) && $0 != keep }
+                }
+                return out
+            }
+            out.removeAll(where: same)
         }
         out.append(entry)
         while out.count > cap {
-            if let i = out.firstIndex(where: { parse($0)?.leaderboard != Leaderboard.longest }) {
-                out.remove(at: i)
-            } else {
-                out.removeFirst()
-            }
+            guard let i = out.firstIndex(where: { parse($0)?.leaderboard != Leaderboard.longest }) else { break }
+            out.remove(at: i)
         }
         return out
     }

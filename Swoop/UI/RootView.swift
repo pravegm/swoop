@@ -111,6 +111,8 @@ struct RootView: View {
             if controller.showsIconExport {
                 iconLayer(canvas)
             }
+            #if DEBUG
+            // FINAL-FIXES #1: the founder's readout is Debug-only (compiled out of Release).
             if settings.hingeReadout && BuildChannel.isTestBuild {
                 HingeReadoutOverlay(controller: controller)
                     .padding(.top, max(safe.top, 0) + 76)
@@ -118,6 +120,7 @@ struct RootView: View {
                     .frame(width: canvas.width, height: canvas.height, alignment: .topLeading)
                     .allowsHitTesting(false)
             }
+            #endif
         }
         .frame(width: canvas.width, height: canvas.height)
         .animation(SwoopTheme.settle(reduceMotion), value: pose)
@@ -206,6 +209,12 @@ struct RootView: View {
             try? await Task.sleep(nanoseconds: 350_000_000)
             let later = OrientationLock.windowSafeArea()
             if later != windowInsets { windowInsets = later }
+            // FINAL-FIXES #8: the interface turns AFTER the device-orientation notification, and a 180° turn changes
+            // neither the canvas nor the scene phase, so the orientation is read again once the rotation has settled
+            // (and once more later, for a slow turn). `setInterfaceSide` is idempotent.
+            if let o = OrientationLock.interfaceSide() { controller.setInterfaceSide(o) }
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            if let o = OrientationLock.interfaceSide() { controller.setInterfaceSide(o) }
         }
     }
 
@@ -249,12 +258,33 @@ struct RootView: View {
         return hidden
     }
 
+    /// FINAL-FIXES #15 (battery): how the scene runs under a card. A pause card or the closing card over a run
+    /// (nothing moves under them; the hinge's samples still end the closing pause) stops it; Results and the Daily
+    /// card run it at `restFramesPerSecond` (fold-to-fly still reads the hinge every frame). Never in demo runs (CI
+    /// waits for the scene's frames). Pure; tested.
+    enum SceneRest: Equatable { case live, slow, paused }
+
+    nonisolated static let restFramesPerSecond = 10
+
+    nonisolated static func sceneRest(route: AppRoute, cardUp: Bool, demo: Bool) -> SceneRest {
+        guard !demo else { return .live }
+        switch route {
+        case .playing, .school: return cardUp ? .paused : .live
+        case .results, .daily: return .slow
+        default: return .live
+        }
+    }
+
     @ViewBuilder
     private func gameLayer(_ rect: CGRect, hidden: Bool) -> some View {
         if let scene = controller.scene {
-            let fps = Self.framesPerSecond(playing: controller.route == .playing, thermalHot: thermalHot,
-                                           lowPower: lowPower)
-            SpriteView(scene: scene, isPaused: sceneIdle(hidden: hidden), preferredFramesPerSecond: fps)
+            let rest = Self.sceneRest(route: controller.route,
+                                      cardUp: controller.isUserPaused || controller.isClosingPaused,
+                                      demo: controller.isDemo)
+            let fps = rest == .slow ? Self.restFramesPerSecond
+                : Self.framesPerSecond(playing: controller.route == .playing, thermalHot: thermalHot, lowPower: lowPower)
+            SpriteView(scene: scene, isPaused: sceneIdle(hidden: hidden) || rest == .paused,
+                       preferredFramesPerSecond: fps)
                 .id(controller.sceneGeneration)
                 .frame(width: rect.width, height: rect.height)
                 .position(x: rect.midX, y: rect.midY)
@@ -359,7 +389,8 @@ struct RootView: View {
     }
 }
 
-/// The founder's hinge readout (R4 P1-15, TestFlight / Debug only): a small bird-page corner panel at 10 Hz.
+#if DEBUG
+/// The founder's hinge readout (R4 P1-15, Debug only since FINAL-FIXES #1): a small bird-page corner panel at 10 Hz.
 struct HingeReadoutOverlay: View {
     let controller: GameController
 
@@ -381,3 +412,4 @@ struct HingeReadoutOverlay: View {
         .accessibilityHidden(true)
     }
 }
+#endif

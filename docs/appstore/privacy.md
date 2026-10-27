@@ -18,7 +18,7 @@ There's no tracking question once you choose "No". For the record, Swoop doesn't
 
 | Thing | Declare? | Why |
 |---|---|---|
-| **Hinge angle** | No | Read through the public `onHingeChange` API only to steer the bird while the game is on screen. It is never stored and never leaves the phone. Apple: "collect" means transmitting data off the device |
+| **Hinge angle** | No | Read through the public `onHingeChange` API only to steer the bird while the game is on screen. Only the player's comfortable resting angle is remembered, on the device with the other settings; it never leaves the phone. Apple: "collect" means transmitting data off the device |
 | **Game Center** (sign-in, leaderboard scores, achievements) | No | Apple collects it under Apple's privacy policy. Apple: "You are not responsible for disclosing data collected by Apple." Swoop never sends it anywhere itself |
 | **Daily Flight share** (result text) | No | Made on the phone and handed to the iOS share sheet only when the player taps Share. Where it goes is the player's choice; nothing comes to us |
 | **Crash reports** via iOS "Share With App Developers" | No | Apple-collected and opt-in. We add no crash SDK. *If one is ever added, the label must declare Crash Data first* |
@@ -60,7 +60,7 @@ One-line grep: `URLSession|URLRequest|NWConnection|WKWebView|SFSafari|openURL|Li
 > Nothing. Swoop has no sign-up and no login. It contains no advertising, analytics, crash-reporting or tracking code from anyone, and it doesn't ask for your camera, microphone, photos, contacts or location.
 >
 > ## The hinge on iPhone Duo
-> On iPhone Duo, Swoop reads how far the phone is folded, only to steer the bird while you play. That reading never leaves your iPhone and isn't stored.
+> On iPhone Duo, Swoop reads how far the phone is folded, only to steer the bird while you play. To fit the game to the way you hold it, Swoop remembers your comfortable resting angle on your iPhone, with your other settings. That reading never leaves your iPhone, and deleting Swoop deletes it.
 >
 > ## What stays on your device
 > Your best flights, levels, lighthouses passed, unlocked birds, skies and trails, your bird side, Daily streak and settings are saved only on your iPhone. We can't see them. If you delete the app, they're deleted too.

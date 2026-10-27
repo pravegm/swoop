@@ -20,6 +20,9 @@ final class GameController: ObservableObject, SceneDriver {
     /// hinge still moves.
     static let readyHold: Double = 1.5
     static let readyStillGrace: Double = 1.0
+    /// FINAL-FIXES #9: after the closing pause (not a user pause) "Go" also waits for wings that read mostly open
+    /// (start tuck ≤ 0.5), up to this long past the hold: a gentle reopen from 65° takes 3–4 s to reach the rest.
+    static let closingResumeGrace: Double = 3.0
     /// Caught → finished takes 1.8 s in Core; the card then follows after this beat (UX-A2: 0.45 → 0.2).
     static let resultsDelay: Double = 0.2
     /// Caught can be skipped (a tap, or a fold u ≥ 0.6) this long after the catch (UX-A2).
@@ -126,6 +129,8 @@ final class GameController: ObservableObject, SceneDriver {
     private var layout: ScreenLayout?
     private var pauseReasons: Set<PauseReason> = []
     private var readyUntil: TimeInterval?
+    /// FINAL-FIXES #9: the Ready hold in progress follows the closing pause (the longer wait for open wings).
+    private var readyAfterClosing = false
     private var hitStopUntil: TimeInterval?
     private var slowUntil: TimeInterval?
     private var reduceMotion = false
@@ -391,7 +396,7 @@ final class GameController: ObservableObject, SceneDriver {
         return TitleTuck.touch(now: now, heldSince: heldSince, releasedAt: releasedAt)
     }
 
-    /// The founder's hinge readout (TestFlight / Debug only, R4 P1-15).
+    /// The founder's hinge readout (Debug only since FINAL-FIXES #1, R4 P1-15).
     func hingeReadout(now: TimeInterval) -> HingeReadout {
         var rate = hingeRate
         if let last = lastHingeSampleAt, now - last > 1 { rate = 0 }
@@ -447,9 +452,12 @@ final class GameController: ObservableObject, SceneDriver {
             var left = until - now
             // A slow reopen finishes before the bird moves: the ring stays up while the hinge still moves.
             // The closing pause now ends from 65° (founder's Duo test, 27 Oct): like the countdown, "Go" waits for wings
-            // that read mostly open (start tuck ≤ 0.5), within the same grace.
-            if left <= 0 && input == .hinge && (!hinge.isStill(at: now) || hinge.startTuck(at: now) > 0.5)
-                && now < until + Self.readyStillGrace {
+            // that read mostly open (start tuck ≤ 0.5). FINAL-FIXES #9: after the closing pause that wait lasts up to
+            // 3 s past the hold (a user pause keeps the 1 s grace).
+            if left <= 0 && input == .hinge
+                && AppRules.readyWaits(pastHold: now - until, moving: !hinge.isStill(at: now),
+                                       startTuck: hinge.startTuck(at: now), afterClosing: readyAfterClosing,
+                                       stillGrace: Self.readyStillGrace, closingGrace: Self.closingResumeGrace) {
                 left = 0.05
             }
             if left > 0 {
@@ -457,6 +465,7 @@ final class GameController: ObservableObject, SceneDriver {
                 return (session.snapshot, [])
             }
             readyUntil = nil
+            readyAfterClosing = false
             hud.setReady(nil)
             if !homeLoop { feedback.cue(.go) }
         }
@@ -739,6 +748,9 @@ final class GameController: ObservableObject, SceneDriver {
             settings.isDuo = true
             UserDefaults.standard.set(true, forKey: OrientationLock.hingeKey)
             OrientationLock.hingeArrived()
+            // FINAL-FIXES (Feel #6): on the very first Duo launch the sharp half is recorded from this first sample,
+            // in the orientation the app runs in now (not at a later refresh, which may follow a 180° turn).
+            if let o = OrientationLock.interfaceSide() { setInterfaceSide(o) } else { recordSharpHalfIfNeeded() }
         }
         if isShut {
             if angle >= Self.shutReleaseAbove { isShut = false }
@@ -981,6 +993,9 @@ final class GameController: ObservableObject, SceneDriver {
         // Leaving school mid-way: the next Fly starts it again at step 0 (UX §1.4).
         if school != nil { endSchool() }
         if homeLoop {
+            // FINAL-FIXES #4: a pose-card or school touch override never outlives the run on Home (a seated Duo got
+            // the split deck's dead pad instead of Home's TurnCard).
+            if touchOverride { touchOverride = false }
             setRoute(.home)
         } else {
             startAttract()
@@ -1101,10 +1116,12 @@ final class GameController: ObservableObject, SceneDriver {
     func pauseSchoolStudio() {
         guard school != nil, !schoolSeaRun else { return }
         schoolStudioPaused = true
+        syncIdleTimer()
     }
 
     func resumeSchoolStudio() {
         schoolStudioPaused = false
+        syncIdleTimer()
         guard var s = school else { return }
         let now = CACurrentMediaTime()
         s.start(at: s.stepNow, time: now)
@@ -1183,6 +1200,8 @@ final class GameController: ObservableObject, SceneDriver {
         feedback.practiceAmbience = false
         hud.setSchoolSea(false)
         schoolDisplay = SchoolDisplay()
+        // FINAL-FIXES #5: Auto-Lock comes back once the school ends (the next route settles it again).
+        syncIdleTimer()
     }
 
     /// One frame of the school (from `advance`).
@@ -1413,9 +1432,15 @@ final class GameController: ObservableObject, SceneDriver {
         }
     }
 
-    /// Home's Daily button once today's Daily is flown or spent: the Daily card (UX-A10).
+    /// Home's Daily button (and `show(.daily)`): today's Daily card once today's Daily is flown or spent (UX-A10).
+    /// FINAL-FIXES #2: decided here, at tap time, on today's date: an unplayed day starts today's scored Daily, so
+    /// the card never says "spent" for a day not yet flown (Home's tile may still show yesterday's state).
     func openDailyCard() {
         let day = DailySeed.dayNumber(for: Date())
+        guard AppRules.dailyTap(data: store.data, day: day) == .card else {
+            playDaily()
+            return
+        }
         store.markSeen("daily")
         if !homeLoop { startAttract() }
         let record = store.data.dailyRecord(day: day)
@@ -1558,6 +1583,9 @@ final class GameController: ObservableObject, SceneDriver {
         pausedRun = nil
         deckReturnPrompt = false
         coverFlying = false
+        // FINAL-FIXES #4: "Play with touch" from the portrait card lasts for its run only. Home must never inherit
+        // it: on a seated (portrait) Duo it kept the split deck, whose pad and pause do nothing outside a run.
+        touchOverride = false
         clearRunPauses()
         setRoute(.home)
         buildSession()
@@ -1777,7 +1805,8 @@ final class GameController: ObservableObject, SceneDriver {
                 }
             case .newBest:
                 toastSerial += 1
-                showToast(HUDToast(kind: .newBest, title: "New best!", detail: "Every metre now is a record",
+                // FINAL-FIXES #16 (glossary): "record" is never said; the best is "your best".
+                showToast(HUDToast(kind: .newBest, title: "New best!", detail: "Every metre now is your best.",
                                    serial: toastSerial), now: now, sessionTime: s.time)
             case .stormClose:
                 announce("Storm close", priority: 3)
@@ -2064,7 +2093,11 @@ final class GameController: ObservableObject, SceneDriver {
 
     /// Fold to fly again (UX-A3): on Results, a hinge run's player folds and opens the wings.
     private func updateFoldToFly(now: TimeInterval) {
-        guard let summary, summary.hingeRun, !summary.isDailyCard, hinge.hasHinge else { return }
+        // FINAL-FIXES #6: never on a scored Daily's results (its card has no Fly again: a fold there started a hidden
+        // practice run) nor on the Daily card.
+        guard let summary, hinge.hasHinge,
+              AppRules.foldToFlyArms(hingeRun: summary.hingeRun, isDailyCard: summary.isDailyCard,
+                                     dailyDay: summary.dailyDay, practice: summary.practice) else { return }
         #if DEBUG
         // Duo R3 P2-10: the demo `foldFill` frame is held (the simulator's live hinge would overwrite it).
         if demo?.foldFill != nil { return }
@@ -2133,14 +2166,15 @@ final class GameController: ObservableObject, SceneDriver {
             if !homeLoop, let s = session?.snapshot { publishHUD(s, now: CACurrentMediaTime(), force: true) }
             if isLiveRun { pausedRun = makePausedRun() }
         } else if was && !now {
-            resumed()
+            // FINAL-FIXES #9: the last pause to clear was the closing one (the hinge reopened, or the card's Resume).
+            resumed(afterClosing: reason == .closing)
         }
         syncIdleTimer()
     }
 
     /// Every resume of a live run holds under the "Ready" ring: 1.5 s, or 2.5 s from 0.3 s after the inner display is
     /// back when the Duo was shut (R4 P0-6).
-    private func resumed() {
+    private func resumed(afterClosing: Bool = false) {
         guard isLiveRun else { return }
         pausedRun = nil
         // Duo R4 P2-4: the cover's own deck ("Keep flying here") has no handover blur: the short hold there.
@@ -2149,6 +2183,7 @@ final class GameController: ObservableObject, SceneDriver {
         readyTotal = hold
         let until = CACurrentMediaTime() + hold
         readyUntil = until
+        readyAfterClosing = afterClosing
         hud.setReady(hold)
         feedback.cue(.reopened)
         AppTrace.t("SWOOP-T resumed")
@@ -2161,11 +2196,15 @@ final class GameController: ObservableObject, SceneDriver {
         pauseReasons.remove(.user)
         pauseReasons.remove(.closing)
         readyUntil = nil
+        readyAfterClosing = false
     }
 
     /// The hinge is the input, so a whole run can pass without a touch: Auto-Lock must not dim mid-flight.
+    /// FINAL-FIXES #5: nor mid-Flight School (the Studio and the practice sea are flown by the hinge alone).
     private func syncIdleTimer() {
-        let awake = route == .playing && !homeLoop && !isPausedByReason && summary == nil
+        let awake = AppRules.keepsScreenAwake(route: route, homeLoop: homeLoop, paused: isPausedByReason,
+                                              hasSummary: summary != nil, schoolRunning: school != nil,
+                                              studioPaused: schoolStudioPaused)
         guard awake != screenKeptAwake else { return }
         screenKeptAwake = awake
         UIApplication.shared.isIdleTimerDisabled = awake
@@ -2291,6 +2330,9 @@ final class GameController: ObservableObject, SceneDriver {
             setRoute(target)
         case .daily:
             startAttract()
+            // FINAL-FIXES #2: the card opens only for a day with a try. A demo without today's Daily (`progress=fresh`,
+            // the "spent, nothing filed" frame) marks today's try spent on its in-memory store first.
+            if !store.hasDailyAttempt(day: today) { store.markDailyAttempt(day: today) }
             openDailyCard()
         case .play:
             start(mode: demo.runMode(today: today) ?? .flight)

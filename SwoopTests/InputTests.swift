@@ -362,7 +362,7 @@ struct InputTests {
         #expect(HingeTuckTuning.stroke(forOpen: 134) == 34)
         #expect(HingeTuckTuning.stroke(forOpen: 132) == 32)
         #expect(HingeTuckTuning.stroke(forOpen: 120) == 30)
-        // Open 132: full tuck at 100° (never into the 90° closing zone), half at 116°.
+        // Open 132: full tuck at 100° (never near the 55° closing zone), half at 116°.
         #expect(abs(HingeTuckSource.tuck(forAngle: 100, open: 132) - 1) < 1e-12)
         #expect(abs(HingeTuckSource.tuck(forAngle: 116, open: 132) - 0.5) < 1e-9)
         #expect(HingeTuckSource.tuck(forAngle: 132, open: 132) == 0)
@@ -759,5 +759,45 @@ struct InputTests {
         #expect(source.isStill(at: hinge.time, window: 0.5) == false)
         hinge.run(0.3) { _ in 140 }
         #expect(source.isStill(at: hinge.time, window: 0.5))
+    }
+
+    // MARK: QA-FINAL (27 Oct): back from the background
+
+    /// QA-FINAL P2-15 (founder): back from the background the last reading is stale. The ready snap waits for a fresh
+    /// report, and that report replaces the stale reading outright (no glide from it).
+    @Test func afterTheBackgroundTheReadySnapWaitsForAFreshReport() {
+        let source = HingeTuckSource(logs: false)
+        let hinge = FakeHinge(source: source)
+        hinge.run(1, snap: true) { _ in 160 }
+        #expect(abs(source.openAngle - 160) < 0.05)
+        // The hand eases to 150° just before the app goes away (too briefly, and too deep, to teach "open").
+        hinge.run(0.6) { t in 160 - 10 * min(t / 0.2, 1) }
+        #expect(abs(source.openAngle - 160) < 0.5)
+        #expect(source.isStill(at: hinge.time))
+        // Thirty seconds away, then back: iOS hasn't sent anything yet, 150° is stale, so nothing is "still".
+        hinge.run(30, frames: false) { _ in 150 }
+        source.reset(at: hinge.time)
+        #expect(source.awaitingFreshReport)
+        #expect(source.isStill(at: hinge.time) == false)
+        // The resume hold with no report (the fake sends nothing while the angle is unchanged): no snap to 150°.
+        hinge.run(1, frames: false, snap: true) { _ in 150 }
+        #expect(source.isStill(at: hinge.time) == false)
+        #expect(source.lowRestFallback(at: hinge.time) == .moving)
+        #expect(source.restIsBelowFloor(at: hinge.time) == false)
+        #expect(abs(source.openAngle - 160) < 0.5)
+        // The fresh report (HingeReader's re-enable): the player now rests at 140°, and the snap lands right there.
+        hinge.run(0.6, frames: false, snap: true) { _ in 140 }
+        #expect(source.awaitingFreshReport == false)
+        #expect(source.isStill(at: hinge.time))
+        #expect(abs(source.openAngle - 140) < 0.05)
+        // A reading from the last second (the launch's first sample) is kept; no reading at all waits for nothing.
+        let launch = HingeTuckSource(logs: false)
+        let launchHinge = FakeHinge(source: launch)
+        launchHinge.run(0.2) { _ in 150 }
+        launch.reset(at: launchHinge.time)
+        #expect(launch.awaitingFreshReport == false)
+        let none = HingeTuckSource(logs: false)
+        none.reset(at: 5)
+        #expect(none.awaitingFreshReport == false)
     }
 }

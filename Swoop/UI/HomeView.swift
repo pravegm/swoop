@@ -14,8 +14,11 @@ struct HomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.accessibilitySwitchControlEnabled) private var switchControl
+    /// FINAL-FIXES #2: the day is re-read as the app comes back to the foreground.
+    @Environment(\.scenePhase) private var scenePhase
     @State private var appeared = false
-    /// Re-read every 30 s so the Daily rolls over at midnight while Home stays open.
+    /// Re-read every 30 s so the Daily rolls over at midnight while Home stays open (and on appear and on return to
+    /// the foreground, FINAL-FIXES #2).
     @State private var today = DailySeed.dayNumber(for: Date())
     @State private var now = Date()
     /// Press-and-hold on the title bird (phones): the touch control's feel, taught on Home.
@@ -70,15 +73,7 @@ struct HomeView: View {
                        alignment: info.mirrored ? .topTrailing : .topLeading)
                 .position(x: l.caption.midX, y: l.caption.midY)
                 .accessibilitySortPriority(0)
-            if controller.showsWingCheckCard {
-                // R6 (UX §2.4): an existing Duo player is asked once which half stays sharp.
-                WingCheckCard(compact: info.isCompact, onCheck: { controller.openWingCheck() },
-                              onLater: { controller.dismissWingCheckCard() })
-                    .frame(width: min(info.birdPage.width, 380))
-                    .position(x: info.birdPage.midX, y: l.textBlock.midY)
-                    .transition(.opacity)
-                    .accessibilitySortPriority(11)
-            }
+
             menu(l)
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared || reduceMotion ? 0 : 24)
@@ -122,6 +117,7 @@ struct HomeView: View {
         .animation(SwoopTheme.settle(reduceMotion), value: showsTapOffer)
         .frame(width: info.size.width, height: info.size.height, alignment: .topLeading)
         .onAppear {
+            refreshDay()
             controller.setHomeTextRects(layout.textRects)
             controller.setHomeMenuRects(Self.menuRects(layout, fresh: fresh))
             titleHidden = false
@@ -141,14 +137,22 @@ struct HomeView: View {
                 withAnimation(.easeIn(duration: Self.glowSeconds / 2)) { flyGlow = false }
             }
         }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { refreshDay() }
+        }
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
-                now = Date()
-                let day = DailySeed.dayNumber(for: now)
-                if day != today { today = day }
+                refreshDay()
             }
         }
+    }
+
+    /// The clock and today's Daily day, now (the tile's date, status and countdown).
+    private func refreshDay() {
+        now = Date()
+        let day = DailySeed.dayNumber(for: now)
+        if day != today { today = day }
     }
 
     // MARK: The title bird (live with the hinge)
@@ -204,22 +208,28 @@ struct HomeView: View {
                                     returning: store.data.flightSchool != .notStarted && !fresh)
         // R8: one colour for the line on every visit (it changed from white to yellow between visits).
         let gold = false
-        return VStack(alignment: info.mirrored ? .trailing : .leading, spacing: 8) {
+        // FINAL-FIXES #12: the caption fits its rect (it ran into the Settings and Scores pills on 667 × 375 and
+        // 844 × 390): the headline gets the lines that fit, and the goal sentence shows only when it fits under it.
+        let rect = layout.caption
+        let plan = HomeCaptionPlan.make(text: text, objective: text != RouteRules.objective ? RouteRules.objective : nil,
+                                        width: rect.width, height: rect.height, compact: info.isCompact)
+        return VStack(alignment: info.mirrored ? .trailing : .leading, spacing: HomeCaptionPlan.spacing) {
             Text(text)
                 .font(SwoopType.headline(info.isCompact))
                 .foregroundStyle(gold ? SwoopTheme.goldLight : SwoopTheme.foam)
                 .multilineTextAlignment(info.mirrored ? .trailing : .leading)
-                .lineLimit(info.isCompact ? 2 : 3)
+                .lineLimit(plan.headlineLines)
                 .minimumScaleFactor(0.75)
                 .id(text)
                 .transition(.opacity)
             // R10 P0-2: before the first flight the goal sentence shows too (testers met it only after their first go).
-            if text != RouteRules.objective {
+            if plan.showsObjective {
                 Text(RouteRules.objective)
                     .font(SwoopType.body(info.isCompact))
                     .foregroundStyle(SwoopTheme.mist)
                     .multilineTextAlignment(info.mirrored ? .trailing : .leading)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(plan.objectiveLines)
+                    .minimumScaleFactor(0.8)
             }
         }
         .swoopLegible()
@@ -348,8 +358,11 @@ struct HomeView: View {
         let attempted = store.hasDailyAttempt(day: today)
         let next = ShareText.nextInShort(seconds: ShareText.secondsToNextDaily(now: now))
         let status = Self.dailyStatus(record: store.data.dailyRecord(day: today), attempted: attempted, nextIn: next)
+        // FINAL-FIXES #2: the controller decides at the tap, on today's date (the tile's `today` can be a beat old
+        // after midnight UTC): today's card once today has a try, else today's scored Daily.
         return SwoopButton(kind: .secondary, height: r.height, compact: info.isCompact, action: {
-            if attempted { controller.openDailyCard() } else { controller.playDaily() }
+            refreshDay()
+            controller.openDailyCard()
         }) {
             HStack(spacing: 12) {
                 Image(systemName: "calendar")
@@ -378,7 +391,10 @@ struct HomeView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(AppRules.dailyTitle(day: today)). \(status)\(streak >= 2 ? ", \(streak)-day streak" : "")")
         .accessibilityAddTraits(.isButton)
-        .accessibilityAction { if attempted { controller.openDailyCard() } else { controller.playDaily() } }
+        .accessibilityAction {
+            refreshDay()
+            controller.openDailyCard()
+        }
     }
 
     /// The Daily button's second line (UX §3). Pure; tested.
@@ -524,32 +540,55 @@ struct HomeView: View {
     }
 }
 
-/// "Which half stays sharp when you fold?" (UX §2.4).
-struct WingCheckCard: View {
-    var compact = false
-    let onCheck: () -> Void
-    let onLater: () -> Void
+/// FINAL-FIXES #12: how Home's caption fits its rect: the headline's line limit, and whether the goal sentence fits
+/// under it (on 667 × 375 and 844 × 390 it ran into the corner pills). Estimated like `ResultsPlan` (0.56 em a
+/// character, a 1.3 line height), on the safe side. Pure; tested.
+struct HomeCaptionPlan: Equatable {
+    /// The headline's line limit: every line that fits (above the goal sentence when it shows), at most 2 on iPhones
+    /// and 3 on the Duo, never under 1 (it scales down to 75 % first).
+    var headlineLines: Int
+    var showsObjective: Bool
+    var objectiveLines: Int
 
-    var body: some View {
-        VStack(spacing: 10) {
-            Text("Which half stays sharp when you fold?")
-                .font(SwoopType.headline(compact))
-                .foregroundStyle(SwoopTheme.foam)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-            Text("Your bird should fly on that half.")
-                .font(SwoopType.body(compact))
-                .foregroundStyle(SwoopTheme.mist)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-            HStack(spacing: 10) {
-                SwoopButton(kind: .primary, height: SwoopTheme.primaryHeight(compact), compact: compact,
-                            action: onCheck) { Text("Check now").lineLimit(1) }
-                SwoopButton(kind: .secondary, height: SwoopTheme.secondaryHeight(compact), compact: compact,
-                            action: onLater) { Text("Not now").lineLimit(1) }
-            }
-        }
-        .swoopCard(radius: SwoopTheme.cardRadius(compact))
+    static let spacing: CGFloat = 8
+    static let lineHeight: CGFloat = 1.3
+    static func headlineSize(_ compact: Bool) -> CGFloat { compact ? 19 : 22 }
+    static func bodySize(_ compact: Bool) -> CGFloat { compact ? 15 : 17 }
+
+    static func lines(_ s: String, size: CGFloat, width: CGFloat) -> Int {
+        guard width > 0 else { return 1 }
+        return max(1, Int((CGFloat(s.count) * size * 0.56 / width).rounded(.up)))
+    }
+
+    /// The text's height at `lines` lines of `size`.
+    static func height(lines: Int, size: CGFloat) -> CGFloat { CGFloat(max(lines, 0)) * size * lineHeight }
+
+    static func make(text: String, objective: String?, width: CGFloat, height: CGFloat, compact: Bool)
+        -> HomeCaptionPlan {
+        let hs = headlineSize(compact)
+        let bs = bodySize(compact)
+        let maxHead = compact ? 2 : 3
+        let headLine = hs * lineHeight
+        // Alone, the headline may take every line that fits (it scales down before it would need more).
+        let aloneLimit = max(1, min(maxHead, Int((height / headLine).rounded(.down))))
+        let alone = HomeCaptionPlan(headlineLines: aloneLimit, showsObjective: false, objectiveLines: 0)
+        guard let objective else { return alone }
+        // The goal sentence shows only when it fits, whole (≤ 2 lines), under the lines the headline needs.
+        let needHead = min(lines(text, size: hs, width: width), aloneLimit)
+        let need = lines(objective, size: bs, width: width)
+        let room = height - Self.height(lines: needHead, size: hs) - spacing
+        let fitBody = room > 0 ? Int((room / (bs * lineHeight)).rounded(.down)) : 0
+        guard need <= min(fitBody, 2) else { return alone }
+        let left = height - Self.height(lines: need, size: bs) - spacing
+        let headLimit = max(needHead, min(maxHead, Int((left / headLine).rounded(.down))))
+        return HomeCaptionPlan(headlineLines: headLimit, showsObjective: true, objectiveLines: need)
+    }
+
+    /// The caption's height at its limits (the most it can take).
+    func used(compact: Bool) -> CGFloat {
+        let head = Self.height(lines: headlineLines, size: Self.headlineSize(compact))
+        guard showsObjective else { return head }
+        return head + Self.spacing + Self.height(lines: objectiveLines, size: Self.bodySize(compact))
     }
 }
 

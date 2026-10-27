@@ -34,7 +34,8 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Your bests, ranks, goals, birds and skies will be erased. Daily Flight results are kept. This can't be undone.")
+            // FINAL-FIXES #16 (glossary): progression is "levels", never "ranks".
+            Text("Your bests, levels, goals, birds and skies will be erased. Daily Flight results are kept. This can't be undone.")
         }
     }
 
@@ -61,7 +62,7 @@ struct SettingsView: View {
                 if Self.showsTuckBy(hasHinge: controller.hasHinge, playWithTouch: settings.playWithTouch) {
                     segmentRow("Wings by", icon: "hand.tap.fill", options: ["Holding", "Tapping"],
                                selected: settings.tuckByTapping ? 1 : 0,
-                               footnote: "Tapping: one tap tucks, the next opens. Made for Switch Control and VoiceOver.") { i in
+                               footnote: "Tapping: one tap folds the wings, the next opens. Made for Switch Control and VoiceOver.") { i in
                         settings.tuckByTapping = i == 1
                         settings.tapOfferAnswered = true
                     }
@@ -91,15 +92,18 @@ struct SettingsView: View {
                           footnote: "Off: Swoop plays sound even in Silent Mode.")
             }
             .swoopCard(padding: 14, radius: SwoopTheme.cardRadius(c))
+            #if DEBUG
+            // R4 P1-15: the founder's device test. FINAL-FIXES #1: Debug builds only. It is compiled out of Release,
+            // so App Review, TestFlight and the App Store never see this card or its strings.
             if BuildChannel.isTestBuild {
-                // R4 P1-15: the founder's device test. Never in an App Store build.
                 PageHeading(text: "Device test", compact: c)
                 VStack(alignment: .leading, spacing: 4) {
-                    toggleRow("Hinge readout (TestFlight)", icon: "gauge.with.needle", isOn: $settings.hingeReadout,
+                    toggleRow("Hinge readout", icon: "gauge.with.needle", isOn: $settings.hingeReadout,
                               footnote: "Shows the live angle, open angle, tuck, report rate, pose and strokes.")
                 }
                 .swoopCard(padding: 14, radius: SwoopTheme.cardRadius(c))
             }
+            #endif
         }
     }
 

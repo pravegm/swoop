@@ -438,9 +438,20 @@ struct FlightSchool: Equatable {
             return tapping ? "Tap again at the bottom" : (touch ? "Let go at the bottom" : "Open at the bottom")
         case .land:
             return tapping ? "Tap to come down" : (touch ? "Hold to come down" : "Fold to come down")
-        case .hold, .wingCheck, .soar, .rhythm, .storm:
+        case .hold:
+            // FINAL-FIXES #3: the step's correction ("Open it wider", "Turn it sideways") is the muted second line
+            // under "Hold it open" (it was computed but never drawn). In-world words carry no full stop.
+            return subline.map { Self.inWorldLine($0) }
+        case .wingCheck, .soar, .rhythm, .storm:
             return nil
         }
+    }
+
+    /// A help sentence as in-world words: no closing full stop (UX-ROUND-9 §4.3). Pure; tested.
+    static func inWorldLine(_ s: String) -> String {
+        var t = s.trimmingCharacters(in: .whitespaces)
+        while t.hasSuffix(".") && !t.hasSuffix("…") { t.removeLast() }
+        return t
     }
 
     /// R11 P0-7: the school meter's lead this frame: after step 6's Perfect it jumps away from the storm (Scene's
@@ -678,10 +689,10 @@ struct FlightSchool: Equatable {
                 subline = input.landscape ? nil : "Turn it sideways."
             } else {
                 let a = input.angle ?? 0
+                // FINAL-FIXES #3: a Duo opened flat passes, the same as a relaxed book (most players open it fully when
+                // told "Hold it open"; the countdown's own flat hold asks for the bend later, if it matters).
                 if !input.landscape {
                     subline = "Turn it sideways."
-                } else if a >= 174 {
-                    subline = "A little less than flat."
                 } else if a < 110 {
                     subline = "Open it wider."
                 } else {
@@ -957,7 +968,7 @@ enum FlightSchoolCopy {
     /// The help line after a miss (UX §1.2), per step. Optional and muted.
     static func failure(_ step: SchoolStep, touch: Bool) -> String? {
         switch step {
-        case .hold: return touch ? "Turn it sideways." : "A little less than flat."
+        case .hold: return touch ? "Turn it sideways." : "Open it wider."
         case .wings: return touch ? nil : "Not that far. Just a little."
         case .dive: return touch ? "You let go too soon. Keep holding." : "You opened too soon. Stay folded."
         case .soar: return touch ? "Let go to take off." : "Open to take off."
