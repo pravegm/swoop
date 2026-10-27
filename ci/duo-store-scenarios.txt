@@ -1,24 +1,36 @@
-# Swoop App Store frames, iPhone Duo inner-display set (docs/appstore/screenshots.md). Run by
-# .github/workflows/store.yml: ci/store-capture.sh duo → ci/duo.sh store pass (STORE_LIST=this file,
-# STORE_FILTER='^D[0-9]'; the Duo simulator starts in book pose with a real fold and the pass holds the hinge at 150°),
-# writing store-<name>.png at 2853 x 2007 (fold at x ≈ 1368–1488 px). ci/store-set.sh then captions them with
-# REQUIRE_LOG 'SWOOP-T canvas 951x669 fold=1' (the inner display, folded), and D1 also feeds frame 1 of the iPhone sets.
+# Swoop App Store frames, iPhone Duo inner-display set (docs/appstore/screenshots.md, "Captions for the Round 6–9
+# build", 27 Oct). Run by .github/workflows/store.yml: ci/store-capture.sh duo → ci/duo.sh store pass
+# (STORE_LIST=this file, STORE_FILTER='^D[0-9]'; the Duo simulator starts in book pose with a real fold and the pass
+# holds the hinge at 150°), writing store-<name>.png at 2853 x 2007 (fold at x ≈ 1368–1488 px). ci/store-set.sh then
+# captions them with REQUIRE_LOG 'SWOOP-T canvas 951x669 fold=1 mirrored=1', and D01 also feeds frame 1 of the
+# iPhone sets. Names are zero-padded (D01–D10) so the upload folder sorts in frame order.
 #
 # Same format as ci/store-scenarios.txt: name|demo args|wait|caption|expect|frame (frame: flat or book).
-#  - D1 `book`: this capture, split at the fold and drawn on a stylised Duo held open like a book (store-frame --book).
+#  - MIRRORED BY DEFAULT (R6–R9): the bird flies on the Duo's sharp half (screen-right), right to left, the storm behind
+#    it on the right, the clear sky ahead on the left page. That's what a Duo player sees: don't "fix" it with `mirror`
+#    or `birdSide=`. The workflow requires mirrored=1, and ci/store-set.sh then puts the frame's light on the left.
+#  - D01 `book`: this capture, split at the fold and drawn on a stylised Duo held open like a book (store-frame --book).
+#    The split is geometric (left half on the left page, right half on the right page), so the mirrored layout is kept
+#    exactly as captured.
 #  - No `touch`: the Duo frames are the hinge game (the autopilot flies, so the held hinge never pauses a run).
-#  - Same truthfulness notes as ci/store-scenarios.txt. Seeds and freeze keys are the ones proven in ci/duo-scenarios.txt.
+#  - Same glossary and truthfulness notes as ci/store-scenarios.txt. Seeds and freezes are the ones proven in
+#    ci/duo-scenarios.txt.
 
-# ---- iPhone Duo inner display (2853 x 2007): eight frames -----------------------------------------------------------
-D1-book-hero|screen=home;progress=mid;bird=gull;sky=goldenHour|6|The two halves are your *wings*. / Hold your Duo like a book.||book
-D2-perfect-chain|mode=flight;seed=7;autopilot=perfect;chain=4;freezeOn=perfect;freezeAfter=0;freezeDelay=0.12|20|Land the downslope. *Perfect.* / Three in a row catch a Tailwind.|SWOOP-T freeze perfect .*chain=[4-9]
-D3-tailwind|mode=flight;seed=7;autopilot=perfect;chain=2;freezeOn=tailwind;freezeAfter=0;freezeDelay=0.12|24|Chain three. Ride the *Tailwind*. / A burst of speed. The storm falls back.|
-D4-storm|mode=flight;seed=7;autopilot=casual;lead=0.06;freezeOn=stormclose;freezeAfter=0|20|*Outfly* the storm. / Every Perfect pushes it back.|
-D5-lighthouse|mode=flight;seed=7;autopilot=perfect;skipTo=3850;freezeOn=lighthouse;freezeAfter=0;freezeDelay=0.4|30|Reach the next *lighthouse*. / The first is 4 km out. Can you make it?|
-D6-moonrise|mode=flight;seed=11;autopilot=perfect;skipCountdown;sky=moonrise;bird=heron;freezeAt=7|12|Fly on by *moonlight*. / Earn new skies and birds as you rank up.|
-D7-results|screen=results;seed=7;progress=mid;autopilot=casual|8|One more *flight*? / Goals to chase. Ranks to earn.|SWOOP-T run meters=
-D8-birds|screen=birds;progress=mid|6|Eight birds. Five *skies*. / No ads. No in-app purchases.|
+# ---- iPhone Duo inner display (2853 x 2007): ten frames -------------------------------------------------------------
+D01-book-hero|screen=home;progress=mid;bird=gull;sky=goldenHour|6|The two halves are your *wings*. / Hold your Duo like a book.||book
+D02-perfect|mode=flight;seed=7;autopilot=perfect;chain=4;freezeOn=perfect;freezeAfter=0;freezeDelay=0.12|20|Land on the way down: *Perfect* / Fold going down. Open going up.|SWOOP-T freeze perfect .*chain=[4-9]
+D03-storm|mode=flight;seed=7;autopilot=casual;lead=0.06;freezeOn=stormclose;freezeAfter=0|20|Stay ahead of the *storm* / Reach the next lighthouse.|
+D04-lighthouse|mode=flight;seed=7;autopilot=perfect;skipTo=3850;freezeOn=lighthouse;freezeAfter=0;freezeDelay=0.4|30|Reach the next *lighthouse* / Gull Point is 4 km out. Can you make it?|
+D05-tailwind|mode=flight;seed=7;autopilot=perfect;chain=2;freezeOn=tailwind;freezeAfter=0;freezeDelay=0.12|24|Three in a row: *Tailwind!* / A burst of speed. The storm falls back.|
+D06-moonrise|mode=flight;seed=11;autopilot=perfect;skipCountdown;sky=moonrise;bird=heron;freezeAt=7|12|Fly on by *moonlight* / New birds and skies as you level up.|
+D07-results|screen=results;seed=7;progress=mid;autopilot=casual|8|One more *flight*? / See how far along the route you got.|SWOOP-T run meters=
+D08-birds|screen=birds;progress=mid|6|Eight birds. Five *skies*. / No ads. No in-app purchases.|
+# New (recommended, 27 Oct): the Route page, and Flight School's land step (the Duo variant, with the phone diagram
+# folding beside the bird) in its ghost-demo phase: the guide gull mid-arc into the landing ring.
+D09-route|screen=route;progress=mid|6|How far out can you *fly*? / Gull Point, Saltlight, Kestrel Head, and on.|
+D10-flight-school|session=first:school;school=land:demo|7|A guide gull shows you *how* / A short lesson on your first flight.|SWOOP-T school land demo
 
 # reserves (Duo): not captured by default; run them with a filter like '^(D[0-9]|DR)'.
-DR1-soar|mode=flight;seed=7;autopilot=perfect;skipCountdown;freezeOn=flying;freezeAfter=6|20|Fold to dive. Open to *soar*. / The hinge is the wing.|
-DR2-countdown|mode=flight;seed=7;freezeOn=countdown|6|Hold your Duo like a *book*. / The bird waits for your wings.|
+DR1-soar|mode=flight;seed=7;autopilot=perfect;skipCountdown;freezeOn=flying;freezeAfter=6|20|Fold going down. *Open* going up.|
+DR2-countdown|mode=flight;seed=7;freezeOn=countdown|6|Hold your Duo like a *book*. / Wings open, hold steady.|
+DR3-flight-school-turn|session=first:school;school=land:turn|7|A guide gull shows you *how* / A short lesson on your first flight.|SWOOP-T school land turn

@@ -28,7 +28,10 @@
 # for every book source $BOOK_REQUIRE (default: the Duo's folded 951x669 canvas). Captions are linted: ≤ 7 headline
 # words, never "Fold to Fly" (a competitor's tagline), none of DECISIONS #36's words. Output size and alpha are read
 # back with sips. A frame that fails a check is still framed but goes to store/_flagged/, so store/ holds only clean
-# frames. Never fails the job: always exits 0; every problem is a MANIFEST line and a ::warning::.
+# frames. A caption with a glossary-banned word (store-frame.swift: Outfly, downslope, crest, chain, rank, Flocks,
+# "tuck" as an instruction) is REJECTED: no frame at all. The light side (--light) follows the capture's last
+# "SWOOP-T canvas … mirrored=<0|1>" line: mirrored (the Duo default, bird on the right) → light from the left.
+# Never fails the job: always exits 0; every problem is a MANIFEST line and a ::warning::.
 # Env: STORE_RADIUS (flat capture corner radius, a fraction of its shorter side; default 0.06), STORE_LAYOUT
 #      (auto|top|side, default auto), REQUIRE_LOG, BOOK_DIR, BOOK_PREFIX (default store-), BOOK_SOURCE_SIZE (default
 #      2853x2007), BOOK_REQUIRE, BOOK_ANGLE (degrees, or auto = the hinge angle in the source log's last
@@ -121,7 +124,7 @@ compose() {
     if [[ -n "$BIN" ]]; then to 180 "$BIN" "$@"; else to 600 xcrun swift "$SRC" "$@"; fi
     status=$?
     (( status == 0 )) && return 0
-    (( status == 1 )) && return 1          # the compositor's own error: retrying won't help
+    (( status == 1 || status == 2 )) && return "$status"   # its own error / a rejected caption: no retry
     sleep 2                                 # a timeout or a crash: one more try
   done
   return "$status"
@@ -237,8 +240,17 @@ while IFS= read -r -u 3 line || [[ -n "$line" ]]; do
   fi
 
   # Content checks against the log of the picture actually shown.
-  if [[ "$mode" == book ]]; then check_log "$srclog" "$srcargs" "$expect" "$REQUIRE_LOG" "$BOOK_REQUIRE"
+  # A book:<name> source is another set's Duo capture: this set's REQUIRE_LOG (e.g. the iPhone's unfolded canvas)
+  # doesn't apply to it, only BOOK_REQUIRE does.
+  if [[ "$mode" == book && "$frame" == book:* ]]; then check_log "$srclog" "$srcargs" "$expect" "$BOOK_REQUIRE"
+  elif [[ "$mode" == book ]]; then check_log "$srclog" "$srcargs" "$expect" "$REQUIRE_LOG" "$BOOK_REQUIRE"
   else check_log "$srclog" "$srcargs" "$expect" "$REQUIRE_LOG"; fi
+
+  # The light side follows the bird: the clear sky is ahead of it. Mirrored (bird on the right, the Duo default since
+  # R6) → the light comes from the left. The last canvas line in the log is the layout that was on screen.
+  light=right
+  if [[ -f "$srclog" ]] && grep -E "SWOOP-T canvas " "$srclog" | tail -1 | grep -q "mirrored=1"; then light=left; fi
+  [[ "$light" == left ]] && notes+=("mirrored: light from the left")
 
   # Output size.
   if [[ "$mode" == book ]]; then
@@ -268,10 +280,17 @@ while IFS= read -r -u 3 line || [[ -n "$line" ]]; do
 
   dest="$STORE/$name.png"
   (( ${#problems[@]} > 0 )) && dest="$STORE/_flagged/$name.png"
-  cargs=(--in "$src" --out "$dest" --size "$outsize" --radius "$RADIUS" --layout "$LAYOUT" --caption "$caption")
+  cargs=(--in "$src" --out "$dest" --size "$outsize" --radius "$RADIUS" --layout "$LAYOUT" --light "$light"
+         --caption "$caption")
   [[ "$mode" == book ]] && cargs+=(--book --angle "$angle")
   report=$(compose "${cargs[@]}" 2>&1)
   status=$?
+  if (( status == 2 )); then
+    row "$name.png" - no - REJECTED "$mode" "$caption" "$(tail -1 <<< "$report")"
+    warn "$name: caption REJECTED ($(tail -1 <<< "$report"))"
+    missing=$((missing + 1))
+    continue
+  fi
   if (( status != 0 )) || [[ ! -f "$dest" ]]; then
     row "$name.png" - no - FAILED "$mode" "$caption" "store-frame exit $status: $(tail -1 <<< "$report")"
     warn "$name: store-frame failed ($(tail -1 <<< "$report"))"

@@ -1,15 +1,17 @@
 name: App Store screenshots
 
 # The App Store screenshot sets (docs/appstore/screenshots.md), manual only. Three jobs:
-#  • phones: builds the app, captures ci/store-scenarios.txt (P1–P8) on the iPhone 18 Pro Max (6.9", 2868 × 1320) and
+#  • phones: builds the app, captures ci/store-scenarios.txt (P01–P10) on the iPhone 18 Pro Max (6.9", 2868 × 1320) and
 #    the iPhone 18 Pro (6.3", 2622 × 1206) with ci/store-capture.sh (retries missing or wrong-sized frames). Artifacts
-#    raw-69, raw-63.
-#  • duo: the iPhone Duo (iOS 27.1 runtime, same setup as duo.yml), ci/duo-store-scenarios.txt (D1–D8) on the inner
-#    display (2853 × 2007). Artifact raw-duo. Skipped when duo_from_run names an earlier run whose raw-duo to reuse.
-#  • assemble: captions every set with ci/store-set.sh + ci/store-frame.swift. D1 (a real Duo inner capture) becomes the
+#    raw-69, raw-63. Every iPhone frame must log an unmirrored, unfolded canvas (the bird on the left half).
+#  • duo: the iPhone Duo (iOS 27.1 runtime, same setup as duo.yml), ci/duo-store-scenarios.txt (D01–D10) on the inner
+#    display (2853 × 2007), mirrored by default since R6 (bird on the right half). Artifact raw-duo. Skipped when
+#    duo_from_run names an earlier run whose raw-duo to reuse.
+#  • assemble: captions every set with ci/store-set.sh + ci/store-frame.swift. D01 (a real Duo inner capture) becomes the
 #    book-pose composite that is frame 1 of EVERY set, so this job waits for both capture jobs. Artifacts store-duo,
 #    store-69, store-63: upload-ready PNGs (store/*.png in name order), MANIFEST.txt / MANIFEST.tsv, and _flagged/.
-# One bad frame never fails the run: it is listed in its MANIFEST (and the run summary) as MISSING, FLAGGED or FAILED.
+# One bad frame never fails the run: it is listed in its MANIFEST (and the run summary) as MISSING, FLAGGED, FAILED or
+# REJECTED (a caption with a glossary-banned word: no frame is made).
 on:
   workflow_dispatch:
     inputs:
@@ -326,7 +328,8 @@ jobs:
         env:
           FILTER: ${{ inputs.duo_filter }}
           STORE_RADIUS: "0.05"
-          REQUIRE_LOG: "SWOOP-T canvas 951x669 fold=1"
+          # The folded inner display, mirrored: since R6 the Duo's bird flies on the sharp, screen-right half.
+          REQUIRE_LOG: "SWOOP-T canvas 951x669 fold=1 mirrored=1"
         run: bash ci/store-set.sh raw-duo 'iPhone Duo inner display (2853 x 2007)' "2853x2007" ci/duo-store-scenarios.txt "$FILTER" store-
 
       - name: Caption the 6.9-inch set
@@ -336,6 +339,8 @@ jobs:
           FILTER: ${{ inputs.phone_filter }}
           STORE_RADIUS: "0.09"
           BOOK_DIR: raw-duo
+          # No fold, bird on the left half (P01's book source is checked against BOOK_REQUIRE instead).
+          REQUIRE_LOG: "SWOOP-T canvas [0-9]+x[0-9]+ fold=0 mirrored=0"
         run: bash ci/store-set.sh raw-69 'iPhone 6.9-inch (2868 x 1320)' "2868x1320" ci/store-scenarios.txt "$FILTER"
 
       # 2622 x 1206 (iPhone 18/17/16 Pro) and 2556 x 1179 both go in App Store Connect's 6.3-inch slot, the one
@@ -347,6 +352,7 @@ jobs:
           FILTER: ${{ inputs.phone_filter }}
           STORE_RADIUS: "0.09"
           BOOK_DIR: raw-duo
+          REQUIRE_LOG: "SWOOP-T canvas [0-9]+x[0-9]+ fold=0 mirrored=0"
         run: bash ci/store-set.sh raw-63 'iPhone 6.3-inch (2622 x 1206)' "2622x1206 2556x1179" ci/store-scenarios.txt "$FILTER"
 
       - name: Upload store-duo

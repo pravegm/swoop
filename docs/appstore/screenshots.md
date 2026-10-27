@@ -56,7 +56,7 @@ Same frames and captions at both sizes, captured with the `touch` key so no Duo-
 
 | # | In-game moment | Caption: headline / sub-line | Demo args (`ci/store-scenarios.txt`) |
 |---|---|---|---|
-| **P1** | **Book composite** of D1: the title bird's wings across the fold | **The two halves are your *wings*.** / Made for iPhone Duo. Plays on every iPhone. | frame `book:D1-book-hero` (fallback capture `screen=home;progress=mid;bird=gull;sky=goldenHour;touch`) |
+| **P1** | **Book composite** of D1: the title bird's wings across the fold | **The two halves are your *wings*.** / Best on iPhone Duo. Plays on every iPhone. | frame `book:D1-book-hero` (fallback capture `screen=home;progress=mid;bird=gull;sky=goldenHour;touch`) |
 | **P2** | A Perfect: ring on the water, gold trail, the "×4 in a row" chip | **Land on the way down: *Perfect*** / Perfect landings push the storm back. | `mode=flight;seed=7;autopilot=perfect;touch;chain=4;freezeOn=perfect;freezeAfter=0;freezeDelay=0.12` |
 | **P3** | The storm close behind, the meter low, the NEXT chip showing the lighthouse ahead | **Stay ahead of the *storm*** / Reach the next lighthouse. | `mode=flight;seed=7;autopilot=casual;touch;lead=0.12;freezeOn=stormclose;freezeAfter=0` |
 | **P4** | Passing Gull Point: beam, "Gull Point!" | **Reach the next *lighthouse*** / Gull Point is 4 km out. Can you make it? | `…;skipTo=3850;freezeOn=lighthouse;freezeAfter=0;freezeDelay=0.4` |

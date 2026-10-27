@@ -30,9 +30,17 @@
 //   Image CIPerspectiveTransform; the corner order is self-tested at start-up), onto one page of a stylised iPhone Duo
 //   standing open like a book at --angle degrees (default 140; each page turned (180 − angle) / 2 toward the viewer),
 //   tilted back --tilt degrees and seen from in front, slightly above. Drawn around it: a thin graphite bezel (2.4 % of
-//   the page height, lit from the right), the hinge spine (a metal barrel showing past the top and bottom bezel, and the
+//   the page height, lit from the --light side), the hinge spine (a metal barrel showing past the top and bottom bezel, and the
 //   seam in the bezel), a soft drop shadow and a ground shadow. No hands. Nothing is drawn ON the screen: the pixels are
 //   the capture's, only warped; its outer corners are clipped to the display's rounded corners.
+// --light right|left (default right): the side the light comes from ("light runs ahead"). On the iPhones the bird flies
+//   left to right, so the clear sky is on the right. The Duo frames are mirrored (R6–R9: the bird on the sharp,
+//   screen-right half, flying right to left, the storm behind it on the right), so ci/store-set.sh passes `left` when
+//   the capture's log says `mirrored=1`. That side gets the sun glow, the dusk end of the sweep and the lit bezel page.
+//   The book geometry is the same either way: the capture is split at the fold and each half stays on its own page.
+// Caption glossary (docs/appstore/screenshots.md, "Captions for the Round 6–9 build"): a caption using "Outfly",
+//   "downslope", "crest", "chain", "rank", "Flocks", "Fold to Fly", or "tuck" as an instruction ("Hold to tuck",
+//   "Tuck to dive") is REJECTED: no frame is written, exit status 2, `store-frame: caption rejected: …`.
 // Output: exactly --size pixels (default: the input's size), opaque sRGB PNG with no alpha channel.
 // Prints one line: `store-frame: <out> <W>x<H> mode=flat|book layout=top|side cap=<% of H> lines=<n> font=<name>
 //   rounded=<yes|no>` plus, for --book, ` angle=<a> fold=<px> warp=<ok|flipV|flipH|flipHV> extent=<ok|mismatch>`.
@@ -66,6 +74,41 @@ guard let input = options["in"], let output = options["out"] else { fail("needs 
 let rawCaption = options["caption"] ?? ""
 let bookMode = (options["book"] ?? "0") != "0"
 let cornerFraction = CGFloat(Double(options["radius"] ?? "") ?? 0.06)
+
+let lightLeft = (options["light"] ?? "right").lowercased() == "left"
+
+// MARK: Caption glossary (the app's own words only; checked before anything is drawn)
+
+func captionProblems(_ caption: String) -> [String] {
+    let plain = caption.replacingOccurrences(of: "*", with: "")
+    let rules: [(pattern: String, label: String)] = [
+        ("\\bout-?fl(y|ies|ew|ying|own)\\b", "\"Outfly\""),
+        ("\\bdown-?slopes?\\b", "\"downslope\""),
+        ("\\bcrest(s|ed|ing)?\\b", "\"crest\""),
+        ("\\bchain(s|ed|ing)?\\b", "\"chain\""),
+        ("\\brank(s|ed|ing)?\\b", "\"rank\""),
+        ("\\bflocks?\\b", "\"Flocks\""),
+        ("\\bfold to fly\\b", "\"Fold to Fly\" (Valley Run's tagline)"),
+        // "tuck" as an instruction: at the start of a sentence or line, or after to / and / then / now / just / or.
+        ("(^|[.!?:/]\\s*|\\b(to|and|then|now|just|or)\\s+)tuck(s|ing)?\\b", "\"tuck\" as an instruction"),
+    ]
+    var found: [String] = []
+    let range = NSRange(plain.startIndex..., in: plain)
+    for rule in rules {
+        guard let re = try? NSRegularExpression(pattern: rule.pattern, options: [.caseInsensitive]) else { continue }
+        if re.firstMatch(in: plain, options: [], range: range) != nil { found.append(rule.label) }
+    }
+    return found
+}
+
+let rejected = captionProblems(rawCaption)
+if !rejected.isEmpty {
+    let message = "store-frame: caption rejected: uses " + rejected.joined(separator: ", ")
+        + " (glossary, docs/appstore/screenshots.md); no frame written"
+    FileHandle.standardError.write((message + "\n").data(using: .utf8)!)
+    print(message)
+    exit(2)
+}
 
 func number(_ key: String, _ fallback: Double) -> Double {
     guard let text = options[key], let value = Double(text), value.isFinite else { return fallback }
@@ -138,15 +181,15 @@ ctx.fill(CGRect(x: 0, y: 0, width: W, height: H))
 if let sweep = CGGradient(colorsSpace: space,
                           colors: [srgb(surfaceNavy), srgb(seaDeep), srgb(duskZenith), srgb(duskMid)] as CFArray,
                           locations: [0, 0.35, 0.75, 1]) {
-    // Bottom-left (sea) to top-right (dusk sky).
-    ctx.drawLinearGradient(sweep, start: CGPoint(x: 0, y: 0), end: CGPoint(x: W, y: H),
+    // From the sea (bottom, away from the light) to the dusk sky (top, on the light's side).
+    ctx.drawLinearGradient(sweep, start: CGPoint(x: lightLeft ? W : 0, y: 0), end: CGPoint(x: lightLeft ? 0 : W, y: H),
                            options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
 }
 ctx.saveGState()
 ctx.setBlendMode(.plusLighter)   // additive warm light: never gold at partial alpha over navy
 if let glow = CGGradient(colorsSpace: space, colors: [srgb(sunGlow, 0.20), srgb(sunGlow, 0)] as CFArray,
                          locations: [0, 1]) {
-    let centre = CGPoint(x: W * 0.80, y: H * 0.40)
+    let centre = CGPoint(x: W * (lightLeft ? 0.20 : 0.80), y: H * 0.40)
     ctx.drawRadialGradient(glow, startCenter: centre, startRadius: 0, endCenter: centre,
                            endRadius: max(W, H) * 0.45, options: [])
 }
@@ -395,7 +438,8 @@ func drawBook() {
     ctx.fillPath()
     ctx.endTransparencyLayer()
     ctx.restoreGState()
-    for (bodyPath, colour) in [(leftBodyPath, bezelDark), (rightBodyPath, bezelLit)] {
+    for (bodyPath, colour) in [(leftBodyPath, lightLeft ? bezelLit : bezelDark),
+                               (rightBodyPath, lightLeft ? bezelDark : bezelLit)] {
         ctx.saveGState()
         ctx.addPath(bodyPath)
         ctx.setFillColor(srgb(colour))
@@ -449,6 +493,7 @@ func drawBook() {
     let flips = (convention.flipV ? "V" : "") + (convention.flipH ? "H" : "")
     bookReport = " angle=\(Int(angle.rounded())) fold=\(fold) warp=\(flips.isEmpty ? "ok" : "flip" + flips)"
         + " extent=\(extentOK ? "ok" : "mismatch")" + (usedSoftwareCI ? " ci=software" : "")
+        + " light=\(lightLeft ? "left" : "right")"
 }
 
 if bookMode { drawBook() } else { drawFlat() }

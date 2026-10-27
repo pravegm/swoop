@@ -1,30 +1,38 @@
-# Swoop App Store frames, iPhone sets (docs/appstore/screenshots.md). Run by .github/workflows/store.yml:
-#   ci/store-capture.sh phone → ci/screenshots.sh (SCENARIOS=this file, SCENARIO_FILTER='^P[0-9]', WAIT_FREEZE=1) on the
-#   iPhone 18 Pro Max (6.9", 2868 x 1320) and the iPhone 18 Pro (6.3", 2622 x 1206), then ci/store-set.sh captions them
-#   (ci/store-frame.swift) into <set>/store/ with a MANIFEST. The Duo set lives in ci/duo-store-scenarios.txt.
+# Swoop App Store frames, iPhone sets (docs/appstore/screenshots.md, "Captions for the Round 6–9 build", 27 Oct).
+# Run by .github/workflows/store.yml: ci/store-capture.sh phone → ci/screenshots.sh (SCENARIOS=this file,
+# SCENARIO_FILTER='^P[0-9]', WAIT_FREEZE=1) on the iPhone 18 Pro Max (6.9", 2868 x 1320) and the iPhone 18 Pro (6.3",
+# 2622 x 1206), then ci/store-set.sh captions them (ci/store-frame.swift) into <set>/store/ with a MANIFEST. The Duo
+# set lives in ci/duo-store-scenarios.txt. Names are zero-padded (P01–P10) so the upload folder sorts in frame order.
 #
 # name|demo args (Swoop/App/DemoMode.swift)|seconds to wait|caption: headline / sub-line|expect (extra log regex)|frame
 #  - wait: a freezeOn scenario waits for the app's "SWOOP-T freeze <x>" line instead (at least this long, max 60 s).
+#    Perfect and caught freezes land on Scene's peak (R10: "SWOOP-T freeze perfect peak …").
 #  - caption: `*word*` is the ONE gold-swash word; " / " starts the sub-line. Seven words max per headline. No "|".
-#    Never "Fold to Fly" (Valley Run's tagline); none of DECISIONS #36's words (tiny, island, fever, sunset, nightfall).
+#    The glossary's words only. store-frame.swift REJECTS Outfly, downslope, crest, chain, rank, Flocks, Fold to Fly and
+#    "tuck" as an instruction; store-set.sh flags DECISIONS #36's words (tiny, island, fever, sunset, nightfall).
 #  - frame: flat (default) or book:<Duo scenario> = the book-pose composite of that Duo capture (store-frame --book);
-#    P1's own capture here is only the fallback if the Duo capture is missing (then P1 is FLAGGED).
-#  - `touch`: no Duo-only hint text on an iPhone frame. The autopilot flies every flight frame.
-# Truthfulness (checked in Swoop/Core/Tuning.swift, 26 Oct): a Tailwind starts at every 3rd Perfect in a chain
-# (tailwindChain 3, +15 % speed, storm pushed back 600 pt); every Perfect pushes the storm back (perfectGapBonus); the
-# first lighthouse is at 4 km and passing one pushes the storm back (lighthouseGapBonus); 8 birds and 5 skies
-# (Shared/Contracts.swift), earned by rank (UX-SPEC §3–4); press and hold is the iPhone tuck (Settings: Tuck by Holding).
+#    P01's own capture here is only the fallback if the Duo capture is missing (then P01 is FLAGGED).
+#  - `touch`: no Duo-only line inside an iPhone capture. On iPhones the bird flies on the left half, left to right
+#    (the workflow requires "fold=0 mirrored=0" in every iPhone log). The autopilot flies every flight frame.
+# Truthfulness (docs/appstore/screenshots.md checklist, 27 Oct): Tailwind at 3 perfect landings in a row; every perfect
+# landing pushes the storm back; the route is Gull Point 4 km, Saltlight 9 km, Kestrel Head 15 km (Core/Lighthouses);
+# 8 birds and 5 skies, unlocked by level; hold / let go is the iPhone control; Flight School's guide gull shows each move.
 
-# ---- iPhone 6.9" (2868 x 1320) and 6.3" (2622 x 1206): eight frames -------------------------------------------------
-P1-book-hero|screen=home;progress=mid;bird=gull;sky=goldenHour;touch|6|The two halves are your *wings*. / Best on iPhone Duo. Hold to tuck on any iPhone.||book:D1-book-hero
-P2-perfect-chain|mode=flight;seed=7;autopilot=perfect;touch;chain=4;freezeOn=perfect;freezeAfter=0;freezeDelay=0.12|20|Land the downslope. *Perfect.* / Three in a row catch a Tailwind.|SWOOP-T freeze perfect .*chain=[4-9]
-P3-tailwind|mode=flight;seed=7;autopilot=perfect;touch;chain=2;freezeOn=tailwind;freezeAfter=0;freezeDelay=0.12|24|Chain three. Ride the *Tailwind*. / A burst of speed. The storm falls back.|
-P4-storm|mode=flight;seed=7;autopilot=casual;touch;lead=0.12;freezeOn=stormclose;freezeAfter=0|22|*Outfly* the storm. / Every Perfect pushes it back.|
-P5-lighthouse|mode=flight;seed=7;autopilot=perfect;touch;skipTo=3850;freezeOn=lighthouse;freezeAfter=0;freezeDelay=0.4|30|Reach the next *lighthouse*. / The first is 4 km out. Can you make it?|
-P6-moonrise|mode=flight;seed=11;autopilot=perfect;touch;skipCountdown;sky=moonrise;bird=heron;freezeAt=7|12|Fly on by *moonlight*. / Earn new skies and birds as you rank up.|
-P7-results|screen=results;seed=7;progress=mid;autopilot=casual|8|One more *flight*? / Goals to chase. Ranks to earn.|SWOOP-T run meters=
-P8-birds|screen=birds;progress=mid|6|Eight birds. Five *skies*. / No ads. No in-app purchases.|
+# ---- iPhone 6.9" (2868 x 1320) and 6.3" (2622 x 1206): ten frames ---------------------------------------------------
+P01-book-hero|screen=home;progress=mid;bird=gull;sky=goldenHour;touch|6|The two halves are your *wings*. / Best on iPhone Duo. Plays on every iPhone.||book:D01-book-hero
+P02-perfect|mode=flight;seed=7;autopilot=perfect;touch;chain=4;freezeOn=perfect;freezeAfter=0;freezeDelay=0.12|20|Land on the way down: *Perfect* / Perfect landings push the storm back.|SWOOP-T freeze perfect .*chain=[4-9]
+P03-storm|mode=flight;seed=7;autopilot=casual;touch;lead=0.12;freezeOn=stormclose;freezeAfter=0|22|Stay ahead of the *storm* / Reach the next lighthouse.|
+P04-lighthouse|mode=flight;seed=7;autopilot=perfect;touch;skipTo=3850;freezeOn=lighthouse;freezeAfter=0;freezeDelay=0.4|30|Reach the next *lighthouse* / Gull Point is 4 km out. Can you make it?|
+P05-tailwind|mode=flight;seed=7;autopilot=perfect;touch;chain=2;freezeOn=tailwind;freezeAfter=0;freezeDelay=0.12|24|Three in a row: *Tailwind!* / A burst of speed. The storm falls back.|
+P06-moonrise|mode=flight;seed=11;autopilot=perfect;touch;skipCountdown;sky=moonrise;bird=heron;freezeAt=7|12|Fly on by *moonlight* / New birds and skies as you level up.|
+P07-results|screen=results;seed=7;progress=mid;autopilot=casual|8|One more *flight*? / See how far along the route you got.|SWOOP-T run meters=
+P08-birds|screen=birds;progress=mid|6|Eight birds. Five *skies*. / No ads. No in-app purchases.|
+# New (recommended, 27 Oct). The doc suggests Route at position 4 and Flight School at 5 once both are clean: renumber
+# the names to reorder. P10 holds the land step in its ghost-demo phase (the guide gull mid-arc into the ring).
+P09-route|screen=route;progress=mid;touch|6|How far out can you *fly*? / Gull Point, Saltlight, Kestrel Head, and on.|
+P10-flight-school|session=first:school;school=land:demo;schoolTouch;touch|7|A guide gull shows you *how* / A short lesson on your first flight.|SWOOP-T school land demo
 
 # reserves (phone): not captured by default; run them with a filter like '^(P[0-9]|R[0-9])'.
-R1-soar|mode=flight;seed=7;autopilot=perfect;touch;skipCountdown;freezeOn=flying;freezeAfter=5|16|Hold to *dive*. Let go to soar. / On any iPhone.|
-R2-daily|mode=daily;seed=7;progress=mid;autopilot=expert;skipCountdown;freezeAt=8|13|One *Daily Flight*. Same sea for all. / One scored try a day.|
+R1-soar|mode=flight;seed=7;autopilot=perfect;touch;skipCountdown;freezeOn=flying;freezeAfter=5|16|Hold going down. *Let go* going up.|
+R2-daily|mode=daily;seed=7;progress=mid;autopilot=expert;skipCountdown;freezeAt=8|13|One *Daily Flight*. Same waves for everyone. / One try a day.|
+R3-flight-school-turn|session=first:school;school=land:turn;schoolTouch;touch|7|A guide gull shows you *how* / A short lesson on your first flight.|SWOOP-T school land turn
