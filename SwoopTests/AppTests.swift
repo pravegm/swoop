@@ -210,11 +210,11 @@ struct ProgressRulesTests {
         #expect(second.rankUp == AppRankUp(from: 0, to: 1, birds: [.tern], skies: [.roseDusk], trails: ["dawn"]))
         #expect(data.rank == 1)
         #expect(data.goalProgress["r0.m"] == nil)
-        // Rank 1's goals start fresh on the next run.
+        // Rank 1's goals start from the player's bests (R8 P0-4): the 1.5 km best is 75 % of a 2 km goal.
         let third = ProgressRules.record(makeRun(meters: 1_000), into: &data, today: 300, goals: fakeGoals,
                                          maxRank: 15, evaluate: fakeEvaluate, unlocks: noUnlocks, trailUnlocks: noTrails)
         #expect(third.goals.map { $0.goal.id } == ["r1.m", "r1.p", "r1.c"])
-        #expect(third.goals.first?.before == 0)
+        #expect(abs((third.goals.first?.before ?? -1) - 0.75) < 0.001)
     }
 
     @Test func bestsLifetimeAndNewBest() {
