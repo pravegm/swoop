@@ -121,21 +121,22 @@ enum SchoolRig {
                             ghost: CGPoint? = nil) -> CGPoint {
         let size = CGSize(width: 180, height: 30)
         let birdRect = CGRect(x: bird.x - 44, y: bird.y - 44, width: 88, height: 88)
+        let far = anchor == .ring
         func clear(_ p: CGPoint) -> CGPoint {
-            var q = clamp(p, size: size, canvas: c)
+            var q = clamp(p, size: size, canvas: c, allowFar: far)
             // Move up (or down) until the words' rect is 80 pt off the bird.
             let r = { (q: CGPoint) in CGRect(x: q.x - size.width / 2, y: q.y - size.height / 2, width: size.width,
                                               height: size.height) }
             // Off the guide gull too (Scene's `ghostScreenPoint`), sideways.
             if let g = ghost, r(q).insetBy(dx: -40, dy: -40).contains(g) {
                 q.x += (g.x < q.x ? 1 : -1) * (size.width / 2 + 60)
-                q = clamp(q, size: size, canvas: c)
+                q = clamp(q, size: size, canvas: c, allowFar: far)
             }
             if r(q).insetBy(dx: -80, dy: -80).intersects(birdRect) {
                 let upY = birdRect.minY - 80 - size.height / 2
                 let downY = birdRect.maxY + 80 + size.height / 2
                 q.y = upY - size.height / 2 > c.top + 8 ? upY : downY
-                q = clamp(q, size: size, canvas: c)
+                q = clamp(q, size: size, canvas: c, allowFar: far)
             }
             return q
         }
@@ -160,17 +161,20 @@ enum SchoolRig {
         }
     }
 
-    /// Inside the bird page (or the canvas on iPhone), ≥ 24 pt off the edges and ≥ 28 pt off the fold band.
-    static func clamp(_ p: CGPoint, size s: CGSize, canvas c: AppCanvas) -> CGPoint {
-        var page = c.hasFold ? c.birdPage : CGRect(origin: .zero, size: c.size)
-        if c.hasFold {
-            if c.mirrored {
-                let minX = c.foldMaxX + 28
-                if page.minX < minX { page = CGRect(x: minX, y: page.minY, width: max(page.maxX - minX, 0), height: page.height) }
-            } else {
-                let maxX = c.foldMinX - 28
-                if page.maxX > maxX { page.size.width = max(maxX - page.minX, 0) }
-            }
+    /// Inside one page, ≥ 24 pt off the edges and ≥ 28 pt off the middle band. The iPhone is laid out as two pages
+    /// as well (every screen keeps content off its middle band, `AppCanvas.isFoldClear`), so the same rule holds there.
+    /// The bird page, unless `allowFar` and the point is on the far page (the ring's words may sit by the ring).
+    static func clamp(_ p: CGPoint, size s: CGSize, canvas c: AppCanvas, allowFar: Bool = false) -> CGPoint {
+        let mid = (c.foldMinX + c.foldMaxX) / 2
+        let birdOnRight = c.birdPage.midX > mid
+        let useFar = allowFar && (p.x > mid) != birdOnRight
+        var page = useFar ? c.farPage : c.birdPage
+        if (useFar ? !birdOnRight : birdOnRight) {
+            let minX = c.foldMaxX + 28
+            if page.minX < minX { page = CGRect(x: minX, y: page.minY, width: max(page.maxX - minX, 0), height: page.height) }
+        } else {
+            let maxX = c.foldMinX - 28
+            if page.maxX > maxX { page.size.width = max(maxX - page.minX, 0) }
         }
         let inset = page.insetBy(dx: 24 + s.width / 2, dy: 24 + s.height / 2)
         guard inset.width > 0, inset.height > 0 else { return CGPoint(x: page.midX, y: page.midY) }

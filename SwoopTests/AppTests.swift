@@ -794,7 +794,10 @@ struct RoundThreeRuleTests {
         #expect(ResultsView.classify(isDailyCard: false, dailyDay: nil, practice: false, title: "First flight")
                 == .firstFlight)
         // Before launch the Daily shows its date (R5: no "3-day streak" on "#1"); from launch, its number.
-        #expect(ResultsView.overline(.dailyCard, day: DailySeed.launchDay + 9) == "Daily Flight #10")
+        // R9 glossary: "Daily Flight · 27 Oct" (the date, with the dot), never "#n" on screen.
+        let tag = AppRules.dailyTag(day: DailySeed.launchDay + 9)
+        #expect(ResultsView.overline(.dailyCard, day: DailySeed.launchDay + 9) == "Daily Flight · \(tag)")
+        #expect(!tag.contains("#"))
         #expect(ResultsView.overline(.firstFlight, day: nil) == "First flight")
         #expect(ResultsView.bestLine(.firstFlight, showsNewBest: false, best: 2_100, previousBest: 0) == nil)
         #expect(ResultsView.bestLine(.flight, showsNewBest: true, best: 7_000, previousBest: 6_420)
@@ -1346,8 +1349,8 @@ struct RoundFiveTests {
 
     @Test func dailyTagAndWeekdays() {
         #expect(AppRules.dailyTag(day: 298) == "26 Oct")
-        #expect(AppRules.dailyTag(day: DailySeed.launchDay) == "#1")
-        #expect(AppRules.dailyTag(day: DailySeed.launchDay + 41) == "#42")
+        #expect(!AppRules.dailyTag(day: DailySeed.launchDay).contains("#"))
+        #expect(AppRules.dailyTag(day: DailySeed.launchDay + 1) != AppRules.dailyTag(day: DailySeed.launchDay))
         #expect(AppRules.weekdayInitial(day: 0) == "T")      // 2026-01-01 was a Thursday
         #expect(AppRules.weekdayInitial(day: 3) == "S")
         #expect(AppRules.weekdayInitial(day: 4) == "M")
@@ -1889,7 +1892,7 @@ struct RoundSevenTests {
 
     /// The storm-line demo holds put the prompt on the asked line.
     @Test func stormLineHolds() {
-        for (k, prefix) in [("1", "A storm"), ("2", "Perfects push"), ("3", "Fly to")] {
+        for (k, prefix) in [("1", "A storm"), ("2", "Perfect landings push"), ("3", "Fly to")] {
             var s = FlightSchool(touch: false, asksWingCheck: false)
             s.start(at: .storm, time: 100)
             s.demo(phase: k, time: 100)

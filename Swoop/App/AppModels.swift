@@ -653,10 +653,9 @@ enum AppRules {
     /// R4 P1-13: the Daily is numbered from launch day (#1), so day one never reads "#298". The seed is unchanged.
     static var launchDay: Int { DailySeed.launchDay }
 
-    /// The Daily's on-screen tag (R5 P1-4): "#12" from launch day; before launch (TestFlight, CI) the date, "26 Oct",
-    /// so a pre-launch streak never reads "3-day streak" on "#1". Pure; tested.
+    /// The Daily's on-screen tag: its date, "26 Oct", always (R9 glossary, UX-ROUND-9 §4.1: "Daily Flight · 27 Oct",
+    /// never "Daily #n" on screen; the share line keeps its "#12" via `dailyNumber`). Pure; tested.
     static func dailyTag(day: Int) -> String {
-        if day >= DailySeed.launchDay { return "#\(dailyNumber(day: day))" }
         var c = DateComponents()
         c.year = 2026
         c.month = 1
