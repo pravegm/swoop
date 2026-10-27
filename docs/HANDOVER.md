@@ -44,7 +44,9 @@ and on a normal iPhone. **All twelve correctly explained** the hands, the storm,
 | 1.0 (5) | Round 8 |
 | 1.0 (6) | Round 9 |
 | 1.0 (7) | Round 10 |
-| **1.0 (8)** | **Round 11: install this one.** The storm has no hard edges, "The storm caught you", the lesson teaches each move before correcting it, a side-on fold diagram, and Perfects visibly push the storm back |
+| 1.0 (8) | Round 11: the storm has no hard edges, "The storm caught you", the lesson teaches each move before correcting it, a side-on fold diagram, and Perfects visibly push the storm back |
+| 1.0 (9) | Round 12: the lesson only names landing rings that are on screen, and Skip is out of the bird's path |
+| **1.0 (10)** | **Your fold note: install this one.** Folding about halfway no longer pauses; the pause is now under about 55° |
 
 ## What only you can do
 1. Install the newest TestFlight build and play the first 2 minutes as if you'd never seen it. Tell me whether
