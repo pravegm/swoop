@@ -87,7 +87,7 @@ struct HomeView: View {
             }
             .position(x: l.settings.midX, y: l.settings.midY)
             .accessibilitySortPriority(5)
-            SwoopIconButton(systemName: "trophy.fill", compact: info.isCompact, label: "Top scores") {
+            SwoopIconButton(systemName: "list.number", compact: info.isCompact, label: "Top scores") {
                 // QA-1 P1-5: never a dead button. Signed out with no sheet to offer: say how to sign in.
                 if GameCenterManager.shared.showDashboard() == .signedOut { showSignInHint() }
             }
@@ -211,8 +211,14 @@ struct HomeView: View {
                 .minimumScaleFactor(0.75)
                 .id(text)
                 .transition(.opacity)
-            // R7 P1-8: no Duo line on an iPhone's first screen (it read as "the lesser version"); a positive "Fun
-            // fact" comes once, after the first results.
+            // R10 P0-2: before the first flight the goal sentence shows too (testers met it only after their first go).
+            if text != RouteRules.objective {
+                Text(RouteRules.objective)
+                    .font(SwoopType.body(info.isCompact))
+                    .foregroundStyle(SwoopTheme.mist)
+                    .multilineTextAlignment(info.mirrored ? .trailing : .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .swoopLegible()
         .animation(.easeInOut(duration: 0.4), value: text)
@@ -238,7 +244,10 @@ struct HomeView: View {
                          dot: newBadge == "route") { controller.show(.route) }
                     .modifier(PopIn(shown: appeared, index: 2, reduceMotion: reduceMotion))
                     .accessibilitySortPriority(7.5)
-                menuTile(l.birds, title: "Birds", icon: .bird, detail: BirdCatalog.bird(store.activeBird).name,
+                // R10: after an unlock the tile names the new bird ("Tern"), not the one still in use.
+                menuTile(l.birds, title: "Birds", icon: .bird,
+                         detail: newBadge == "birds" ? (Self.newestBird(rank: store.data.rank) ?? BirdCatalog.bird(store.activeBird).name)
+                             : BirdCatalog.bird(store.activeBird).name,
                          dot: newBadge == "birds") { controller.show(.birds) }
                     .modifier(PopIn(shown: appeared, index: 3, reduceMotion: reduceMotion))
                     .accessibilitySortPriority(7)
@@ -253,6 +262,11 @@ struct HomeView: View {
         // R9 (UX-ROUND-9 §4.5 #12): the most recent unlock first: a new bird, then the Route, Goals, the Daily.
         let order = (rank > 0 ? ["birds"] : []) + (routeReached > 0 ? ["route"] : []) + ["goals", "daily", "birds"]
         return order.first { !seen.contains($0) }
+    }
+
+    /// The most recently unlocked bird's name (nil at the start). Pure; tested.
+    nonisolated static func newestBird(rank: Int) -> String? {
+        BirdCatalog.all.filter { $0.unlockRank > 0 && $0.unlockRank <= rank }.max(by: { $0.unlockRank < $1.unlockRank })?.name
     }
 
     private var newBadge: String? {
@@ -403,26 +417,32 @@ struct HomeView: View {
     }
     nonisolated static func detailWidth(_ s: String) -> CGFloat { CGFloat(s.count) * 13 * 0.56 }
 
+    /// R10 P0-4: the "New" badge is laid out WITH the words (it covered "Birds"): on the detail line on a Duo, after
+    /// the word on a row, or in place of the icon when the tile stacks. `badge` reserves its width.
+    nonisolated static let badgeWidth: CGFloat = 40
+
     nonisolated static func tilePlan(width: CGFloat, height: CGFloat, title: String, detail: String,
-                                     compact: Bool) -> TilePlan {
+                                     compact: Bool, badge: Bool = false) -> TilePlan {
         let pad = 2 * tilePadding
         let icon: CGFloat = 22 + 6
         let tw = titleWidth(title, compact: compact)
-        let withDetail = pad + icon + max(tw, detailWidth(detail))
+        let detailW = detailWidth(detail) + (badge ? badgeWidth + 4 : 0)
+        let withDetail = pad + icon + max(tw, detailW)
         if !compact && height >= 54 && withDetail <= width { return TilePlan(stacked: false, detail: true, need: withDetail) }
-        let row = pad + icon + tw
+        let row = pad + icon + tw + (badge ? badgeWidth + 6 : 0)
         if row <= width { return TilePlan(stacked: false, detail: false, need: row) }
-        return TilePlan(stacked: true, detail: false, need: pad + tw)
+        return TilePlan(stacked: true, detail: false, need: pad + max(tw, badge ? badgeWidth : 0))
     }
 
     private func menuTile(_ r: CGRect, title: String, icon: TileIcon, detail: String, dot: Bool,
                           action: @escaping () -> Void) -> some View {
-        let plan = Self.tilePlan(width: r.width, height: r.height, title: title, detail: detail, compact: info.isCompact)
+        let plan = Self.tilePlan(width: r.width, height: r.height, title: title, detail: detail, compact: info.isCompact,
+                                 badge: dot)
         return SwoopButton(kind: .secondary, height: r.height, compact: info.isCompact, action: action) {
             Group {
                 if plan.stacked {
                     VStack(spacing: 2) {
-                        tileIcon(icon)
+                        if dot { NewCapsule().fixedSize() } else { tileIcon(icon) }
                         tileTitle(title)
                     }
                     .frame(maxWidth: .infinity)
@@ -433,27 +453,23 @@ struct HomeView: View {
                             tileTitle(title)
                             // iPhone: icon + one word (UX §4.5); the Duo adds the detail line when it fits.
                             if plan.detail {
-                                Text(detail)
-                                    .font(SwoopType.caption(true))
-                                    .foregroundStyle(SwoopTheme.mist)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.8)
+                                HStack(spacing: 4) {
+                                    if dot { NewCapsule().fixedSize() }
+                                    Text(detail)
+                                        .font(SwoopType.caption(true))
+                                        .foregroundStyle(SwoopTheme.mist)
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.8)
+                                }
                             }
                         }
+                        if dot && !plan.detail { NewCapsule().fixedSize() }
                         Spacer(minLength: 0)
                     }
                 }
             }
         }
         .frame(width: r.width, height: r.height)
-        .overlay(alignment: .topTrailing) {
-            if dot {
-                NewCapsule()
-                    .fixedSize()
-                    .offset(x: -8, y: 6)    // ART #4: inside the tile, top-right inset 8 pt
-                    .allowsHitTesting(false)
-            }
-        }
         .position(x: r.midX, y: r.midY)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title), \(detail)\(dot ? ", new" : "")")

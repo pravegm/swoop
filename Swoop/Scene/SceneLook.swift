@@ -212,6 +212,11 @@ enum SceneLook {
     static let perfectRingTo: CGFloat = 170
     static let perfectRingTime: CGFloat = 0.38
     static let perfectRing2Delay: CGFloat = 0.08
+    /// R10: the ring holds at full size for 0.15 s at full alpha, then fades over 0.3 s; the Perfect's peak (for the
+    /// App's CI freeze) is at `perfectPeakTime` after the touchdown.
+    static let perfectRingHold: CGFloat = 0.15
+    static let perfectRingFade: CGFloat = 0.3
+    static let perfectPeakTime: Double = 0.42
     static let ringAspect: CGFloat = 0.32
     /// Reduce Motion: the ring appears at 120 px and fades over 0.3 s.
     static let ringStill: CGFloat = 120
@@ -515,7 +520,16 @@ enum SceneLook {
     static let rollInEdge: CGFloat = 0.20
     static let rollInCloseness: CGFloat = 0.3
     /// A Perfect in the school's storm step pushes the wall back by this much (pt), springing back over 1.5 s.
-    static let schoolPushBack: CGFloat = 90
+    static let schoolPushBack: CGFloat = 150
+    /// R10 recoil envelope (s after the Perfect): the gust reaches the wall at 0.15 s, the shove peaks by 0.35 s,
+    /// holds to 1.2 s and eases back by 2.7 s. In a real flight a Perfect kicks the wall back 40 pt too.
+    static let recoilHit: Double = 0.15
+    static let recoilRise: Double = 0.2
+    static let recoilHold: Double = 1.2
+    static let recoilBack: Double = 2.7
+    static let playKick: CGFloat = 40
+    /// R10: the catch's peak is the front crossing over the bird (it is then this far past the bird, u).
+    static let caughtPeakPast: CGFloat = 20
     /// The practice sun: a smaller, softer glow (360 pt at α 0.55) under a white disk, so it never reads as an eclipse.
     static let practiceSunGlow: CGFloat = 360
     static let practiceSunGlowAlpha: CGFloat = 0.55

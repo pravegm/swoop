@@ -102,7 +102,8 @@ enum SceneAdapter {
         case .some(.dive): return .foldPath(from: Tuning.practiceCrestAX, to: Tuning.practiceTroughX)
         case .some(.soar): return .openMark(at: Tuning.practiceTroughX)
         case .some(.land): return .landing(at: practiceLandingX)
-        case .some(.rhythm): return .rhythmAhead(count: 3)
+        // R10 P0-3: one cue on the rhythm step (the fold zone on each swell; no books, no ghost, no diagram).
+        case .some(.rhythm): return .foldPathAhead
         default: return SceneGuide.none
         }
     }
@@ -130,6 +131,12 @@ enum SceneAdapter {
     }
 
     static func ghostScreenPoint(_ scene: FlightScene?) -> CGPoint? { scene?.ghostScreenPoint }
+
+    /// R10 (Scene): step 6's storm recoil, 0 … 1, in 0.05 steps (the meter's knob jumps with it).
+    static func stormRecoil(_ scene: FlightScene?) -> Double {
+        guard let r = scene?.stormRecoil, r.isFinite else { return 0 }
+        return (Double(min(max(r, 0), 1)) * 20).rounded() / 20
+    }
     static func ringScreenRect(_ scene: FlightScene?) -> CGRect? { scene?.ringScreenRect }
 
     /// Step 6: the dotted link from the storm to the meter's storm icon (view points), nil clears.
@@ -208,7 +215,7 @@ enum GhostPlayback {
         case .dive: return .dive
         case .soar: return .soarAndLand
         case .land: return retry ? .guidedLanding : nil
-        case .rhythm: return .rhythm
+        case .rhythm: return nil    // R10: one cue on the rhythm step
         case .hold, .wings, .wingCheck, .storm: return nil
         }
     }

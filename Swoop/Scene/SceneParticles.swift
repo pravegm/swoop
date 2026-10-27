@@ -142,6 +142,10 @@ final class SceneRingFX {
     var startScale: CGFloat = 0.2
     var endScale: CGFloat = 1
     var peakAlpha: CGFloat = 1
+    /// R10: when `fade` > 0 the ring grows at full alpha, holds `hold` s at full size, then fades over `fade` s (the
+    /// Perfect's peak is the ring at full size). 0 = the old grow-and-fade.
+    var hold: CGFloat = 0
+    var fade: CGFloat = 0
     var active = false
     /// Rides with the bird (the Perfect ring), or stays where it was dropped (the ripple).
     var rides = false

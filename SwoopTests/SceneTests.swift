@@ -928,6 +928,79 @@ struct SceneTests {
         #expect(ground <= 100 - 40 * home.zoom + 0.5)
     }
 
+    // MARK: Round 10: the recoil and the peaks
+
+    /// ROUND-10 P0-1: the recoil waits for the gust, shoves fast, holds, then eases back.
+    @Test func recoilEnvelopeShovesThenEasesBack() {
+        #expect(FlightScene.recoil(age: 0.1) == 0)
+        #expect(FlightScene.recoil(age: 0.25) > 0.6)
+        #expect(FlightScene.recoil(age: 0.8) == 1)
+        let late = FlightScene.recoil(age: 2.0)
+        #expect(late > 0 && late < 1)
+        #expect(FlightScene.recoil(age: 3.0) == 0)
+    }
+
+    /// In the school's storm step a Perfect visibly shoves the wall back (≥ 140 pt), fires the recoil peak once, then
+    /// the wall returns.
+    @Test @MainActor func schoolPerfectShovesTheStormBack() {
+        let scene = FlightScene(layout: SceneTests.duoMirrored)
+        let driver = SceneTestsDriver()
+        driver.snap.stormX = -1_000_000
+        driver.snap.gap = 1_000_000
+        scene.driver = driver
+        scene.reset()
+        driver.snap.phase = .flying
+        var now: TimeInterval = 5
+        var peaks: [ScenePeak] = []
+        scene.onPeak = { peaks.append($0) }
+        func frames(_ n: Int) {
+            for _ in 0..<n {
+                scene.update(now)
+                now += 1.0 / 120.0
+            }
+        }
+        frames(10)
+        scene.rollInStorm()
+        frames(300)
+        let rest = scene.stormEdgeU
+        let expected: CGFloat = SceneLook.rollInEdge * 952
+        #expect(abs(rest - expected) < 1)
+        driver.pending = [.touchdown(.perfect, speed: 1400, chain: 1)]
+        frames(72)
+        #expect(scene.stormEdgeU <= rest - 140)
+        #expect(scene.stormRecoil > 0.9)
+        #expect(peaks.contains(.recoil) && peaks.contains(.perfect))
+        frames(360)
+        #expect(abs(scene.stormEdgeU - rest) < 1)
+        #expect(peaks.filter { $0 == .recoil }.count == 1)
+    }
+
+    /// ROUND-10 P1-5: the catch's peak fires once, as the front crosses over the bird.
+    @Test @MainActor func catchPeakFiresAsTheFrontCrossesTheBird() {
+        let scene = FlightScene(layout: SceneTests.duo)
+        let driver = SceneTestsDriver()
+        scene.driver = driver
+        scene.reset()
+        driver.snap.phase = .flying
+        var now: TimeInterval = 6
+        var peaks: [ScenePeak] = []
+        scene.onPeak = { peaks.append($0) }
+        for _ in 0..<30 {
+            scene.update(now)
+            now += 1.0 / 120.0
+        }
+        driver.snap.phase = .caught(elapsed: 0)
+        var edgeAtPeak: CGFloat?
+        for _ in 0..<200 {
+            scene.update(now)
+            now += 1.0 / 120.0
+            if scene.momentPeak == .caught { edgeAtPeak = scene.stormEdgeU }
+        }
+        #expect(peaks.filter { $0 == .caught }.count == 1)
+        let birdU: CGFloat = 952 * 0.30
+        if let e = edgeAtPeak { #expect(e >= birdU && e < birdU + 120) } else { Issue.record("no catch peak") }
+    }
+
     // MARK: Round 9: the Route reads left to right
 
     @Test func routeArtReadsLeftToRight() {

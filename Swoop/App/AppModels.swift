@@ -93,6 +93,11 @@ struct SchoolDisplay: Equatable {
     var stepStartedAt: Double = 0
     /// Demo frames: the step's held moment (overrides the clock).
     var frozenElapsed: Double?
+    /// R10: the big in-world word ("Perfect") and the diagram's dashed target pose (tuck 0…1).
+    var bigWord: String?
+    var diagramTarget: Double?
+    /// R10 P0-1: step 6's Perfect has pushed the storm back (the meter's knob jumps away).
+    var stormPushed = false
     /// The live wing diagram rides the bird (until step 3 has passed).
     var showsDiagram = true
     /// The Studio steps (title bird + diagram) vs the Sea steps (the practice sea).
@@ -152,6 +157,12 @@ final class HUDState: ObservableObject {
     @Published var schoolRhythm: SchoolRhythm?
     /// Step 7, 1.6 s after the storm starts rolling in (Scene SC1): the meter and the goal chip fade in.
     @Published var schoolStormHUD = false
+    /// R10 P0-1: the school meter's knob jumps away from the storm after step 6's Perfect.
+    @Published var schoolStormPushed = false
+    /// Scene's `stormRecoil` (0 … 1) while step 6's storm is shoved back.
+    @Published var schoolStormRecoil: Double = 0
+    /// R10 P0-2: the first real flight's countdown carries the goal sentence.
+    @Published var countdownGoal = false
     /// R4 P0-6: the countdown holds with "Open a little wider" (the open angle sits on the floor).
     @Published var openNudge = false
     /// R5 P1-8: the nudge can't be met (a rest under 119°): "Fly with touch" is offered.
@@ -204,6 +215,9 @@ final class HUDState: ObservableObject {
     func setSchoolFaster(_ v: Double?) { if schoolFaster != v { schoolFaster = v } }
     func setSchoolRhythm(_ v: SchoolRhythm?) { if schoolRhythm != v { schoolRhythm = v } }
     func setSchoolStormHUD(_ v: Bool) { if schoolStormHUD != v { schoolStormHUD = v } }
+    func setSchoolStormPushed(_ v: Bool) { if schoolStormPushed != v { schoolStormPushed = v } }
+    func setSchoolStormRecoil(_ v: Double) { if schoolStormRecoil != v { schoolStormRecoil = v } }
+    func setCountdownGoal(_ v: Bool) { if countdownGoal != v { countdownGoal = v } }
     func setOpenNudge(_ v: Bool) { if openNudge != v { openNudge = v } }
     func setNudgeOffer(_ v: Bool) { if nudgeOffer != v { nudgeOffer = v } }
     func setSunPoint(_ v: CGPoint?) { if sunPoint != v { sunPoint = v } }
@@ -644,6 +658,15 @@ enum AppRules {
                                                                     : c.bottom - 12 - size.height / 2)
     }
 
+    /// R10 P0-1: the school meter's knob after step 6's Perfect: a visible jump away from the storm (+0.3). Pure; tested.
+    static func schoolMeterLead(_ lead: Double, pushed: Bool, recoil: Double = 0) -> Double {
+        let l = lead.isFinite ? min(max(lead, 0), 1) : 0
+        // Scene's recoil drives the jump while it lasts; the push flag alone (no scene) jumps it fully.
+        let r = recoil.isFinite ? min(max(recoil, 0), 1) : 0
+        let kick = r > 0 ? r : (pushed ? 1 : 0)
+        return min(l + 0.3 * kick, 1)
+    }
+
     /// R9 (UX-ROUND-9 §4.1): "Daily Flight · 27 Oct", the one way the Daily is named.
     static func dailyTitle(day: Int) -> String { "Daily Flight · \(dailyTag(day: day))" }
 
@@ -869,6 +892,12 @@ enum AppRules {
         case .storm: return "Perfect landings push the storm back"
         case .keepBend: return "Keep a little bend"
         }
+    }
+
+    /// R10 P0-2: the countdown pill's text: on the first real flight the goal sentence comes first. Pure; tested.
+    static func countdownText(touch: Bool, flat: Bool, nudge: Bool, firstFlight: Bool) -> String {
+        let line = countdownLine(touch: touch, flat: flat, nudge: nudge)
+        return firstFlight && !flat && !nudge ? RouteRules.objective + "\n" + line : line
     }
 
     /// The countdown's line (UX-A4).

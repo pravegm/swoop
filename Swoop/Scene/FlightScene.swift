@@ -3,6 +3,14 @@ import QuartzCore
 import SpriteKit
 import UIKit
 
+/// A moment's strongest beat (ROUND-10 P1-5), for the App's CI freezes: the Perfect with its ring at full size and
+/// its burst out, the catch with the storm front crossing over the bird, and the school storm's recoil at its furthest.
+enum ScenePeak: Equatable {
+    case perfect
+    case caught
+    case recoil
+}
+
 /// The SpriteKit view of the flight (ARCHITECTURE "Scene API"). It draws only from snapshots, the sea and events, and
 /// owns the cosmetic state: the camera, spray, wake, rings, clouds, the lighthouse beam and the storm. It never
 /// changes game state.
@@ -201,6 +209,15 @@ final class FlightScene: SKScene {
     var homeMenuRects: [CGRect] = []
     /// The fold zones' paint (tests).
     var foldPaint: [(painted: Double, missed: Bool, done: Bool)] { guides.foldPaint }
+    /// R10: called once on each moment's peak frame (freeze the CI frame there). `momentPeak` is the same, for the
+    /// frame it happened on only.
+    var onPeak: ((ScenePeak) -> Void)?
+    private(set) var momentPeak: ScenePeak?
+    /// R10: the school storm's recoil now, 0 … 1 (1 = shoved fully back), so the App's meter knob can jump with it.
+    var stormRecoil: CGFloat { schoolPush }
+    /// Seconds since the last Perfect (tests; 10 = long ago).
+    private(set) var perfectAge: Double = 10
+
     /// Lightning strikes so far (tests).
     var stormStrikes: Int { storm.strikeCount }
     /// The camera's look-ahead shift now (canvas pt; tests).
@@ -286,6 +303,9 @@ final class FlightScene: SKScene {
     private var caughtBoltDone = false
     private var ripplesDone = 0
     private var schoolPush: CGFloat = 0
+    private var schoolPushAge: Double = 10
+    private var playKickAge: Double = 10
+    private var caughtPeakDone = false
     private var schoolTowerAge: Double = 0
 
     init(layout: ScreenLayout) {
@@ -484,6 +504,11 @@ final class FlightScene: SKScene {
         caughtBoltDone = false
         ripplesDone = 0
         schoolPush = 0
+        schoolPushAge = 10
+        playKickAge = 10
+        perfectAge = 10
+        caughtPeakDone = false
+        momentPeak = nil
         schoolTowerAge = 0
         pendingGuide = true
         rollAge = nil
@@ -600,9 +625,22 @@ final class FlightScene: SKScene {
         let gapNow = s.gap != 0 ? s.gap : Double(s.position.x) - s.stormX
         let inSchool = practiceSea || (driver != nil && gapNow >= SceneLook.noStormGap)
         if inSchool { caught = false }
+        momentPeak = nil
+        // R10 peaks and the recoil clocks.
+        let prevPerfect = perfectAge
+        perfectAge += fxDt
+        if prevPerfect < SceneLook.perfectPeakTime && perfectAge >= SceneLook.perfectPeakTime { peak(.perfect) }
+        let prevPush = schoolPushAge
+        schoolPushAge += fxDt
+        playKickAge += fxDt
+        schoolPush = FlightScene.recoil(age: schoolPushAge)
+        if prevPush < SceneLook.recoilHit && schoolPushAge >= SceneLook.recoilHit { storm.glowOnce(strength: 0.9) }
+        let pushPeak = SceneLook.recoilHit + SceneLook.recoilRise
+        if prevPush < pushPeak && schoolPushAge >= pushPeak { peak(.recoil) }
         if caught {
             caughtAge += fxDt
         } else {
+            caughtPeakDone = false
             caughtAge = 0
             caughtStartEdge = nil
             caughtBoltDone = false
@@ -739,7 +777,6 @@ final class FlightScene: SKScene {
             if inSchool {
                 // No catch in school: the wall slides in from off screen to cover the bird page's outer 20 % (R9:
                 // plainly on screen, defect #22). A school Perfect pushes it back for a moment.
-                schoolPush = max(0, schoolPush - dt / 1.5)
                 let rest = SceneLook.rollInEdge * w - SceneLook.schoolPushBack * schoolPush
                 edgeU = SceneLook.rollInFrom + (rest - SceneLook.rollInFrom) * (k * k * (3 - 2 * k))
                 stormEdge = edgeU
@@ -750,6 +787,11 @@ final class FlightScene: SKScene {
                 storm.glowOnce(strength: 0.6)
             }
         }
+        // R10: in a real flight a Perfect kicks the wall back a little too (rise 0.15 s, gone by 1 s).
+        if !inSchool && !caught && playKickAge < 1 {
+            let k = playKickAge < 0.15 ? playKickAge / 0.15 : max(0, 1 - (playKickAge - 0.15) / 0.85)
+            edgeU -= SceneLook.playKick * CGFloat(k * k * (3 - 2 * k))
+        }
         // Caught (R9 §2): the front sweeps past the bird to 0.10 w from the ahead edge over 1.2 s (ease-in-out).
         if caught {
             if caughtStartEdge == nil { caughtStartEdge = edgeU }
@@ -757,6 +799,17 @@ final class FlightScene: SKScene {
             let k = CGFloat(min(caughtAge / SceneLook.caughtSweepTime, 1))
             let caughtEdge = SceneLook.stormCaughtEdge * w
             edgeU = start + (max(start, caughtEdge) - start) * (k * k * (3 - 2 * k))
+            // R10: the peak, as the front crosses over the bird: it flinches and is splashed, the wall lights up.
+            let birdU = layout.mirrored ? w - CGFloat(viewCam.anchorX) : CGFloat(viewCam.anchorX)
+            if !caughtPeakDone && edgeU >= birdU + SceneLook.caughtPeakPast {
+                caughtPeakDone = true
+                storm.glowOnce(strength: 1)
+                birdView.squash()
+                let p = CGPoint(x: CGFloat(bx - originX), y: CGFloat(water))
+                fx.splash(at: p, k: 0.3, zoom: CGFloat(viewCam.zoom), color: foamColor)
+                if !reduceMotion { bumpVelocity -= SceneLook.splashBump * 0.6 }
+                peak(.caught)
+            }
             // One bolt ahead of the bird, inside the wall: the storm is over it now.
             if !caughtBoltDone && caughtAge >= SceneLook.caughtBoltAt {
                 caughtBoltDone = true
@@ -944,6 +997,26 @@ final class FlightScene: SKScene {
         guard let c = ceiling else { return nil }
         let floorY = layout.visibleRect.minY + layout.visibleRect.height * 0.2
         return max(c - FlightScene.attractClearance, floorY)
+    }
+
+    /// R10: the school storm's recoil envelope (0 … 1) at `age` s after the Perfect: nothing until the gust hits, a fast
+    /// ease-out shove, a hold, then an ease back.
+    nonisolated static func recoil(age a: Double) -> CGFloat {
+        let hit = SceneLook.recoilHit, rise = SceneLook.recoilRise
+        let hold = SceneLook.recoilHold, back = SceneLook.recoilBack
+        if a < hit || a >= back { return 0 }
+        if a < hit + rise {
+            let q = (a - hit) / rise
+            return CGFloat(1 - (1 - q) * (1 - q))
+        }
+        if a < hold { return 1 }
+        let q = (a - hold) / (back - hold)
+        return CGFloat(1 - q * q * (3 - 2 * q))
+    }
+
+    private func peak(_ p: ScenePeak) {
+        momentPeak = p
+        onPeak?(p)
     }
 
     /// Defect #3: the canvas y (y up) the Home water stays under: 24 pt below the lowest menu rect.
@@ -1213,8 +1286,11 @@ final class FlightScene: SKScene {
                                     colors: [ScenePaint.gold, ScenePaint.paleGold])
                     }
                     // Step 6: a Perfect pushes the school's storm back, with a gust toward it.
+                    perfectAge = 0
+                    if !inSchool { playKickAge = 0 }
                     if inSchool && rollAge != nil {
-                        schoolPush = 1
+                        // R10: an unmistakable shove: the gust hits the wall at 0.15 s and it recoils 150 pt.
+                        schoolPushAge = 0
                         reached.playGust(birdU: layout.size.width * ScreenLayout.birdScreenFraction,
                                          birdY: birdCanvasPoint.y, reduceMotion: reduceMotion)
                     }

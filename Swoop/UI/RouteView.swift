@@ -55,8 +55,8 @@ struct RouteLayout: Equatable {
         let s = spacing(c)
         let base = coastBase(c)
         let harbour = 48 + edge
-        // Every passed lighthouse, the next, then three more (UX §5: nodes past next + 3 aren't drawn).
-        let count = max(routeReached, 0) + 4
+        // Every passed lighthouse, the next, then two more (R10: "Lantern Rock" was cut at the Duo's right edge).
+        let count = max(routeReached, 0) + 3
         let firstX = harbour + (c ? 82 : 102)
         let heads = (0..<count).map { firstX + CGFloat($0) * s }
         let rowY = base + headland + 64
@@ -74,7 +74,8 @@ struct RouteLayout: Equatable {
         }
         let lastX = heads.last ?? harbour
         // "and on…" in its own slot one spacing beyond the last node, on the name row.
-        let tail = CGRect(x: lastX + s - nameW / 2, y: rowY, width: nameW, height: line(nameSize(c)))
+        let tailW: CGFloat = 90
+        let tail = CGRect(x: lastX + s - tailW / 2, y: rowY, width: tailW, height: line(nameSize(c)))
         let contentWidth = max(w, tail.maxX + 24)
 
         // The Best pin: on the route line at the true fraction; its label above the line, else below, else none.

@@ -504,3 +504,28 @@ gutter, so ART-S15's `SceneDriver.hasFold` isn't needed. Please wire these `Flig
 ## Scene → Core (Round 9)
 - Nothing blocking. `GhostSample` maps onto `SceneGhostPose` one for one, through the App. `folded` isn't needed: the
   scene paints the fold zone from the player's own tuck.
+
+## Scene → App (Round 10: the recoil and the peaks)
+- **CI freezes on the peak (P1-5):** `scene.onPeak = { peak in … }` fires once on each moment's strongest frame, so
+  freeze there. `scene.momentPeak` is the same value, for that frame only (for polling).
+  - `.perfect`: 0.42 s after the touchdown. The gold ring is at full size (it now holds 0.15 s before fading) and the
+    burst is out. Put the App's PERFECT word on this frame too.
+  - `.caught`: the storm front crossing over the bird, which flinches and is splashed while the wall lights up. This is
+    about 0.5 s into the 1.2 s sweep.
+  - `.recoil`: the school storm shoved fully back, 0.35 s after the Perfect.
+- **Storm step (P0-1):** a Perfect after `rollInStorm()` now shoves the wall back 150 pt. A gust hits it at 0.15 s and
+  it flinches with an inner glow, holds to 1.2 s, then eases back by 2.7 s. Nothing to call.
+  - `scene.stormRecoil` (0 … 1) follows that shove, so jump the meter knob away from the storm with it and show
+    "Perfect pushes it back" while it is above 0.
+  - In real flights each Perfect also kicks the wall back 40 pt for about 1 s.
+
+## App → Scene (Round 10, from testers 10–12; all yours to judge)
+- **The fold book at the crest** sits on the gull's back at play zoom and reads as clutter (s05, s06, s10). The App now
+  shows one diagram (beside the bird, with the target pose dashed), so the water's book glyphs could go or move off the
+  bird.
+- **Rhythm step:** the App now asks for `.foldPathAhead` only (one cue) and plays no guide gull there.
+- **Home:** rain falls across the corner icons (s01), and a hard horizontal band crosses the sky (s17).
+- **Step 6:** Gull Point stands on a pale translucent rectangle that reads as a rendering bug (s12, s13).
+- **Wired from "Scene → App (Round 10)":** `stormRecoil` drives the school meter's knob (`AppRules.schoolMeterLead`);
+  `onPeak` freezes the `freezeOn=perfect|caught|recoil` frames and, in school, shows the big "Perfect" / "Perfect
+  pushes it back" on that frame.

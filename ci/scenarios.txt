@@ -108,14 +108,16 @@ s1-05-school-dive|session=first:school;school=dive|6
 s1-06-school-dive-fail|session=first:school;school=dive:fail|6
 s1-07-school-soar|session=first:school;school=soar|6
 s1-08-school-land|session=first:school;school=land|6
-s1-09-school-perfect|session=first:school;school=land:done|6
+s1-09-school-perfect|session=first:school;school=land:turn;freezeOn=perfect;freezeAfter=0|20
 s1-10-school-rhythm|session=first:school;school=rhythm;autopilot=perfect|8
 s1-11-school-storm-1|session=first:school;school=storm:1|6
 s1-12-school-storm-2|session=first:school;school=storm:2|6
 s1-13-school-storm-3|session=first:school;school=storm:3|6
+s1-13b-school-storm-push|session=first:school;school=storm:turn;autopilot=perfect;freezeOn=recoil;freezeAfter=0|25
 s1-14-run-countdown|session=first:run;freezeOn=countdown|6
 s1-15-run|session=first:run;autopilot=casual;freezeAt=1|9
 s1-15b-caught|session=first:caught;autopilot=casual;freezeOn=caught;freezeAfter=0|25
+s1-15c-flight-over|session=first:caught;autopilot=casual;freezeOn=caught;freezeAfter=0;freezeDelay=1.5|25
 s1-16-results|session=first:results|10
 s1-17-home|session=first:home2|8
 s1-18-route|session=first:route|8
@@ -146,3 +148,13 @@ r9-route-fresh|screen=route;progress=fresh|5
 r9-route-2|session=first:route|8
 r9-route-late|screen=route;progress=late|5
 r9-home-returning|session=first:home2|8
+# Round 10 (P1-5): the peaks, frozen on Scene's onPeak (the ring at full size with PERFECT, the storm mid-sweep, the
+# storm shoved back with the knob's jump and 'Perfect pushes it back'), and the step pictures that match their words.
+r10-land-perfect|session=first:school;school=land:turn;freezeOn=perfect;freezeAfter=0|20
+r10-storm-push|session=first:school;school=storm:turn;autopilot=perfect;freezeOn=recoil;freezeAfter=0|25
+r10-storm-push-held|session=first:school;school=storm:push|7
+r10-caught-peak|session=first:caught;autopilot=casual;freezeOn=caught;freezeAfter=0|25
+r10-wings-target|session=first:school;school=wings:turn|5
+r10-run-countdown-goal|session=first:run;freezeOn=countdown|6
+r10-home-fresh-goal|session=first:home|5
+r10-goals-plain|session=first:goals|8

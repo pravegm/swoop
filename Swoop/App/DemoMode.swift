@@ -100,7 +100,7 @@ struct DemoConfig: Equatable {
     enum ModeKey: String, Equatable { case flight, daily, attract }
     enum Freeze: String, Equatable {
         case launch, perfect, splash, tailwind, lighthouse, stormclose, caught, finished, flying, countdown, flathold,
-             chainlost
+             chainlost, recoil
     }
     enum ProgressPreset: String, Equatable { case fresh, mid, late }
 

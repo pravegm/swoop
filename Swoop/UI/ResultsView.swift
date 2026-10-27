@@ -113,10 +113,12 @@ struct ResultsView: View {
             .offset(x: appeared || reduceMotion ? 0 : (info.mirrored ? -30 : 30))
             if plan.twoPages && plan.hasSideCard {
                 let side = ResultsLayout.side(info)
+                // R10: the two cards share their top edge.
+                let top = max(min(farRect.minY, side.maxY - plan.sideHeight(width: side.width)), side.minY)
                 sideCard(plan, width: side.width)
                     .frame(width: side.width, alignment: .topLeading)
-                    .frame(width: side.width, height: side.height, alignment: .top)
-                    .position(x: side.midX, y: side.midY)
+                    .frame(width: side.width, height: side.maxY - top, alignment: .top)
+                    .position(x: side.midX, y: (top + side.maxY) / 2)
                     .opacity(appeared ? 1 : 0)
                     .offset(x: appeared || reduceMotion ? 0 : (info.mirrored ? 30 : -30))
             }
@@ -186,12 +188,12 @@ struct ResultsView: View {
                     ViewThatFits(in: .horizontal) {
                         HStack(spacing: 8) {
                             headlineText(f.headline, gold: f.chip != nil, compact: c).fixedSize()
-                            if let lc = f.chip { goldChip(lc, compact: c) }
+                            if let lc = f.chip { SwoopPill(text: lc, fill: SwoopTheme.rewardGold, fontSize: c ? 12 : 14) }
                         }
                         VStack(alignment: .leading, spacing: 4) {
                             headlineText(f.headline, gold: f.chip != nil, compact: c)
                                 .fixedSize(horizontal: false, vertical: true)
-                            if let lc = f.chip { goldChip(lc, compact: c) }
+                            if let lc = f.chip { SwoopPill(text: lc, fill: SwoopTheme.rewardGold, fontSize: c ? 12 : 14) }
                         }
                     }
                 }
@@ -314,7 +316,7 @@ struct ResultsView: View {
             if plan.rankUp, let m = Self.unlockMoment(summary) {
                 NewUnlockCard(title: m.title, level: m.level, bird: m.bird, compact: c) { bird in
                     controller.chooseBird(bird)
-                    controller.flyAgain()
+                    FeedbackDirector.shared.uiConfirm()
                 }
                 .opacity(goalsShown ? 1 : 0)
                 .animation(.easeOut(duration: 0.3).delay(0.6), value: goalsShown)
@@ -1008,8 +1010,11 @@ struct GoalProgressRow: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                 }
-                SwoopProgressBar(value: progress, height: compact ? 6 : 8, done: done)
-                    .padding(.top, compact ? 3 : 6)
+                // R10: a done goal shows its check only (a full bar beside it said the same thing twice).
+                if !done {
+                    SwoopProgressBar(value: progress, height: compact ? 6 : 8, done: done)
+                        .padding(.top, compact ? 3 : 6)
+                }
             }
         }
         .accessibilityElement(children: .ignore)
@@ -1145,7 +1150,8 @@ struct NewUnlockCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if let bird {
-                TitleBirdView(bird: BirdCatalog.bird(bird), tuck: 0)
+                // R10: the new bird itself, side on (the top-down title art read as the same gull).
+                BirdSideView(bird: BirdCatalog.bird(bird))
                     .frame(maxWidth: .infinity)
                     .frame(height: Self.artHeight(compact))
                     .padding(.bottom, 4)
@@ -1158,8 +1164,9 @@ struct NewUnlockCard: View {
                 .font(SwoopType.body(compact))
                 .foregroundStyle(SwoopTheme.mist)
             if let bird {
+                // R10: one way to fly again on the card (Fly again); this one only chooses the bird.
                 SwoopButton(kind: .secondary, height: ResultsPlan.secondary, compact: compact, action: { onFlyAs(bird) }) {
-                    Text("Fly as \(BirdCatalog.bird(bird).name)").lineLimit(1).minimumScaleFactor(0.8)
+                    Text("Choose \(BirdCatalog.bird(bird).name)").lineLimit(1).minimumScaleFactor(0.8)
                 }
                 .padding(.top, 6)
             }

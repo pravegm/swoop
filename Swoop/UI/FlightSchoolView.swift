@@ -161,6 +161,14 @@ enum SchoolRig {
         }
     }
 
+    /// R10: the big "Perfect": above the bird (≥ 80 pt off it), on its page.
+    static func bigWordCenter(bird: CGPoint, canvas c: AppCanvas) -> CGPoint {
+        let size = CGSize(width: 260, height: 56)
+        let up = CGPoint(x: bird.x, y: bird.y - 44 - 80 - size.height / 2)
+        let p = up.y - size.height / 2 > c.top + 8 ? up : CGPoint(x: bird.x, y: bird.y + 44 + 80 + size.height / 2)
+        return clamp(p, size: size, canvas: c)
+    }
+
     /// Inside one page, ≥ 24 pt off the edges and ≥ 28 pt off the middle band. The iPhone is laid out as two pages
     /// as well (every screen keeps content off its middle band, `AppCanvas.isFoldClear`), so the same rule holds there.
     /// The bird page, unless `allowFar` and the point is on the far page (the ring's words may sit by the ring).
@@ -192,6 +200,8 @@ struct WingDiagram: View {
     let tuck: Double
     /// The ghost's pose (tuck 0…1) while a demonstration plays, else nil.
     var ghostTuck: Double?
+    /// R10 P0-3: the pose the step's words ask for, drawn dashed over the live diagram (gold folded, teal open).
+    var target: Double?
     var touch = false
     var compact = false
     var mirrored = false
@@ -243,6 +253,21 @@ struct WingDiagram: View {
                     ctx.fill(Path(roundedRect: CGRect(x: cx - 2, y: cy - h / 2 - 2, width: 4, height: h + 4),
                                   cornerRadius: 2),
                              with: .color(DuoDiagram.spine.opacity(ghostTuck != nil ? 0.5 : 1)))
+                    // The target pose, dashed, over the live one: the picture shows what the words ask for.
+                    if ghostTuck == nil, let target {
+                        let tphi = CGFloat(Self.displayAngle(hinge: Self.hinge(forTuck: target)))
+                        let tw = (size.width / 2 - 4) * cos(tphi)
+                        let tskew = h * 0.18 * sin(tphi) / 2
+                        let colour = target > 0.5 ? SwoopTheme.rewardGold : SwoopTheme.accentOn
+                        for side in [CGFloat(-1), 1] {
+                            var p = Path()
+                            p.move(to: CGPoint(x: cx, y: cy - h / 2))
+                            p.addLine(to: CGPoint(x: cx + side * tw, y: cy - h / 2 - tskew))
+                            p.addLine(to: CGPoint(x: cx + side * tw, y: cy + h / 2 + tskew))
+                            p.addLine(to: CGPoint(x: cx, y: cy + h / 2))
+                            ctx.stroke(p, with: .color(colour.opacity(0.95)), style: StrokeStyle(lineWidth: 2, dash: [5, 4]))
+                        }
+                    }
                 }
             }
         }
@@ -301,7 +326,7 @@ struct SchoolBirdRig: View {
                 if display.showsDiagram {
                     let p = SchoolRig.diagramCenter(bird: bird, canvas: info)
                     WingDiagram(angle: controller.hingeAngleForDiagram, tuck: controller.touchTuck(now: now),
-                                ghostTuck: ghostPose,
+                                ghostTuck: ghostPose, target: display.diagramTarget,
                                 touch: display.touch, compact: info.isCompact, mirrored: info.mirrored)
                         .position(p)
                         .animation(.easeOut(duration: 0.15), value: p)
@@ -314,6 +339,12 @@ struct SchoolBirdRig: View {
                         .position(p)
                         .animation(.easeOut(duration: 0.15), value: p)
                         .transition(.opacity)
+                }
+                // R10 P0-1: "Perfect", big, as the moment lands (step 4's Perfect, step 6's push).
+                if let big = display.bigWord {
+                    SchoolBigWord(text: big, compact: info.isCompact)
+                        .position(SchoolRig.bigWordCenter(bird: bird, canvas: info))
+                        .transition(.scale(scale: 1.6).combined(with: .opacity))
                 }
                 // Step 6: the in-world name by Gull Point's lamp as it rises (Scene `schoolLighthouse`).
                 if display.step == .storm, let lamp = hud.lampPoint {
@@ -364,6 +395,7 @@ struct SchoolStudioView: View {
                     let liveTuck = d.touch ? controller.touchTuck(now: now)
                         : controller.titleTuck(now: now, heldSince: heldSince, releasedAt: releasedAt)
                     let tuck = doneFold ? 1 : liveTuck
+                    let target = d.diagramTarget
                     ZStack(alignment: .topLeading) {
                         TitleBirdView(bird: controller.bird, tuck: tuck)
                             .frame(width: l.titleBird.width, height: l.titleBird.height)
@@ -371,6 +403,7 @@ struct SchoolStudioView: View {
                         WingDiagram(angle: doneFold ? Self.foldTarget : controller.hingeAngleForDiagram,
                                     tuck: doneFold ? 1 : (d.touch ? (touching ? 1 : 0) : liveTuck),
                                     ghostTuck: demo ? FlightSchool.ghostTuck(d.step, elapsed: elapsed) : nil,
+                                    target: doneFold ? nil : target,
                                     touch: d.touch, compact: info.isCompact, mirrored: info.mirrored)
                             .scaleEffect(info.isCompact ? 1.2 : 1.5)
                             .position(x: l.diagram.midX, y: l.diagram.midY)
@@ -596,5 +629,20 @@ struct StandaloneWingCheckView: View {
                            onAnswer: { controller.answerWingCheck($0) })
         }
         .frame(width: info.size.width, height: info.size.height)
+    }
+}
+
+/// R10 P0-1: the moment's big word, gold, the way the game's Perfect callout looks (title weight, no full stop).
+struct SchoolBigWord: View {
+    let text: String
+    var compact = false
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: compact ? 40 : 52, weight: .black, design: .rounded))
+            .foregroundStyle(SwoopTheme.rewardGold)
+            .shadow(color: Color(swoopHex: Contrast.scrim).opacity(0.6), radius: 12)
+            .fixedSize()
+            .accessibilityHidden(true)
     }
 }

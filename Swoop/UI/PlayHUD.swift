@@ -54,7 +54,11 @@ struct PlayLayer: View {
                 if hud.schoolStormHUD {
                     // Step 7 (Scene SC1): the meter and the first lighthouse fade in as the storm arrives.
                     Group {
-                        LeadMeter(lead: hud.lead, stormClose: false, mirrored: info.mirrored)
+                        // R10 P0-1: after step 6's Perfect the knob jumps away from the storm.
+                        LeadMeter(lead: AppRules.schoolMeterLead(hud.lead, pushed: hud.schoolStormPushed,
+                                                                 recoil: hud.schoolStormRecoil), stormClose: false,
+                                  mirrored: info.mirrored)
+                            .animation(.spring(response: 0.35, dampingFraction: 0.55), value: hud.schoolStormPushed)
                             .frame(width: l.meter.width, height: l.meter.height)
                             .position(x: l.meter.midX, y: l.meter.midY)
                             .onAppear {
@@ -86,8 +90,11 @@ struct PlayLayer: View {
             CenterStage(hud: hud, touch: controller.hintTouchWording, compact: c, reduceMotion: reduceMotion,
                         dailyTitle: controller.dailyBannerTitle, readyTotal: controller.readyTotal)
                 .frame(width: l.center.width, height: l.center.height)
-                .position(AppRules.stageCenter(usual: CGPoint(x: l.center.midX, y: l.center.midY),
-                                               sun: hud.sunPoint.map { info.screenPoint($0) }, height: info.size.height))
+                // R10: the countdown never sits on the bird (+ 80 pt); it moves off it like the other passing text.
+                .position(AppRules.clearOfBird(
+                    center: AppRules.stageCenter(usual: CGPoint(x: l.center.midX, y: l.center.midY),
+                                                 sun: hud.sunPoint.map { info.screenPoint($0) }, height: info.size.height),
+                    size: CGSize(width: 220, height: 140), bird: hud.birdPoint, canvas: info, hudBottom: l.distance.maxY))
                 .animation(.easeInOut(duration: 0.4), value: hud.sunPoint)
                 .allowsHitTesting(false)
             if hud.nudgeOffer && !paused {
@@ -854,7 +861,9 @@ struct CenterStage: View {
     }
 
     private var countdownLine: some View {
-        linePill(AppRules.countdownLine(touch: touch, flat: hud.flatHold, nudge: hud.openNudge),
+        // R10 P0-2: the first real flight's countdown states the goal, in the same one pill, above the hands line.
+        linePill(AppRules.countdownText(touch: touch, flat: hud.flatHold, nudge: hud.openNudge,
+                                        firstFlight: hud.countdownGoal),
                  highlight: hud.flatHold || hud.openNudge)
     }
 
@@ -862,7 +871,8 @@ struct CenterStage: View {
         Text(text)
             .font(SwoopType.body(compact))
             .foregroundStyle(highlight ? SwoopTheme.goldLight : SwoopTheme.foam)
-            .lineLimit(1)
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
             .minimumScaleFactor(0.8)
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
@@ -1384,10 +1394,8 @@ struct GoalChip: View {
 
     var body: some View {
         let near = RouteRules.isNear(metersLeft: metersLeft)
+        // R10: no chevron (tester 10 read "<" as a Back button); the lighthouse icon says where.
         HStack(spacing: 6) {
-            Image(systemName: mirrored ? "chevron.left" : "chevron.right")
-                .font(.system(size: 12, weight: .heavy))
-                .foregroundStyle(SwoopTheme.rewardGold)
             LighthouseIcon(state: .next, size: 22 * RouteRules.iconScale(metersLeft: metersLeft))
             Text(RouteRules.name(index))
                 .font(.system(size: compact ? 17 : 19, weight: .bold, design: .rounded))

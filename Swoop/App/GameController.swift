@@ -626,6 +626,9 @@ final class GameController: ObservableObject, SceneDriver {
         newScene.onGhostFinished = { [weak self] in
             MainActor.assumeIsolated { self?.ghostFinished() }
         }
+        newScene.onPeak = { [weak self] peak in
+            MainActor.assumeIsolated { self?.scenePeak(peak) }
+        }
         SceneAdapter.setEffects(newScene, quality: effectsQuality)
         if isDemo { SceneAdapter.storeCapture(newScene) }
         scene = newScene
@@ -1155,6 +1158,7 @@ final class GameController: ObservableObject, SceneDriver {
         school = nil
         schoolStudioPaused = false
         hud.setSchoolStormHUD(false)
+        hud.setSchoolStormPushed(false)
         SceneAdapter.setGuideGhost(scene, sample: nil, move: nil)
         SceneAdapter.setStormLink(scene, nil)
         SceneAdapter.setSchoolLighthouse(scene, false)
@@ -1189,7 +1193,11 @@ final class GameController: ObservableObject, SceneDriver {
         school = sc
         // Feel R9: the school's beats.
         if sc.stepNow == .rhythm { for i in wavesBefore { feedback.cue(.waveDone(i + 1)) } }
-        if sc.stepNow == .storm, input.signals.contains(.landed(.perfect)) { feedback.cue(.stormPushedBack) }
+        if out.pushed {
+            feedback.cue(.stormPushedBack)
+            announce("Perfect. Perfect landings push the storm back.", priority: 2)
+            AppTrace.t("SWOOP-T school storm pushed")
+        }
         if out.succeeded {
             feedback.cue(.schoolStep(sc.dotIndex))
             if sc.stepNow == .storm { feedback.cue(.lighthouseSighted) }
@@ -1221,7 +1229,7 @@ final class GameController: ObservableObject, SceneDriver {
     /// the step's start (the same wave, just ahead of the waiting bird) and handed to Scene to draw; Feel's "watch"
     /// whoosh as each demonstration starts. (R9 cut the Faster! bar and the rhythm bar.)
     private func publishSchoolWorld(_ sc: FlightSchool, snapshot s: FlightSnapshot, now: TimeInterval) {
-        hud.setSchoolStormHUD(schoolSeaRun && sc.stepNow == .storm && now - sc.stepStartedAt >= Self.schoolStormHUDAfter)
+        hud.setSchoolStormHUD(schoolSeaRun && sc.stepNow == .storm && sc.elapsed(at: now) >= Self.schoolStormHUDAfter)
         // Step 6 (Scene): the dotted link from the wall to the meter's storm icon for 1 s as the meter fades in, then
         // Gull Point rising on the far horizon.
         let stormElapsed = sc.stepNow == .storm ? sc.elapsed(at: now) : -1
@@ -1243,6 +1251,31 @@ final class GameController: ObservableObject, SceneDriver {
         }
         SceneAdapter.setGuideGhost(scene, sample: sample, move: move?.rawValue,
                                    landed: GhostPlayback.landed(path, elapsed: elapsed))
+    }
+
+    /// R10 P1-5 (Scene `onPeak`): the strongest frame of a Perfect, the catch or step 6's recoil. A demo frame asked for
+    /// that moment freezes here, with the App's words for it (the big "Perfect", "Perfect pushes it back").
+    private func scenePeak(_ peak: ScenePeak) {
+        #if DEBUG
+        guard let demo, !frozen, let target = demo.freezeOn, let s = session?.snapshot,
+              demo.freezeDelay <= DemoConfig.defaultFreezeDelay else { return }
+        let wanted: DemoConfig.Freeze
+        switch peak {
+        case .perfect: wanted = .perfect
+        case .caught: wanted = .caught
+        case .recoil: wanted = .recoil
+        }
+        guard target == wanted, freezePendingAt != nil || schoolSeaRun else { return }
+        let now = CACurrentMediaTime()
+        if schoolSeaRun, var sc = school {
+            if peak == .perfect && sc.stepNow == .land { sc.demo(phase: "done", time: now) }
+            if peak == .recoil && sc.stepNow == .storm { sc.demo(phase: "push", time: now) }
+            school = sc
+            publishSchool(now)
+        }
+        publishHUD(s, now: now, force: true)
+        freeze("\(target.rawValue) peak", s)
+        #endif
     }
 
     /// Scene's `onGhostFinished`: the guide gull has handed over (its motes); the player's turn for this step.
@@ -1292,6 +1325,11 @@ final class GameController: ObservableObject, SceneDriver {
         }
         d.stepStartedAt = sc.stepStartedAt
         d.frozenElapsed = sc.frozenElapsed
+        d.bigWord = sc.bigWord
+        d.diagramTarget = sc.diagramTarget
+        d.stormPushed = sc.pushedAt != nil
+        hud.setSchoolStormPushed(sc.stepNow == .storm && sc.pushedAt != nil)
+        hud.setSchoolStormRecoil(sc.stepNow == .storm ? SceneAdapter.stormRecoil(scene) : 0)
         d.showsDiagram = sc.showsDiagram
         d.dotIndex = sc.dotIndex
         d.stepCount = sc.stepCount
@@ -1552,7 +1590,8 @@ final class GameController: ObservableObject, SceneDriver {
                                                                   AppHint.land.rawValue]))
         hud.reset()
         chainTeachRun = !store.data.learnedHints.contains("chain") && !schoolSeaRun
-        // R9 (ART #27): one pill at a time: the countdown keeps only its own line (the goal sentence is cut here).
+        // R10 P0-2: the first real flight's countdown states the goal (in its one pill, ART #27).
+        hud.setCountdownGoal(firstRealRun && !homeLoop && !schoolSeaRun)
         goalNearCued = -1
 
         let kind = chooseInput()
@@ -2152,8 +2191,9 @@ final class GameController: ObservableObject, SceneDriver {
             // R8 P0-2: every demo school frame holds its step (a running machine walked on to later steps, so
             // frames showed "7 of 7" and "Go" out of order), and the practice sea stops where the step is seen.
             schoolHeld = true
-            demoSchoolFreezeX = Self.demoSchoolFreezeX(step: step, phase: demo.schoolPhase,
-                                                       autopilot: demo.autopilot != nil)
+            // A `freezeOn=` school frame freezes on Scene's peak instead (R10 P1-5).
+            demoSchoolFreezeX = demo.freezeOn == nil
+                ? Self.demoSchoolFreezeX(step: step, phase: demo.schoolPhase, autopilot: demo.autopilot != nil) : nil
             publishSchool(CACurrentMediaTime())
             AppTrace.t("SWOOP-T school \(step.key) \(demo.schoolPhase ?? "prompt")")
             // UX §7 #11 / #24: the school's pause card, and the cover's "Flight School paused".
@@ -2424,7 +2464,9 @@ final class GameController: ObservableObject, SceneDriver {
             hit = (!s.skimming && s.altitude >= 120) || flightTime >= demo.freezeAfter + 10
         }
         if hit {
-            freezePendingAt = target == .flying ? s.time : s.time + demo.freezeDelay
+            // R10 P1-5: Perfect and caught frames freeze on Scene's peak (`onPeak`); the delay is the fallback.
+            let byPeak = (target == .perfect || target == .caught) && demo.freezeDelay <= DemoConfig.defaultFreezeDelay
+            freezePendingAt = target == .flying ? s.time : s.time + (byPeak ? 1.5 : demo.freezeDelay)
         }
     }
 

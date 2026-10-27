@@ -118,14 +118,25 @@ final class SceneEffects {
                 continue
             }
             let k = min(t / max(r.duration, 0.01), 1)
-            // Ease-out cubic growth; the alpha eases in to 0.
+            // Ease-out cubic growth.
             let e = 1 - (1 - k) * (1 - k) * (1 - k)
             r.node.isHidden = false
             r.node.setScale(r.startScale + (r.endScale - r.startScale) * e)
-            r.node.alpha = r.peakAlpha * (1 - k * k)
-            if k >= 1 {
-                r.active = false
-                r.node.isHidden = true
+            if r.fade > 0 {
+                // R10: full alpha while growing and holding at full size, then the fade.
+                let after = t - r.duration - r.hold
+                r.node.alpha = after <= 0 ? r.peakAlpha : r.peakAlpha * max(0, 1 - after / r.fade)
+                if after >= r.fade {
+                    r.active = false
+                    r.node.isHidden = true
+                }
+            } else {
+                // The alpha eases in to 0.
+                r.node.alpha = r.peakAlpha * (1 - k * k)
+                if k >= 1 {
+                    r.active = false
+                    r.node.isHidden = true
+                }
             }
         }
     }
@@ -227,7 +238,9 @@ final class SceneEffects {
     func perfect(at point: CGPoint, chain: Int, zoom z: CGFloat, foamColor: UIColor) {
         let tier = SceneEffects.ringTier(chain: chain)
         lastRingTier = tier
-        let ringColor = tier == 2 ? ringReward : (tier == 1 ? ringGold : ringFoam)
+        // R10 (tester 10: "nothing different from a normal landing"): every Perfect's ring is gold; the tiers escalate
+        // from gold to reward gold and a second ring.
+        let ringColor = tier == 0 ? ringGold : ringReward
         // The ring node is 200 pt wide at scale 1.
         let from = SceneLook.perfectRingFrom / 200 / z
         let to = SceneLook.perfectRingTo / 200 / z
@@ -237,7 +250,7 @@ final class SceneEffects {
                  rides: true)
         } else {
             ring(at: followPoint, color: ringColor, start: from, end: to, duration: SceneLook.perfectRingTime, delay: 0,
-                 alpha: 1, rides: true)
+                 alpha: 1, rides: true, hold: SceneLook.perfectRingHold, fade: SceneLook.perfectRingFade)
             if tier == 2 {
                 ring(at: followPoint, color: paleGoldColor, start: from, end: to * 1.15,
                      duration: SceneLook.perfectRingTime + 0.08, delay: SceneLook.perfectRing2Delay, alpha: 0.85,
@@ -247,14 +260,15 @@ final class SceneEffects {
         // The physical ripple stays where the bird touched down.
         ring(at: point, color: foamColor, start: from, end: to * 0.9, duration: 0.8, delay: 0.02, alpha: 0.35,
              rides: false)
-        bloomSize = 150 / z
+        bloomSize = 210 / z
         bloom.size = CGSize(width: bloomSize, height: bloomSize * 0.4)
         bloom.position = CGPoint(x: point.x, y: point.y + 4 / z)
         bloom.setScale(0.6)
-        bloom.alpha = tier == 0 ? 0.25 : 0.4
+        bloom.alpha = tier == 0 ? 0.45 : 0.55
         bloom.isHidden = false
         bloomAge = 0
-        let stars = tier == 2 ? SceneLook.perfectStarsMax : (tier == 1 ? SceneLook.perfectStarsMid : 0)
+        // R10: a gold burst on every Perfect (4), more up the chain.
+        let stars = tier == 2 ? SceneLook.perfectStarsMax : (tier == 1 ? SceneLook.perfectStarsMid + 2 : 4)
         for i in 0..<stars {
             let a = CGFloat(i + 1) / CGFloat(stars + 1) * CGFloat.pi + rng.range(-0.12, 0.12)
             let sp = rng.range(140, 260)
@@ -413,7 +427,7 @@ final class SceneEffects {
     }
 
     private func ring(at point: CGPoint, color: UIColor, start: CGFloat, end: CGFloat, duration: CGFloat,
-                      delay: CGFloat, alpha: CGFloat, rides: Bool) {
+                      delay: CGFloat, alpha: CGFloat, rides: Bool, hold: CGFloat = 0, fade: CGFloat = 0) {
         let r = rings[ringCursor % rings.count]
         ringCursor += 1
         r.active = true
@@ -424,6 +438,8 @@ final class SceneEffects {
         r.startScale = start
         r.endScale = end
         r.peakAlpha = alpha
+        r.hold = hold
+        r.fade = fade
         r.node.strokeColor = color
         r.node.position = point
         r.node.setScale(start)

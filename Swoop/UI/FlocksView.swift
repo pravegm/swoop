@@ -28,24 +28,46 @@ struct FlocksView: View {
         "Level \(min(max(rank, 0), maxRank) + 1) of \(maxRank + 1)"
     }
 
-    /// "Next rank: Tern" (what the next rank opens, else its title); nil at the top. Pure; tested.
+    /// R10 P0-4: "Next level: Tern" (what the next level opens); nil at the top. Pure; tested.
     nonisolated static func nextRankLine(rank: Int, unlocks: [String], maxRank: Int = GoalCatalog.maxRank) -> String? {
         guard rank < maxRank else { return nil }
-        if unlocks.isEmpty { return "Next rank: \(GoalCatalog.rankTitle(rank + 1))" }
-        return "Next rank: " + unlocks.joined(separator: " · ")
+        if unlocks.isEmpty { return "Next level: a new title" }
+        return "Next level: " + unlocks.joined(separator: " · ")
+    }
+
+    /// R10 P0-4: what level `r` opens, each reward named for what it is ("New bird: Tern · New trail: Coral"); level 1
+    /// is what you start with. Pure; tested.
+    nonisolated static func rewardLine(level r: Int) -> String {
+        if r <= 0 { return "You start with the Gull and Golden Hour" }
+        let opened = ProgressRules.unlocks(from: r - 1, to: r)
+        let line = RankUpBanner.unlockLine(birds: opened.birds.map { BirdCatalog.bird($0).name },
+                                           skies: opened.skies.map { SkyCatalog.sky($0).name },
+                                           trails: ProgressRules.trailUnlocks(from: r - 1, to: r)
+                                               .map { ProgressRules.trailName($0) })
+        return line.isEmpty ? "A new title" : line
+    }
+
+    /// The plain progress line (ROUND-10 P0-4): "Level 2 of 15 · next: New bird: Tern". Pure; tested.
+    nonisolated static func progressLine(rank: Int, maxRank: Int = GoalCatalog.maxRank) -> String {
+        let level = rankLine(rank: rank, maxRank: maxRank)
+        guard rank < maxRank else { return level }
+        return level + " · next: " + rewardLine(level: rank + 1)
     }
 
     private var leftPage: some View {
         let done = goals.filter { ProgressRules.liveProgress($0, data: store.data) >= 1 }.count
         return VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 6) {
-                SwoopOverline(text: Self.rankLine(rank: rank), compact: c)
+                // R10 P0-4: plain progress first ("Level 2 of 15 · next: New bird: Tern"); the title is a subtitle.
+                Text(Self.progressLine(rank: rank))
+                    .font(SwoopType.headline(c))
+                    .foregroundStyle(SwoopTheme.foam)
+                    .fixedSize(horizontal: false, vertical: true)
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(GoalCatalog.rankTitle(rank))
-                        .font(SwoopType.title(c))
-                        .foregroundStyle(SwoopTheme.foam)
+                        .font(SwoopType.caption(c))
+                        .foregroundStyle(SwoopTheme.mist)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.6)
                     if maxed && store.data.starFlocks > 0 {
                         Text("★\(store.data.starFlocks)")
                             .font(SwoopType.headline(c))
@@ -59,7 +81,7 @@ struct FlocksView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if !goals.isEmpty {
-                    Text("\(done) of \(goals.count) done")
+                    Text("\(done) of \(goals.count) goals done")
                         .font(SwoopType.body(c))
                         .foregroundStyle(SwoopTheme.foam)
                         .lineLimit(1)
@@ -92,14 +114,7 @@ struct FlocksView: View {
                     }
                 }
                 .swoopCard(padding: 18, radius: SwoopTheme.cardRadius(c))
-                if let next = Self.nextRankLine(rank: rank,
-                                                unlocks: ProgressRules.unlockNames(from: rank, to: rank + 1)) {
-                    Text(next)
-                        .font(SwoopType.body(c))
-                        .foregroundStyle(SwoopTheme.mist)
-                        .padding(.leading, 4)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                // (R10: the next reward is on the progress line above; no second "Next rank" line.)
             }
         }
     }
@@ -136,6 +151,7 @@ struct FlocksView: View {
         let reached = r < rank || (r == rank && maxed)
         let current = r == rank
         let names = ProgressRules.unlockNames(from: r - 1, to: r)
+        let rewards = Self.rewardLine(level: r)
         return HStack(spacing: 12) {
             ZStack {
                 Circle()
@@ -153,15 +169,19 @@ struct FlocksView: View {
             }
             .frame(width: 32, height: 32)
             VStack(alignment: .leading, spacing: 1) {
-                Text(GoalCatalog.rankTitle(r))
+                // R10 P0-4: "Level 3", what it opens (named by kind), and the title small; no "rank".
+                Text("Level \(r + 1)" + (current ? " · now" : ""))
                     .font(SwoopType.body(c).weight(.heavy))
                     .foregroundStyle(reached || current ? SwoopTheme.foam : SwoopTheme.haze)
                     .lineLimit(1)
-                Text(names.isEmpty ? (r == 0 ? "Gull · Golden Hour" : "A new title") : names.joined(separator: " · "))
+                Text(rewards)
                     .font(SwoopType.caption(c))
                     .foregroundStyle(reached || current ? SwoopTheme.mist : SwoopTheme.haze)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(GoalCatalog.rankTitle(r))
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(SwoopTheme.haze)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
             }
             Spacer(minLength: 0)
             if !reached && !current && !names.isEmpty {
