@@ -49,7 +49,7 @@ The source run must be one that **captured** the Duo (a run that reused another'
 - `ci/store-banner.swift` (Core Graphics, Core Text, Core Image): the book model, warp self-test and caption system of `ci/store-frame.swift`, fitted into a device box and a text box per layout. Knobs, passed through the store.yml input **`banner_args`** as `header=<options>; search=<options>; <name>=<options>` (any other name renders a review-only `review/variant-<name>.png`; quotes work): `--from <D0x-name>` (another clean capture, with its own light, angle and, for search, caption), `--layout top|side`, `--caption "Head *word* / sub"` (after `--from`), `--yaw`, `--tilt`, `--angle`, `--device-box x0,y0,x1,y1`, `--text-box x0,y0,x1,y1` (fractions), `--cap`, `--mark`, `--glow-x`, `--snaps <dir>`. Example: `-f banner_args='header=--yaw -8; storm=--kind search --from D03-storm'`.
 - `review/` (never upload): `*-guides.png` (red dashed = template safe area, blue = what an iPhone shows, white = centre lines), `search-365pt@1x.png` and `@3x` (the card at real size), `header-402pt@3x.png`, the alternatives above, `store-banner-build.log`.
 
-**Current art:** none rendered yet. Run the placements-only command above from the final store run **40521302499** (release build 12, commit c117b2d, its `raw-duo` and `store-duo` both present), read `MANIFEST.txt`, eyeball both files and the thumbnails, and put the new run's ID here and in `asc.yml`'s `placements_run` when the founder signs it off.
+**Current art:** run **40541082197** (27 Oct 2026, from the final store run 40521302499: release build 12, commit c117b2d). MANIFEST `ok 2  problems 0`; both inside the iPhone view (blue guide). Placed in App Store Connect with `asc.yml` `placements_run=40541082197`.
 
 ## Upload
 
