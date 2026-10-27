@@ -28,7 +28,7 @@ gh workflow run asc.yml -R pravegm/swoop -f asc=true -f mode=push -f only=nomina
 
 The secrets are the shared Admin team key that Brim and Squish use: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_PRIVATE_KEY`. The key is written to a temp file for the job and deleted at the end.
 
-**`DEFAULT_STORE_RUN` is `40514986822`**: the final frames (27 Oct 2026, release candidate `efdfdbf`, all three MANIFESTs `ok 10 flagged 0 missing 0`). If the game changes visibly, run `store.yml` again and put the new ID in `.github/workflows/asc.yml` (or pass `store_run`).
+**`DEFAULT_STORE_RUN` is `40521302499`**: the final frames (27 Oct 2026, release build 1.0 (12), commit `c117b2d`, all three MANIFESTs `ok 10 flagged 0 missing 0`). If the game changes visibly, run `store.yml` again and put the new ID in `.github/workflows/asc.yml` (or pass `store_run`).
 
 ## Personal data (the repo is public)
 
