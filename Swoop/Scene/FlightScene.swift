@@ -47,6 +47,7 @@ final class FlightScene: SKScene {
         didSet {
             fx.reduceMotion = reduceMotion
             storm.reduceMotion = reduceMotion
+            guides.reduceMotion = reduceMotion
         }
     }
 
@@ -152,6 +153,59 @@ final class FlightScene: SKScene {
         storm.deferGlows(SceneLook.rollInTime + 1)
     }
 
+    // MARK: Round 9 (ART-ROUND-9 SR1–SR7, UX-ROUND-9 §1)
+
+    /// SR1: the guide gull flies `move` first. Pass Core's ghost replay (`practiceGhostPath(step:)` mapped one for one
+    /// onto `SceneGhostSample`: sea x / y, t from 0, tuck) when there is one; without it the scene flies its own
+    /// stand-in on the sea ahead of the bird. While it flies the camera zooms to ≤ 0.78 and looks 0.22 w ahead.
+    func playGhost(_ move: SceneGhostMove, path: [SceneGhostSample]? = nil) {
+        if let p = path, p.count >= 2 {
+            ghost.play(move, path: p, fromCore: true)
+            return
+        }
+        let bx = Double(snapshot.position.x)
+        let lead = Double(SceneLook.ghostLead) / max(Double(drawnZoom), 0.3)
+        let ring = guides.ringCenter.map { Double($0.x) }
+        let synth = SceneGhostFlight.synthesize(move, birdX: bx, lead: lead, ringX: ring,
+                                                height: { x in self.seaHeight(x) })
+        ghost.play(move, path: synth, fromCore: false)
+    }
+
+    /// SR1, App-driven: the guide gull's pose this frame (the App plays Core's `PracticeGhost` path at its own pace
+    /// and maps each `GhostSample` here). Set it every frame; nil makes a showing ghost dissolve into its motes (the
+    /// player's turn, `onGhostFinished`). The camera makes room as for `playGhost`.
+    var guideGhost: SceneGhostPose? {
+        didSet { ghost.drive(guideGhost) }
+    }
+
+    /// Takes the guide gull away at once (its dots fade on their own).
+    func stopGhost() { ghost.stop() }
+
+    /// Whether the guide gull is flying (or holding its last pose).
+    var ghostActive: Bool { ghost.isActive }
+    /// SR7: the guide gull's point in view points (y down, like `birdScreenPoint`), nil when none flies.
+    private(set) var ghostScreenPoint: CGPoint?
+    /// The guide gull's tuck now (the App's diagram draws its pose dashed during a demo).
+    var ghostTuck: Double { ghost.tuck }
+    /// Called once when the guide gull dissolves into its motes (the player's turn).
+    var onGhostFinished: (() -> Void)?
+    /// SR7: the live landing ring's rect (the ellipse with its drop marker) in view points, nil when none is up.
+    private(set) var ringScreenRect: CGRect?
+    /// UX-ROUND-9 step 6: while set, a dotted line flows from the storm's front to this view point (the meter's storm
+    /// icon). Set it for about 1 s, then nil.
+    var stormLinkTarget: CGPoint?
+    /// Step 6: the first lighthouse rises on the far horizon in school (its lamp: `lampCanvasPoint`, for the name).
+    var schoolLighthouse: Bool = false
+    /// Defect #3: Home's menu rects (view points, y down). In `.attract` the water stays 24 pt under the lowest one
+    /// (never lower than 6 % of the visible height). Empty = no limit.
+    var homeMenuRects: [CGRect] = []
+    /// The fold zones' paint (tests).
+    var foldPaint: [(painted: Double, missed: Bool, done: Bool)] { guides.foldPaint }
+    /// Lightning strikes so far (tests).
+    var stormStrikes: Int { storm.strikeCount }
+    /// The camera's look-ahead shift now (canvas pt; tests).
+    var cameraBias: CGFloat { CGFloat(viewCam.bias) }
+
     #if DEBUG
     private static let demoLogging: Bool = ProcessInfo.processInfo.arguments.contains("-swoopDemo")
     #endif
@@ -225,6 +279,14 @@ final class FlightScene: SKScene {
     private var rollGlowDone = false
     private var lookSnapPending = true
     private var appliedBlendStep: CGFloat = 0
+    private let ghost: SceneGuideGull
+    private var linkDots: [SKSpriteNode] = []
+    private var caughtAge: Double = 0
+    private var caughtStartEdge: CGFloat?
+    private var caughtBoltDone = false
+    private var ripplesDone = 0
+    private var schoolPush: CGFloat = 0
+    private var schoolTowerAge: Double = 0
 
     init(layout: ScreenLayout) {
         self.layout = layout
@@ -256,6 +318,7 @@ final class FlightScene: SKScene {
         guides = SceneGuides()
         reached = SceneReachedMoment()
         bloom = SKSpriteNode(texture: SceneTextures.glow)
+        ghost = SceneGuideGull()
         super.init(size: layout.size)
         setUp()
     }
@@ -295,8 +358,10 @@ final class FlightScene: SKScene {
         fx.glowRoot.zPosition = 30
         // Flight School's guides lie on the water, under the rings and the bird.
         guides.root.zPosition = -6.2
+        // The guide gull flies just under the player's bird.
+        ghost.root.zPosition = 19
         for n in [props.cloudRoot, props.buoyRoot, seaView.root, guides.root, birdView.shadow, fx.waterRoot,
-                  birdView.trailRoot, fx.root, birdView.root, fx.glowRoot] as [SKNode] {
+                  birdView.trailRoot, fx.root, ghost.root, birdView.root, fx.glowRoot] as [SKNode] {
             world.addChild(n)
         }
 
@@ -334,6 +399,16 @@ final class FlightScene: SKScene {
         bloom.zPosition = 2.5
         bloom.isHidden = true
         frontRoot.addChild(bloom)
+        // The storm link (canvas space, over the HUD-free play area).
+        for _ in 0..<48 {
+            let d = SKSpriteNode(texture: SceneTextures.dot, size: CGSize(width: 4, height: 4))
+            d.colorBlendFactor = 1
+            d.color = .white
+            d.isHidden = true
+            d.zPosition = 75
+            addChild(d)
+            linkDots.append(d)
+        }
 
         titleRoot.zPosition = 70
         titleRoot.isHidden = true
@@ -401,6 +476,15 @@ final class FlightScene: SKScene {
         dunkAge = 10
         reached.clear()
         guides.clear()
+        ghost.clear()
+        ghostScreenPoint = nil
+        ringScreenRect = nil
+        caughtAge = 0
+        caughtStartEdge = nil
+        caughtBoltDone = false
+        ripplesDone = 0
+        schoolPush = 0
+        schoolTowerAge = 0
         pendingGuide = true
         rollAge = nil
         rollGlowDone = false
@@ -511,12 +595,25 @@ final class FlightScene: SKScene {
         case .flying: break
         case .caught, .finished: caught = true
         }
+        // Flight School (R6/R9): the App's flag, or a snapshot with no storm. School is never caught (defect #5: no
+        // storm, rain or caught wash in any school step).
+        let gapNow = s.gap != 0 ? s.gap : Double(s.position.x) - s.stormX
+        let inSchool = practiceSea || (driver != nil && gapNow >= SceneLook.noStormGap)
+        if inSchool { caught = false }
+        if caught {
+            caughtAge += fxDt
+        } else {
+            caughtAge = 0
+            caughtStartEdge = nil
+            caughtBoltDone = false
+            ripplesDone = 0
+        }
         if caught {
             caughtness = min(1, caughtness + dt / SceneLook.caughtEase)
         } else {
             caughtness = max(0, caughtness - dt * 2)
         }
-        // 1.5 s ease-in-out for the caught ending.
+        // 2.4 s ease-in-out for the caught ending's light (R9).
         let caughtEase = caughtness * caughtness * (3 - 2 * caughtness)
         if !countdown && !caught { flightTime += fxDt } else if countdown { flightTime = 0 }
         // The first 2 s of a run use only big shapes (ART §8, the fold blur), as does the App's blur guard.
@@ -534,6 +631,20 @@ final class FlightScene: SKScene {
         // Camera: framing on the simulation's clock; the punch-in and the pull-outs on the FX clock.
         let birdPoint = CGPoint(x: bx, y: by)
         viewCam.birdCeiling = s.mode == .attract ? attractBirdCeiling().map { Double($0) } : nil
+        viewCam.waterCeiling = s.mode == .attract ? homeWaterCeiling().map { Double($0) } : nil
+        viewCam.practiceFraming = inSchool
+        // R9: room ahead for the guide gull (≤ 0.78 zoom, 0.22 w) or a live landing ring (0.25 w).
+        viewCam.zoomCap = ghost.isActive ? SceneLook.ghostMaxZoom : nil
+        var bias: CGFloat = 0
+        if ghost.isActive {
+            bias = SceneLook.ghostCameraBias * w
+        } else if let rc = guides.ringCenter, Double(rc.x) > bx {
+            bias = SceneLook.ringCameraBias * w
+        }
+        let biasRoom = w * ScreenLayout.birdScreenFraction - SceneLook.biasEdgeClearance
+        viewCam.biasTarget = Double(min(bias, max(biasRoom, 0)))
+        // A jump of the bird (a rewind, a session switch, a held frame) never leaves a straight trail (defect #29).
+        if let lx = lastBirdX, abs(bx - lx) > 600 { birdView.clearTrail() }
         if needsSnap {
             viewCam.snap(bird: birdPoint, water: water)
             originX = (bx / 2048).rounded(.down) * 2048
@@ -558,7 +669,14 @@ final class FlightScene: SKScene {
         let kickTarget = caught || countdown ? 0
             : min(max((s.speed - SceneLook.fastPullOutFrom) / SceneLook.fastPullOutRange, 0), 1)
         fastKick += (kickTarget - fastKick) * min(1, fxDt * 3)
-        viewCam.setDisplayScale((1 + punch) * (1 - SceneLook.fastPullOut * fastKick) * (1 - tailwindPull))
+        // Caught (R9 §2): a +4 % push-in toward the bird from 0.6 to 2.4 s.
+        var caughtPush: Double = 0
+        if caught && !reduceMotion {
+            let k = min(max((caughtAge - 0.6) / 1.8, 0), 1)
+            caughtPush = SceneLook.caughtPushIn * k * k * (3 - 2 * k)
+        }
+        viewCam.setDisplayScale((1 + punch) * (1 - SceneLook.fastPullOut * fastKick) * (1 - tailwindPull)
+                                * (1 + caughtPush))
         displayScale = CGFloat(viewCam.displayScale)
 
         if abs(bx - originX) > 4096 {
@@ -566,6 +684,7 @@ final class FlightScene: SKScene {
             let d = CGFloat(originX - newOrigin)
             fx.shift(dx: d)
             birdView.shiftTrail(dx: d)
+            ghost.shift(dx: d)
             originX = newOrigin
         }
         let z = CGFloat(viewCam.zoom)
@@ -594,7 +713,6 @@ final class FlightScene: SKScene {
 
         // Flight School (ROUND-6 D2): the practice look (set by the App, or seen in a snapshot with no storm), and
         // step 7's roll-in.
-        let inSchool = practiceSea || (driver != nil && gap >= SceneLook.noStormGap)
         updatePracticeLook(target: inSchool && rollAge == nil ? 1 : 0, dt: fxDt)
         let lookK = practiceLook * practiceLook * (3 - 2 * practiceLook)
 
@@ -608,6 +726,8 @@ final class FlightScene: SKScene {
             stormEdge += (target - stormEdge) * min(1, dt * 3.5)
         }
         var edgeU = stormEdge
+        // School before the roll-in: no storm, so nothing dims (the sun, the sea) for it either.
+        if inSchool && rollAge == nil { closeness = 0 }
         var presence: CGFloat = 1 - lookK
         var rainPresence: CGFloat = 1
         if let ra = rollAge {
@@ -617,18 +737,32 @@ final class FlightScene: SKScene {
             rainPresence = SceneMoments.smooth(CGFloat(SceneLook.rollInRainFrom), CGFloat(SceneLook.rollInRainFull),
                                                CGFloat(ra))
             if inSchool {
-                // No catch in school: the wall slides in from off screen and stays at `stormEdgeFar`.
-                edgeU = SceneLook.rollInFrom + (SceneLook.stormEdgeFar - SceneLook.rollInFrom) * (k * k * (3 - 2 * k))
+                // No catch in school: the wall slides in from off screen to cover the bird page's outer 20 % (R9:
+                // plainly on screen, defect #22). A school Perfect pushes it back for a moment.
+                schoolPush = max(0, schoolPush - dt / 1.5)
+                let rest = SceneLook.rollInEdge * w - SceneLook.schoolPushBack * schoolPush
+                edgeU = SceneLook.rollInFrom + (rest - SceneLook.rollInFrom) * (k * k * (3 - 2 * k))
                 stormEdge = edgeU
-                closeness = 0
+                closeness = SceneLook.rollInCloseness
             }
             if !rollGlowDone && ra >= SceneLook.rollInGlowAt {
                 rollGlowDone = true
                 storm.glowOnce(strength: 0.6)
             }
         }
-        let caughtEdge = SceneLook.stormCaughtEdge * w
-        edgeU += (max(edgeU, caughtEdge) - edgeU) * caughtEase
+        // Caught (R9 §2): the front sweeps past the bird to 0.10 w from the ahead edge over 1.2 s (ease-in-out).
+        if caught {
+            if caughtStartEdge == nil { caughtStartEdge = edgeU }
+            let start = caughtStartEdge ?? edgeU
+            let k = CGFloat(min(caughtAge / SceneLook.caughtSweepTime, 1))
+            let caughtEdge = SceneLook.stormCaughtEdge * w
+            edgeU = start + (max(start, caughtEdge) - start) * (k * k * (3 - 2 * k))
+            // One bolt ahead of the bird, inside the wall: the storm is over it now.
+            if !caughtBoltDone && caughtAge >= SceneLook.caughtBoltAt {
+                caughtBoltDone = true
+                storm.strike(strength: 0.8, atU: min(anchorU + 80, edgeU - 40))
+            }
+        }
 
         // The near sea: rebuilt only when the cached surface no longer covers the view (QA-2 P2-2). No chop in school.
         let range = viewCam.visibleSeaRange(margin: SceneLook.seaSideMargin)
@@ -653,7 +787,8 @@ final class FlightScene: SKScene {
         let farAlpha = 1 - (1 - SceneLook.practiceFarAlpha) * lookK
         let sunLift = SceneLook.sunLiftFraction + (SceneLook.practiceSunLift - SceneLook.sunLiftFraction) * lookK
         backdrop.update(width: w, height: h, visibleTop: visMaxY, meanY: meanY, zoom: z, scroll: scrollPx, time: t,
-                        dt: dt, sunDim: sunDim, drift: !reduceMotion, farAlpha: farAlpha, sunLift: sunLift)
+                        dt: dt, sunDim: sunDim, drift: !reduceMotion, farAlpha: farAlpha, sunLift: sunLift,
+                        practice: lookK)
 
         let sunU = backdrop.sunPosition.x
         sunCanvasPoint = CGPoint(x: layout.mirrored ? w - sunU : sunU, y: backdrop.sunPosition.y)
@@ -667,7 +802,12 @@ final class FlightScene: SKScene {
 
         // Props: the lighthouse (depth layer), the personal-best buoy (Flight only, UX-S2), the cloud band. Neither
         // shows in school (there is no distance there).
-        updateLighthouse(s, bx: bx, zoom: z, width: w, hide: inSchool, dt: dt)
+        if inSchool && schoolLighthouse {
+            showSchoolLighthouse(zoom: z, width: w, dt: fxDt)
+        } else {
+            schoolTowerAge = 0
+            updateLighthouse(s, bx: bx, zoom: z, width: w, hide: inSchool, dt: dt)
+        }
         reached.update(dt: dt, lamp: props.lighthouseShown ? props.lampPoint : nil, minU: seaPageMinU())
         if props.lighthouseShown {
             let lamp = props.lampPoint
@@ -694,17 +834,25 @@ final class FlightScene: SKScene {
             pendingGuide = false
             guides.show(SceneGuidePlacement.resolve(guide, birdX: bx, height: { x in self.seaHeight(x) }))
         }
-        guides.update(dt: dt, time: t, zoom: z, originX: originX, height: { x in self.seaHeight(x) })
+        guides.update(dt: dt, time: t, zoom: z, originX: originX, birdX: bx, birdY: by, tuck: s.tuck,
+                      height: { x in self.seaHeight(x) })
+        if guides.ringNeedsRespawn {
+            // A missed ring comes back on the next downslope ≥ 200 pt ahead (ART-ROUND-9 §1C).
+            guides.respawnRing(at: SceneGuidePlacement.landingX(after: bx + SceneLook.ringAhead,
+                                                                height: { x in self.seaHeight(x) }))
+        }
         updateBloom(dt: dt, width: w, height: h)
 
         // The bird.
         var tuck = s.tuck
-        if caught { tuck = 1 } else if countdown { tuck = 0 }
+        if caught { tuck = SceneLook.caughtTuck } else if countdown { tuck = 0 }
         updateFlap(s, countdown: countdown, caught: caught, dt: fxDt)
         birdView.pose(tuck: tuck, flap: flapPhase, dt: dt)
         var angle = CGFloat(s.bodyAngle)
         if countdown { angle = CGFloat(0.06 * sin(t * SceneLook.hoverRate + 0.6)) }
-        if caught { angle = CGFloat(0.04 * sin(t * 1.3)) }
+        // Caught (R9): settled on the water, head down, nose −4°.
+        if caught { angle = SceneLook.caughtNose + CGFloat(0.03 * sin(t * 1.3)) }
+        birdView.setWet(caughtEase)
         // A splash dunks the bird (ROUND-4 P1-9): 6 pt down and nose-down for 0.3 s, then back.
         dunkAge += dt
         if dunkAge < SceneLook.splashDunkTime {
@@ -721,13 +869,22 @@ final class FlightScene: SKScene {
         birdView.updateShadow(water: CGPoint(x: birdLocal.x, y: CGFloat(water)), altitude: altitude, zoom: z,
                               show: !countdown && !caught)
         reportBirdPoint(birdPoint, wallDt: wallDt)
+        // Caught: three rain rings around the settled bird.
+        if caught && ripplesDone < SceneLook.caughtRipples.count && caughtAge >= SceneLook.caughtRipples[ripplesDone] {
+            let side: CGFloat = ripplesDone % 2 == 0 ? -1 : 1
+            let off = side * CGFloat(20 + 18 * ripplesDone) / max(z, 0.01)
+            fx.ripple(at: CGPoint(x: birdLocal.x + off, y: CGFloat(water)), zoom: z, color: foamColor)
+            ripplesDone += 1
+        }
         fx.followPoint = CGPoint(x: birdLocal.x - SceneLook.ringBehind / max(z, 0.01), y: CGFloat(water))
 
         // Trail and continuous FX.
         let speedK = CGFloat(min(max((s.speed - 300) / 1500, 0), 1))
         goldTimer = max(0, goldTimer - dt)
         let tailwind = s.tailwindRemaining > 0
-        let goldK: CGFloat = tailwind ? 1 : min(1, goldTimer / SceneLook.perfectGoldTime)
+        var goldK: CGFloat = tailwind ? 1 : min(1, goldTimer / SceneLook.perfectGoldTime)
+        // School (R9 §1E): the trail turns gold as the dive reaches its speed (the speed is shown in the world).
+        if inSchool { goldK = max(goldK, SceneMoments.smooth(1100, 1600, CGFloat(s.speed))) }
         birdView.updateTrail(emit: birdView.tailPoint, show: !caught && !countdown, time: t, zoom: z, speedK: speedK,
                              goldK: goldK, tailwind: tailwind)
         if s.skimming && !caught && !countdown && dt > 0 {
@@ -751,7 +908,8 @@ final class FlightScene: SKScene {
         }
         var lineK: CGFloat = 0
         if !caught && !countdown {
-            lineK = CGFloat(min(max((s.speed - SceneLook.speedLinesFrom) / SceneLook.speedLinesRange, 0), 1))
+            let from = inSchool ? 600 : SceneLook.speedLinesFrom
+            lineK = CGFloat(min(max((s.speed - from) / SceneLook.speedLinesRange, 0), 1))
             if tailwind { lineK = max(lineK, 0.35) }
         }
         speedLines.setGold(s.speed >= SceneLook.goldSpeedFraction * Tuning.maxSpeed)
@@ -759,7 +917,10 @@ final class FlightScene: SKScene {
         speedLines.update(intensity: fine ? lineK : 0, vignette: reduceMotion, width: w, height: h, birdY: birdCanvasY,
                           minY: visMinY, maxY: visMaxY, dt: dt)
 
-        handle(events, s: s, bx: bx, birdLocal: birdLocal, zoom: z)
+        handle(events, s: s, bx: bx, birdLocal: birdLocal, zoom: z, inSchool: inSchool)
+        updateGhost(dt: fxDt, zoom: z, bx: bx)
+        updateRingRect(zoom: z)
+        updateStormLink(edgeU: edgeU, t: t)
         fx.update(dt)
         updateFlare(dt: dt)
         updateFold(tuck: CGFloat(caught || countdown ? 0 : s.tuck), dt: dt)
@@ -783,6 +944,98 @@ final class FlightScene: SKScene {
         guard let c = ceiling else { return nil }
         let floorY = layout.visibleRect.minY + layout.visibleRect.height * 0.2
         return max(c - FlightScene.attractClearance, floorY)
+    }
+
+    /// Defect #3: the canvas y (y up) the Home water stays under: 24 pt below the lowest menu rect.
+    func homeWaterCeiling() -> CGFloat? {
+        var ceiling: CGFloat?
+        for r in homeMenuRects where !r.isNull && !r.isEmpty {
+            let bottom: CGFloat
+            if view != nil {
+                bottom = convertPoint(fromView: CGPoint(x: r.midX, y: r.maxY)).y
+            } else {
+                bottom = layout.size.height - r.maxY
+            }
+            ceiling = min(ceiling ?? bottom, bottom)
+        }
+        return ceiling.map { $0 - 24 }
+    }
+
+    /// A canvas point (SpriteKit, y up) in view points (y down), as `birdScreenPoint` reports.
+    private func viewPoint(_ p: CGPoint) -> CGPoint {
+        if view != nil { return convertPoint(toView: p) }
+        return CGPoint(x: p.x, y: layout.size.height - p.y)
+    }
+
+    /// The guide gull: fly, report its point, fire the ghost Perfect, tell the App when it hands over.
+    private func updateGhost(dt: Double, zoom z: CGFloat, bx: Double) {
+        let wasActive = ghost.isActive
+        ghost.update(dt: dt, zoom: z, originX: originX, bird: birdView, birdX: bx, still: reduceMotion)
+        if ghost.landedNow {
+            let p = ghost.position
+            fx.ghostPerfect(at: CGPoint(x: p.x - CGFloat(originX), y: p.y), zoom: z)
+        }
+        if ghost.isActive {
+            let c = viewCam.screenPoint(ghost.position)
+            ghostScreenPoint = viewPoint(CGPoint(x: c.x, y: c.y + bumpY))
+        } else {
+            ghostScreenPoint = nil
+        }
+        if wasActive && ghost.finishedNow { onGhostFinished?() }
+    }
+
+    /// SR7: the live ring's rect in view points (its ellipse, widened 1.1×, with the drop marker above it).
+    private func updateRingRect(zoom z: CGFloat) {
+        guard let c = guides.ringCenter else {
+            ringScreenRect = nil
+            return
+        }
+        let p = viewCam.screenPoint(c)
+        let w = SceneLook.ringWidth * 1.1
+        let below = w * SceneLook.ringAspect * 0.5
+        let above = SceneLook.dropHeight + SceneLook.dropChevron + 8
+        let a = viewPoint(CGPoint(x: p.x - w * 0.5, y: p.y + bumpY + above))
+        let b = viewPoint(CGPoint(x: p.x + w * 0.5, y: p.y + bumpY - below))
+        ringScreenRect = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
+    }
+
+    /// UX-ROUND-9 step 6: dots flowing from the storm's front to the meter's storm icon.
+    private func updateStormLink(edgeU: CGFloat, t: Double) {
+        guard let target = stormLinkTarget, storm.isShown else {
+            for d in linkDots where !d.isHidden { d.isHidden = true }
+            return
+        }
+        let w = layout.size.width
+        let fromU = max(edgeU - 30, 10)
+        let from = CGPoint(x: layout.mirrored ? w - fromU : fromU, y: storm.wallTop - 30)
+        let to: CGPoint
+        if view != nil {
+            to = convertPoint(fromView: target)
+        } else {
+            to = CGPoint(x: target.x, y: layout.size.height - target.y)
+        }
+        let length = hypot(to.x - from.x, to.y - from.y)
+        let n = min(linkDots.count, max(Int(length / SceneLook.linkDotGap), 1))
+        let flow = CGFloat((t * 1.5).truncatingRemainder(dividingBy: 1))
+        for (i, d) in linkDots.enumerated() {
+            d.isHidden = i >= n
+            guard i < n else { continue }
+            let k = (CGFloat(i) + flow) / CGFloat(n)
+            d.position = CGPoint(x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k)
+            d.alpha = SceneLook.linkAlpha * min(1, min(k, 1 - k) * 6)
+        }
+    }
+
+    /// Step 6: the first lighthouse rises on the far horizon of the sea page (school has no distance of its own).
+    private func showSchoolLighthouse(zoom z: CGFloat, width w: CGFloat, dt: Double) {
+        schoolTowerAge += dt
+        let k = CGFloat(min(schoolTowerAge / 1.2, 1))
+        let e = k * k * (3 - 2 * k)
+        let u = w * SceneLook.lighthouseFarU
+        let scale = SceneLook.lighthouseScale * (0.55 + 0.45 * z) * 0.55
+        lighthouseU = u
+        props.showLighthouse(at: CGPoint(x: u, y: backdrop.frontBaseY + 4 - 40 * (1 - e)), scale: scale, alpha: e,
+                             dt: CGFloat(dt))
     }
 
     /// Chain milestones (ROUND-4 P1-8): 3, 5, 10, 15, 20… get the callout, the hit-stop and the punch-in.
@@ -935,7 +1188,8 @@ final class FlightScene: SKScene {
 
     // MARK: Events → FX
 
-    private func handle(_ events: [FlightEvent], s: FlightSnapshot, bx: Double, birdLocal: CGPoint, zoom z: CGFloat) {
+    private func handle(_ events: [FlightEvent], s: FlightSnapshot, bx: Double, birdLocal: CGPoint, zoom z: CGFloat,
+                        inSchool: Bool) {
         guard !events.isEmpty else { return }
         let waterPoint = CGPoint(x: birdLocal.x, y: CGFloat(seaHeight(bx)))
         for e in events {
@@ -952,17 +1206,26 @@ final class FlightScene: SKScene {
                 case .perfect:
                     fx.perfect(at: waterPoint, chain: chain, zoom: z, foamColor: foamColor)
                     goldTimer = SceneLook.perfectGoldTime
-                    // Flight School step 5: a Perfect in the ghost ring bursts it into 8 motes.
-                    if let rx = guides.perfectLanded(at: bx) {
+                    // Flight School: a Perfect in the landing ring turns it into the real one with a 12-mote burst.
+                    if let rx = guides.perfectLanded(at: bx, zoom: z) {
                         let p = CGPoint(x: CGFloat(rx - originX), y: CGFloat(seaHeight(rx)) + 6 / max(z, 0.01))
-                        fx.sparkles(at: p, count: 8, radius: 70, zoom: z, colors: [ScenePaint.gold, ScenePaint.paleGold])
+                        fx.sparkles(at: p, count: 12, radius: 80, zoom: z,
+                                    colors: [ScenePaint.gold, ScenePaint.paleGold])
+                    }
+                    // Step 6: a Perfect pushes the school's storm back, with a gust toward it.
+                    if inSchool && rollAge != nil {
+                        schoolPush = 1
+                        reached.playGust(birdU: layout.size.width * ScreenLayout.birdScreenFraction,
+                                         birdY: birdCanvasPoint.y, reduceMotion: reduceMotion)
                     }
                     // The punch-in comes only at chain milestones (ROUND-4 P1-8: make Perfects special again).
                     if FlightScene.isChainMilestone(chain) { punchAge = 0 }
                 case .good:
                     fx.good(at: waterPoint, zoom: z, color: foamColor)
+                    guides.missedRing(birdX: bx, zoom: z)
                 case .splash:
                     fx.splash(at: waterPoint, k: k, zoom: z, color: foamColor)
+                    guides.missedRing(birdX: bx, zoom: z)
                     if !reduceMotion {
                         bumpVelocity -= SceneLook.splashBump * (0.7 + 0.6 * k)
                         dunkAge = 0

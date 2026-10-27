@@ -32,6 +32,7 @@ final class SceneReachedMoment {
     private var birdU: CGFloat = 0
     private var birdY: CGFloat = 0
     private var gustsLaunched = false
+    private var gustOnly = false
     private var motesLaunched = false
     /// The beam's angle this frame (radians from the +u axis; tests), and whether it is drawn.
     private(set) var beamAngle: CGFloat = 0
@@ -98,12 +99,19 @@ final class SceneReachedMoment {
 
     /// The pass. `birdU` / `birdY`: the bird in u-space (the gust starts there).
     func play(birdU u: CGFloat, birdY y: CGFloat, reduceMotion: Bool) {
+        gustOnly = false
         age = 0
         still = reduceMotion
         birdU = u
         birdY = y
         gustsLaunched = false
         motesLaunched = false
+    }
+
+    /// R9 (UX-ROUND-9 step 6): only the gust toward the storm (a school Perfect pushing the storm back).
+    func playGust(birdU u: CGFloat, birdY y: CGFloat, reduceMotion: Bool) {
+        play(birdU: u, birdY: y, reduceMotion: reduceMotion)
+        gustOnly = true
     }
 
     /// Per frame. `lamp`: the lamp's centre in u-space (nil when the tower is off screen). `minU`: the sea page's
@@ -118,7 +126,7 @@ final class SceneReachedMoment {
 
         // The beam.
         let sweepEnd = SceneLook.reachedBeamSweep + SceneLook.reachedBeamFade
-        let beamOn = !still && a < sweepEnd && lamp != nil && onPage > 0.01
+        let beamOn = !gustOnly && !still && a < sweepEnd && lamp != nil && onPage > 0.01
         beam.isHidden = !beamOn
         if beamOn, let l = lamp {
             let k = CGFloat(min(a / SceneLook.reachedBeamSweep, 1))
@@ -134,7 +142,7 @@ final class SceneReachedMoment {
         }
 
         // The lamp flare.
-        let flareOn = a < SceneLook.reachedFlareTime && lamp != nil
+        let flareOn = !gustOnly && a < SceneLook.reachedFlareTime && lamp != nil
         flare.isHidden = !flareOn
         if flareOn, let l = lamp {
             flare.position = l
@@ -163,7 +171,7 @@ final class SceneReachedMoment {
         }
 
         // The motes rising from the lamp.
-        if !still && !motesLaunched && a >= SceneLook.moteDelay {
+        if !gustOnly && !still && !motesLaunched && a >= SceneLook.moteDelay {
             motesLaunched = true
             for i in 0..<motes.count {
                 moteOffset[i] = CGPoint(x: rng.range(-12, 12), y: rng.range(-6, 6))

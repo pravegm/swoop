@@ -199,7 +199,7 @@ struct SettingsView: View {
                         .foregroundStyle(SwoopTheme.foam)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Text("Hold your Duo like a book. Fold going down a wave, open going up. Outfly the storm. On other iPhones, hold going down and let go going up.")
+                Text("Hold your Duo like a book. Fold going down a wave, open going up. Stay ahead of the storm. On other iPhones, hold going down and let go going up.")
                     .font(SwoopTheme.text(14))
                     .foregroundStyle(SwoopTheme.mist)
                     .fixedSize(horizontal: false, vertical: true)

@@ -53,6 +53,21 @@ struct SceneCamera: Equatable {
     /// Home's attract loop (R5b): the bird's screen y (canvas, y up) never goes above this; the zoom also comes out
     /// sooner, so the flight fits under it. nil = no limit.
     var birdCeiling: Double?
+    /// R9 (ART-ROUND-9 §1A/§1C): shifts the bird toward the behind edge by this many canvas points (followed by a
+    /// critically damped spring), so the guide gull or the landing ring ahead stays on screen.
+    var biasTarget: Double = 0
+    private(set) var bias: Double = 0
+    private(set) var biasVelocity: Double = 0
+    /// R9: a cap on the framing zoom (the guide gull's demo: 0.78). nil = none.
+    var zoomCap: Double?
+    /// R9 Flight School framing: the bird within `practiceBirdLow … practiceBirdHigh` of the visible height and the
+    /// horizon at least `practiceHorizonInset` under the visible top.
+    var practiceFraming = false
+    /// R9 Home (defect #3): the smoothed water line (plus 40 sea pt for the crests) stays under this canvas y (y up),
+    /// but never lower than 6 % of the visible height. nil = no limit.
+    var waterCeiling: Double?
+    /// Spring rate of the bias (rad/s).
+    static let biasOmega: Double = 3.0
 
     init(layout: ScreenLayout) {
         canvasWidth = Double(layout.size.width)
@@ -79,7 +94,7 @@ struct SceneCamera: Equatable {
     /// Canvas x of the bird.
     var anchorX: Double {
         let f = Double(ScreenLayout.birdScreenFraction)
-        return canvasWidth * (mirrored ? 1 - f : f)
+        return canvasWidth * (mirrored ? 1 - f : f) - direction * bias
     }
 
     /// +1: flight runs left-to-right on screen; −1 mirrored.
@@ -93,7 +108,8 @@ struct SceneCamera: Equatable {
             framing = min(framing, max(ceilingFraction - SceneCamera.groundFraction - 0.04, 0.05))
         }
         let fit = framing * visibleHeight / max(altitude, 1)
-        return min(SceneCamera.zoomMax, max(zoomMin, fit))
+        let top = min(SceneCamera.zoomMax, zoomCap ?? SceneCamera.zoomMax)
+        return min(top, max(zoomMin, fit))
     }
 
     /// Jump straight to the framing for this bird (new session, layout change).
@@ -104,6 +120,8 @@ struct SceneCamera: Equatable {
         framingZoom = targetZoom(altitude: Double(bird.y) - ground)
         zoomVelocity = 0
         displayScale = 1
+        bias = biasTarget
+        biasVelocity = 0
         frame(birdY: Double(bird.y))
     }
 
@@ -122,6 +140,10 @@ struct SceneCamera: Equatable {
             zoomVelocity += za * h
             framingZoom += zoomVelocity * h
             framingZoom = min(SceneCamera.zoomMax * 1.02, max(zoomMin * 0.9, framingZoom))
+            let wb = SceneCamera.biasOmega
+            let ba = wb * wb * (biasTarget - bias) - 2 * wb * biasVelocity
+            biasVelocity += ba * h
+            bias += biasVelocity * h
         }
         frame(birdY: Double(bird.y))
     }
@@ -141,8 +163,20 @@ struct SceneCamera: Equatable {
         let z = max(framingZoom, 0.01)
         let hv = visibleHeight
         var b = ground - SceneCamera.groundFraction * hv / z
+        if practiceFraming {
+            b = max(b, y - SceneLook.practiceBirdHigh * hv / z)
+            b = min(b, y - SceneLook.practiceBirdLow * hv / z)
+            // The horizon (≈ 34 + 18 z above the mean water) stays inside the top.
+            let room = (1 - SceneLook.practiceHorizonInset) * hv - 34 - 18 * z
+            b = max(b, -room / z)
+        }
         b = max(b, y - SceneCamera.birdTopFraction * hv / z)
         b = min(b, y - SceneCamera.birdBottomFraction * hv / z)
+        // Home's menu wins over the bird's bottom margin (the attract bird skims the water anyway).
+        if let wc = waterCeiling {
+            b = max(b, ground + 40 - (wc - visibleMinY) / z)
+            b = min(b, ground - 0.06 * hv / z)
+        }
         // The ceiling wins over the bottom margin: the bird stays under Home's text.
         if let c = birdCeiling { b = max(b, y - (c - visibleMinY) / z) }
         framingBottomY = b

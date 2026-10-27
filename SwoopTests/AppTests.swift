@@ -324,17 +324,17 @@ struct ShareTextTests {
 
     @Test func formatsShareLines() {
         #expect(ShareText.flight(meters: 7_480, perfects: 23, lastLighthouse: "Saltlight")
-                == "Swoop 7.4 km \(dove) 23 Perfects · past Saltlight \(sunrise)")
+                == "Swoop 7.4 km \(dove) 23 perfect landings · past Saltlight \(sunrise)")
         #expect(ShareText.flight(meters: 950, perfects: 1, lastLighthouse: "")
-                == "Swoop 0.9 km \(dove) 1 Perfect")
+                == "Swoop 0.9 km \(dove) 1 perfect landing")
         #expect(ShareText.daily(day: 12, meters: 7_480, perfects: 23, lastLighthouse: "Saltlight")
-                == "Swoop Daily #12 7.4 km \(dove) 23 Perfects · past Saltlight \(sunrise)")
+                == "Swoop Daily #12 7.4 km \(dove) 23 perfect landings · past Saltlight \(sunrise)")
         #expect(ShareText.daily(day: 12, meters: 7_480, perfects: 23, lastLighthouse: "", streak: 4)
-                == "Swoop Daily #12 7.4 km \(dove) 23 Perfects \(fire)4")
+                == "Swoop Daily #12 7.4 km \(dove) 23 perfect landings \(fire)4")
         let run = makeRun(mode: .daily(day: 5, scored: true), meters: 4_100, perfects: 9, lighthouses: 1,
                           lastLighthouse: "Gull Point")
         // The share line carries the DISPLAY number (R4 P1-13): day 5 is before launch, so #1.
-        #expect(ShareText.line(for: run, streak: 1) == "Swoop Daily #1 4.1 km \(dove) 9 Perfects · past Gull Point \(sunrise)")
+        #expect(ShareText.line(for: run, streak: 1) == "Swoop Daily #1 4.1 km \(dove) 9 perfect landings · past Gull Point \(sunrise)")
     }
 }
 
@@ -441,10 +441,10 @@ struct PoseRuleTests {
         #expect(RankUpBanner.unlockLine(birds: ["Tern"], skies: [], trails: ["Coral"]) == "New bird: Tern · New trail: Coral")
         #expect(RankUpBanner.unlockLine(birds: ["Tern", "Heron"], skies: []) == "New birds: Tern, Heron")
         #expect(RankUpBanner.unlockLine(birds: [], skies: []) == "")
-        #expect(HomeView.dailyStatus(record: nil, attempted: false, nextIn: "6 h") == "Everyone's sea · one try")
+        #expect(HomeView.dailyStatus(record: nil, attempted: false, nextIn: "6 h") == "Same waves for everyone · 1 try")
         #expect(HomeView.dailyStatus(record: nil, attempted: true, nextIn: "6 h") == "Tried · next in 6 h")
         let flown = DailyRecord(meters: 7_480, perfects: 23, lighthouses: 1, lastLighthouseName: "", finished: true)
-        #expect(HomeView.dailyStatus(record: flown, attempted: true, nextIn: "6 h") == "Flown 7.48 km · next in 6 h")
+        #expect(HomeView.dailyStatus(record: flown, attempted: true, nextIn: "6 h") == "Flown 7.4 km · next in 6 h")
     }
 }
 
@@ -556,19 +556,19 @@ struct RoundTwoTests {
         let next = Lighthouses.x(index: 1) / Tuning.pointsPerMeter
         let past = AppRules.hookLine(meters: next - 1_550, best: 50_000, previousBest: 50_000, lighthousesPassed: 1,
                                      lastLighthouse: "Gull Point", seed: 7, firstFlight: false)
-        #expect(past == "Past Gull Point · 1.55 km short of \(Lighthouses.name(index: 1, seed: 7))")
-        #expect(AppRules.statsLine(perfects: 1, chain: 4, lighthouses: 2) == "1 Perfect · chain 4 · 2 lighthouses")
+        #expect(past == "Past Gull Point · 1.6 km short of \(Lighthouses.name(index: 1, seed: 7))")
+        #expect(AppRules.statsLine(perfects: 1, chain: 4, lighthouses: 2) == "1 perfect landing · 4 in a row · 2 lighthouses")
         #expect(AppRules.statsLine(perfects: 0, chain: 1, lighthouses: 0) == "")
-        #expect(AppRules.statsLine(perfects: 5, chain: 3, lighthouses: 1) == "5 Perfects · chain 3 · 1 lighthouse")
+        #expect(AppRules.statsLine(perfects: 5, chain: 3, lighthouses: 1) == "5 perfect landings · 3 in a row · 1 lighthouse")
     }
 
     @Test func hudDistanceAndWording() {
         let short = ShareText.hudDistance(842.9)
         #expect(short.value == "842" && short.unit == "m")
         let one = ShareText.hudDistance(1_000)
-        #expect(one.value == "1.00" && one.unit == "km")
-        #expect(ShareText.hudDistance(4_068).value == "4.06")
-        #expect(ShareText.hudDistance(12_345).value == "12.34")
+        #expect(one.value == "1.0" && one.unit == "km")
+        #expect(ShareText.hudDistance(4_068).value == "4.0")
+        #expect(ShareText.hudDistance(12_345).value == "12.3")
         #expect(AppRules.touchWording(input: .touch, hasHinge: true))
         #expect(!AppRules.touchWording(input: .hinge, hasHinge: true))
         #expect(AppRules.touchWording(input: .autopilot, hasHinge: false))
@@ -724,10 +724,10 @@ struct RoundThreeRuleTests {
         #expect(AppRules.bestIn(meters: 6_100, best: 6_000, isFlight: true) == nil)
         for km in [0, 1, 2, 3, 4, 6, 7] { #expect(!AppRules.milestoneToasts(km: km)) }
         #expect(ChainPill.text(chain: 1, tailwind: false) == nil)
-        #expect(ChainPill.text(chain: 5, tailwind: false) == "×5")
-        #expect(ChainPill.text(chain: 5, tailwind: true) == "×5 · TAILWIND")
+        #expect(ChainPill.text(chain: 5, tailwind: false) == "×5 in a row")
+        #expect(ChainPill.text(chain: 5, tailwind: true) == "×5 in a row · Tailwind")
         #expect(ChainPill.text(chain: 2, tailwind: false, teach: true) == "×2 in a row")
-        #expect(ChainPill.text(chain: 3, tailwind: true, teach: true) == "×3 · TAILWIND")
+        #expect(ChainPill.text(chain: 3, tailwind: true, teach: true) == "×3 in a row · Tailwind")
         #expect(AppRules.countdownLine(touch: true, flat: true) == "Hold going down · let go going up")
         #expect(AppRules.countdownLine(touch: false, flat: true) == "Bend it a little, like a book")
         #expect(AppRules.countdownLine(touch: false, flat: false) == "Wings open, hold steady")
@@ -762,15 +762,17 @@ struct RoundThreeRuleTests {
 
     @Test func homeCopy() {
         #expect(HomeView.captionText(duo: true, folded: false, flat: false)
-                == "Hold your Duo like a book. These are your wings.")
+                == "Hold it like a book. These are your wings.")
         #expect(HomeView.captionText(duo: true, folded: true, flat: false) == "Fold going down. Open going up.")
         #expect(HomeView.captionText(duo: true, folded: true, flat: true) == "Bend it a little, like a book.")
         #expect(HomeView.captionText(duo: false, folded: false, flat: true) == "Hold anywhere. The wings fold.")
         #expect(HomeView.captionText(duo: false, folded: true, flat: false) == "Hold going down. Let go going up.")
         // R6 (UX §4.5): "Next: …", dropping the best, then "Next:", to fit; never an ellipsis.
         // R7 P1-6: the goal sentence under Fly until the first lighthouse is reached.
-        #expect(HomeView.flySubtitle(best: 0) == "Outfly the storm. Reach the next lighthouse.")
-        #expect(HomeView.flySubtitle(best: 6_420, routeReached: 1) == "Next: Saltlight · 9 km · best 6.42 km")
+        // R9 (UX-ROUND-9 §4.1): the goal reads one way: "Next: Gull Point · 4 km".
+        #expect(HomeView.flySubtitle(best: 0) == "Next: Gull Point · 4 km")
+        #expect(HomeView.flySubtitle(best: 6_420, routeReached: 1) == "Next: Saltlight · 9 km")
+        #expect(HomeView.captionText(duo: true, folded: false, flat: false, returning: true) == RouteRules.objective)
         #expect(HomeView.flySubtitle(best: 6_420, routeReached: 1, compact: true) == "Next: Saltlight · 9 km")
         #expect(RouteRules.homeNext(routeReached: 1, best: 6_420, maxChars: 12) == "→ Saltlight · 9 km")
         #expect(ProgressRules.goalsLine(rank: 0, done: 1, total: 3, starFlocks: 0) == "1 of 3 · Fledgling")
@@ -796,8 +798,8 @@ struct RoundThreeRuleTests {
         #expect(ResultsView.overline(.firstFlight, day: nil) == "First flight")
         #expect(ResultsView.bestLine(.firstFlight, showsNewBest: false, best: 2_100, previousBest: 0) == nil)
         #expect(ResultsView.bestLine(.flight, showsNewBest: true, best: 7_000, previousBest: 6_420)
-                == "Previous best 6.42 km")
-        #expect(ResultsView.bestLine(.flight, showsNewBest: false, best: 6_420, previousBest: 6_420) == "Best 6.42 km")
+                == "Previous best 6.4 km")
+        #expect(ResultsView.bestLine(.flight, showsNewBest: false, best: 6_420, previousBest: 6_420) == "Best 6.4 km")
         // R4 P1-7: a Daily never shows the Flight best under it.
         #expect(ResultsView.bestLine(.dailyCard, showsNewBest: false, best: 6_420, previousBest: 6_420) == nil)
         #expect(ResultsView.chip(showsNewBest: false, dailyBest: true, kind: .scoredDaily) == "Daily best!")
@@ -814,7 +816,7 @@ struct RoundThreeRuleTests {
                                                     lastLighthouse: "Saltlight"),
                                     outcome: RecordOutcome(), title: "Daily Flight #298", dailyDay: 298,
                                     practice: false, share: "")
-        #expect(ShareCardView.subtitle(summary) == "Daily Flight 26 Oct · 23 Perfects · past Saltlight")
+        #expect(ShareCardView.subtitle(summary) == "Daily Flight · 26 Oct · 23 perfect landings · past Saltlight")
         #expect(ResultsView.smallLines(summary).isEmpty)
         summary.outcome.newLogbook = ["Saltlight"]
         summary.outcome.dailyGraceKept = true
@@ -829,16 +831,16 @@ struct RoundThreeRuleTests {
     }
 
     @Test func pagesCopy() {
-        #expect(FlocksView.rankLine(rank: 1) == "Rank 2 of 15")
+        #expect(FlocksView.rankLine(rank: 1) == "Level 2 of 15")
         #expect(FlocksView.nextRankLine(rank: GoalCatalog.maxRank, unlocks: []) == nil)
         #expect(FlocksView.nextRankLine(rank: 0, unlocks: ["Tern"]) == "Next rank: Tern")
         #expect(FlocksView.logbookLine(count: 12, total: 40) == "Logbook 12 of 40")
         #expect(BirdsView.nextUnlockRank([0, 1, 1, 3, 5], current: 1) == 3)
         #expect(BirdsView.nextUnlockRank([0, 1], current: 4) == nil)
-        #expect(BirdsView.lockedLabel(unlockRank: 3, next: 3) == "Rank 4 goals")
+        #expect(BirdsView.lockedLabel(unlockRank: 3, next: 3) == "Level 4")
         #expect(BirdsView.lockedLabel(unlockRank: 5, next: 3) == nil)
         #expect(ClosedCard.dartWidth(.home) == 150)
-        #expect(ClosedCard.heroDistance(18_574) == "18.57 km")
+        #expect(ClosedCard.heroDistance(18_574) == "18.5 km")
         #expect(ClosedCard.heroDistance(842) == "842 m")
         #expect(ClosedCard.stormFill(0) == 0)
         #expect(ClosedCard.stormFill(.nan) == 0)
@@ -847,10 +849,10 @@ struct RoundThreeRuleTests {
         #expect(ClosedCard.stormLine(250).text == "Storm 250 m behind")
         #expect(ClosedCard.stormLine(250).close)
         #expect(!ClosedCard.stormLine(900).close)
-        #expect(ClosedCard.stormLine(1_200).text == "Storm 1.20 km behind")
+        #expect(ClosedCard.stormLine(1_200).text == "Storm 1.2 km behind")
         #expect(ClosedCard.bestLine(meters: 4_000, best: 0) == "No best yet: this flight sets it")
         #expect(ClosedCard.bestLine(meters: 5_500, best: 6_100) == "600 m to your best")
-        #expect(ClosedCard.bestLine(meters: 4_000, best: 6_100) == "Beat 6.10 km to set a best")
+        #expect(ClosedCard.bestLine(meters: 4_000, best: 6_100) == "Beat 6.1 km to set a best")
         #expect(ClosedCard.bestLine(meters: 7_000, best: 6_100) == "Past your best")
     }
 
@@ -1059,8 +1061,8 @@ struct RoundFourTests {
         // The split deck: one card with the one-line summary.
         let deck = ResultsPlan.make(rankUp, canvas: deckCanvas(669, 447.5), cardHeight: 423.5, dailyRowAllowed: true)
         #expect(!deck.twoPages && deck.deckSummary && deck.compact)
-        #expect(ResultsView.deckSummary(rankUp)?.hasPrefix("You ranked up! New bird: Tern") == true)
-        #expect(ResultsView.deckSummary(rankUp)?.contains("Rank 2 · ") == true)
+        // R9: the level-up moment in plain words.
+        #expect(ResultsView.deckSummary(rankUp) == "New bird: Tern · Level 2")
         var two = resultsVariants()[2]
         two.outcome.rankUp = nil
         #expect(ResultsView.deckSummary(two)?.hasPrefix("1 of 3 goals · next: ") == true)
@@ -1071,12 +1073,15 @@ struct RoundFourTests {
         #expect(ShareText.distance(89) == "89 m")
         #expect(ShareText.distance(0) == "0 m")
         #expect(ShareText.distance(.nan) == "0 m")
-        #expect(ShareText.distance(11_885) == "11.88 km")
+        #expect(ShareText.distance(11_885) == "11.8 km")
         #expect(ShareText.distance(541, roundUp: true) == "550 m")
-        #expect(ShareText.distance(996, roundUp: true) == "1.00 km")
+        #expect(ShareText.distance(996, roundUp: true) == "1.0 km")
+        #expect(ShareText.distance(2_170, roundUp: true) == "2.2 km")
+        #expect(ShareText.distance(341, roundUp: true) == "350 m")
+        #expect(ShareText.distance(12_830) == "12.8 km")
         #expect(ShareText.target(3_000) == "3 km")
         #expect(ShareText.target(500) == "500 m")
-        #expect(ShareText.target(2_500) == "2.50 km")
+        #expect(ShareText.target(2_500) == "2.5 km")
         // The pause card and the cover use the same words as the HUD: never "Paused at 0.0 km" at 89 m.
         #expect(ClosedCard.heroDistance(89) == ShareText.distance(89))
     }
@@ -1126,10 +1131,10 @@ struct RoundFourTests {
         #expect(AppRules.goalCaption(lighthouses, before: 1, run: run, lifetime: 0) == "Done in an earlier flight")
         #expect(AppRules.goalCaption(lighthouses, before: 0, run: nil, lifetime: 0) == "In one flight")
         let total = Goal(id: "t", kind: .totalMeters, target: 150_000, text: "Fly 150 km in total")
-        #expect(AppRules.goalCaption(total, before: 0, run: run, lifetime: 48_300) == "In total · 48.30 km of 150 km")
+        #expect(AppRules.goalCaption(total, before: 0, run: run, lifetime: 48_300) == "In total · 48.3 km of 150 km")
         let reach = Goal(id: "r", kind: .reachMeters, target: 3_000, text: "Fly 3 km in one flight")
         #expect(AppRules.goalCaption(reach, before: 0, run: makeRun(meters: 1_180), lifetime: 0)
-                == "This flight: 1.18 km of 3 km")
+                == "This flight: 1.1 km of 3 km")
     }
 
     @Test func hintAndSplashSitOffTheBird() {
@@ -1289,7 +1294,7 @@ struct RoundFiveTests {
     @Test func pauseCardsShowTheHUDsValue() {
         #expect(AppRules.hudMeters(89.7) == 89)
         #expect(AppRules.hudMeters(999.9) == 999)
-        #expect(AppRules.hudMeters(1_234.5) == 1_230)
+        #expect(AppRules.hudMeters(1_234.5) == 1_200)
         #expect(AppRules.hudMeters(.nan) == 0)
         #expect(AppRules.hudMeters(-3) == 0)
         for d in [0.0, 89.4, 99.9, 101.2, 999.0, 1_004.0, 11_885.0] {
@@ -1500,7 +1505,7 @@ struct RoundSixTests {
         #expect(!s.canSkip)
         let skippedEarly = s.skip()   // (`#expect` can't call a mutating method)
         #expect(!skippedEarly)
-        #expect(s.stepCount == 7)
+        #expect(s.stepCount == 5)
         // Step 0: held open like a book and still; success only after the prompt has been up 1.2 s.
         var outs = driveSchool(&s, from: 0, to: 1.0) { SchoolInput(time: $0, landscape: true, angle: 150, still: true) }
         #expect(!outs.contains { $0.succeeded })
@@ -1523,7 +1528,10 @@ struct RoundSixTests {
         var w = FlightSchool(touch: false, asksWingCheck: false)
         w.start(at: .wings, time: 0)
         _ = driveSchool(&w, from: 0, to: 0.5) { SchoolInput(time: $0, landscape: true, angle: 120, tuck: 0.9) }
-        outs = driveSchool(&w, from: 0.5, to: 1.4) { SchoolInput(time: $0, landscape: true, angle: 150, tuck: 0.1) }
+        // R9: the move is shown first (1.8 s), so the step can pass only after the demonstration.
+        outs = driveSchool(&w, from: 0.5, to: 1.7) { SchoolInput(time: $0, landscape: true, angle: 150, tuck: 0.1) }
+        #expect(!outs.contains { $0.succeeded })
+        outs = driveSchool(&w, from: 1.7, to: 2.0) { SchoolInput(time: $0, landscape: true, angle: 150, tuck: 0.1) }
         #expect(outs.contains { $0.succeeded })
     }
 
@@ -1558,7 +1566,7 @@ struct RoundSixTests {
         l.start(at: .land, time: 0)
         out = l.step(sea(2, [.landed(.splash)]))
         #expect(out.rewind)
-        #expect(l.subline == "Splash! Aim for the downslope.")
+        #expect(l.subline == "Splash! Aim for the way down.")
         #expect(l.step(sea(3, [.landed(.perfect)])).succeeded)
         // Step 6: three waves.
         var r = FlightSchool(touch: false, asksWingCheck: false)
@@ -1570,7 +1578,8 @@ struct RoundSixTests {
         st.start(at: .storm, time: 0)
         #expect(st.timeScale == 1.0)
         #expect(st.prompt(at: 0.5) == "A storm is chasing you.")
-        let outs = driveSchool(&st, from: 0, to: 7) { sea($0, []) }
+        // R9: the storm step passes on the Perfect in its guided ring.
+        let outs = driveSchool(&st, from: 0, to: 3) { sea($0, $0 > 2 ? [.landed(.perfect)] : []) }
         #expect(outs.contains { $0.finished })
         #expect(st.phase == .finished)
         // Where a miss rewinds Core's practice sea.
@@ -1583,20 +1592,21 @@ struct RoundSixTests {
     @Test func schoolVariantsAndCopy() {
         let touch = FlightSchool(touch: true, asksWingCheck: true)
         #expect(!touch.asksWingCheck)
-        #expect(touch.stepCount == 7)
-        // R7 P0-1: the Duo school is 7 steps (no Wing check), numbered as shown.
+        #expect(touch.stepCount == 5)
+        // R9: 6 dots with the clear-side check, 5 without; "Hold" shares Wings' dot, soar and land share one.
+        #expect(FlightSchool(touch: false, asksWingCheck: true).stepCount == 6)
         var duo = FlightSchool(touch: false, asksWingCheck: false)
-        #expect(duo.stepCount == 7)
+        #expect(duo.stepCount == 5)
         duo.start(at: .dive, time: 0)
-        #expect(duo.dotIndex == 2)
-        #expect(duo.overline == "Flight School · step 3 of 7")
+        #expect(duo.dotIndex == 1)
+        #expect(duo.overline == "Flight School, step 2 of 5")
         #expect(duo.canSkip)
         let skippedDuo = duo.skip()
         #expect(skippedDuo)
         var phone = FlightSchool(touch: true, asksWingCheck: false)
         phone.start(at: .wingCheck, time: 0)
         #expect(phone.stepNow == .dive)
-        #expect(phone.dotIndex == 2)
+        #expect(phone.dotIndex == 1)
         #expect(FlightSchoolCopy.prompt(.hold, touch: false) == "Hold your Duo open like a book.")
         #expect(FlightSchoolCopy.prompt(.dive, touch: true) == "Keep holding all the way down.")
         #expect(FlightSchoolCopy.prompt(.storm, touch: false, elapsed: 5).hasPrefix("Fly to Gull Point"))
@@ -1673,17 +1683,17 @@ struct RoundSixTests {
         #expect(reached.reached)
         #expect(reached.sub?.hasPrefix("The storm caught you ") == true)
         #expect(reached.sub?.hasSuffix(" before Kestrel Head.") == true)
+        // R9 glossary.
         #expect(RouteRules.nextTip(firstRealRun: true, perfects: 0, splashes: 9, bestChain: 0, nearBestHook: nil)
-                == "Land Perfects to push the storm back.")
+                == "Perfect landings push the storm back.")
         #expect(RouteRules.nextTip(firstRealRun: false, perfects: 0, splashes: 1, bestChain: 0, nearBestHook: nil)
-                == "Next time: land on a downslope for a Perfect.")
+                == "Next time: land on the way down for a Perfect.")
         #expect(RouteRules.nextTip(firstRealRun: false, perfects: 2, splashes: 5, bestChain: 2, nearBestHook: nil)
-                == "Next time: open on the way up, so you come down on a downslope.")
+                == "Next time: open on the way up, so you land on the way down.")
         #expect(RouteRules.nextTip(firstRealRun: false, perfects: 5, splashes: 1, bestChain: 2, nearBestHook: "x")
-                == "Next time: 3 Perfects in a row = a Tailwind.")
-        #expect(RouteRules.nextTip(firstRealRun: false, perfects: 5, splashes: 1, bestChain: 4, nearBestHook: "x") == "x")
+                == "Next time: 3 perfect landings in a row = a Tailwind.")
         #expect(RouteRules.nextTip(firstRealRun: false, perfects: 5, splashes: 1, bestChain: 4, nearBestHook: nil)
-                == "Next time: chain Perfects to push the storm back.")
+                == "Next time: land Perfect after Perfect to push the storm back.")
         #expect(RouteRules.summary(routeReached: 0, best: 0) == ["No lighthouses yet", "Next: Gull Point · 4 km"])
         #expect(RouteRules.summary(routeReached: 1, best: 6_420).first == "1 lighthouse reached")
         #expect(RouteRules.nodeState(index: 0, routeReached: 1) == .reached)
@@ -1691,23 +1701,20 @@ struct RoundSixTests {
         #expect(RouteRules.nodeState(index: 2, routeReached: 1) == .soon)
         #expect(RouteRules.nodeState(index: 3, routeReached: 1) == .unknown)
         #expect(RouteRules.nodeLabel(index: 3, routeReached: 1) == "Old Harry")
-        #expect(RouteRules.objective == "Outfly the storm. Reach the next lighthouse.")
+        #expect(RouteRules.objective == "Stay ahead of the storm. Reach the lighthouses.")
         #expect(PauseCard.subline(meters: 2_120, scoredDaily: false, goalLine: "Gull Point in 1.9 km")
-                == "2.12 km · Gull Point in 1.9 km")
+                == "2.1 km · Gull Point in 1.9 km")
     }
 
     @Test func routeStripGeometry() {
-        #expect(RouteStrip.nodeX(0, width: 1_000, spacing: 150, mirrored: false) == 110)
-        #expect(RouteStrip.nodeX(0, width: 1_000, spacing: 150, mirrored: true) == 890)
-        #expect(RouteStrip.nodeX(2, width: 1_000, spacing: 150, mirrored: false) == 410)
-        #expect(RouteStrip.bestX(best: 0, width: 1_000, spacing: 150, mirrored: false) == nil)
-        #expect(RouteStrip.bestX(best: 4_000, width: 1_000, spacing: 150, mirrored: false) == 110)
-        #expect(RouteStrip.bestX(best: 6_500, width: 1_000, spacing: 150, mirrored: false) == 185)
-        #expect(RouteStrip.nodeCount(routeReached: 2) == 5)
-        #expect(MiniRouteStrip.shown(reachedThisRun: 0) == 2)
-        #expect(MiniRouteStrip.shown(reachedThisRun: 2) == 3)
-        #expect(MiniRouteStrip.birdFraction(meters: 4_500, reachedThisRun: 0) == 0.5)
+        // R9: the mini strip runs from the last passed lighthouse (or the start) to the next, left to right.
+        #expect(MiniRouteStrip.birdFraction(meters: 2_000, reachedThisRun: 0) == 0.5)
+        #expect(MiniRouteStrip.birdFraction(meters: 6_500, reachedThisRun: 1) == 0.5)
         #expect(MiniRouteStrip.birdFraction(meters: 99_000, reachedThisRun: 0) == 1)
+        let ends = MiniRouteStrip.labels(meters: 12_830, reachedThisRun: 2)
+        #expect(ends.left == "Saltlight")
+        #expect(ends.right == "Kestrel Head · 2.2 km to go")
+        #expect(MiniRouteStrip.labels(meters: 2_100, reachedThisRun: 0).left == "Start")
         #expect(DuoDiagramGeometry.clampAngle(.nan) == 180)
         #expect(DuoDiagramGeometry.clampAngle(90) == 100)
         #expect(DuoDiagramGeometry.gaugeFraction(angle: 180) == 1)
@@ -1719,19 +1726,21 @@ struct RoundSixTests {
         var s = ResultSummary(result: makeRun(meters: 3_200, perfects: 0, bestChain: 0), outcome: RecordOutcome(),
                               title: "Flight", dailyDay: nil, practice: false, share: "")
         s.firstRealRun = true
-        #expect(ResultsView.nextTip(s) == "Land Perfects to push the storm back.")
+        #expect(ResultsView.nextTip(s) == "Perfect landings push the storm back.")
         let duo = canvas(951, 669, fold: true)
         let plan = ResultsPlan.make(s, canvas: duo, cardHeight: ResultsLayout.far(duo).height, dailyRowAllowed: false)
-        #expect(plan.headline && plan.routeStrip && plan.hasHook && plan.routeNote)
-        #expect(!plan.headlineSub)
+        // R9: overline, strip, headline, distance, the quiet line, the tip; no best line, stats or route note.
+        #expect(plan.headline && plan.routeStrip && plan.hasHook && plan.headlineSub)
+        #expect(!plan.routeNote && !plan.hasStats && !plan.hasBest)
+        s.flightNumber = 6
+        #expect(!ResultsPlan.make(s, canvas: duo, cardHeight: ResultsLayout.far(duo).height, dailyRowAllowed: false).hasHook)
         s.firstRealRun = false
         s.outcome.previousBest = 3_400
         s.result = makeRun(meters: 3_200, perfects: 6, bestChain: 4)
-        #expect(ResultsView.nextTip(s) == "200 m short of your best")
         let phone = canvas(874, 402, fold: false)
         let compact = ResultsPlan.make(s, canvas: phone, cardHeight: ResultsLayout.far(phone).height, dailyRowAllowed: true)
         #expect(!compact.routeStrip)
-        #expect(ChainPill.text(chain: 2, tailwind: false, teach: false) == "×2")
+        #expect(ChainPill.text(chain: 2, tailwind: false, teach: false) == "×2 in a row")
     }
 
     @Test func schoolLayoutIsFoldClear() {
@@ -1785,11 +1794,6 @@ struct RoundSixSceneWiringTests {
         let last = FlightSchool.rhythmPosition(x: 10_299)
         #expect(last?.wave == 2)
         #expect(FlightSchool.rhythmPosition(x: 10_300) == nil)
-        let page = CGRect(x: 476, y: 0, width: 475, height: 669)
-        let leftEdge: CGFloat = 476 + 72, rightEdge: CGFloat = 951 - 72
-        #expect(abs(SchoolBirdHUD.anchorX(birdX: 300, page: page) - leftEdge) < 0.01)
-        #expect(SchoolBirdHUD.anchorX(birdX: 700, page: page) == 700)
-        #expect(abs(SchoolBirdHUD.anchorX(birdX: 940, page: page) - rightEdge) < 0.01)
     }
 }
 
@@ -1802,19 +1806,20 @@ struct RoundSevenTests {
             for step in SchoolStep.allCases where step != .wingCheck {
                 s.start(at: step, time: 0)
                 seen.append(s.dotIndex + 1)
-                #expect(s.overline == "Flight School · step \(s.dotIndex + 1) of 7")
+                #expect(s.overline == "Flight School, step \(s.dotIndex + 1) of 5")
             }
-            #expect(seen == [1, 2, 3, 4, 5, 6, 7])
+            // R9: 5 dots (hold shares Wings' dot; soar and land are "Up and land").
+            #expect(seen == [1, 1, 2, 3, 3, 4, 5])
         }
-        #expect(SchoolDisplay().stepCount == 7)
+        #expect(SchoolDisplay().stepCount == 5)
     }
 
     /// P0-2: step 5 names the Perfect outright; "Too close" only inside the danger zone.
     @Test func perfectIsTaughtAndTooCloseIsTruthful() {
         #expect(FlightSchoolCopy.praise(.land) == "PERFECT")
-        #expect(FlightSchoolCopy.praiseLine(.land) == "Land on a downslope = Perfect. Perfects push the storm back.")
-        #expect(FlightSchoolCopy.praiseLine(.dive) == nil)
-        #expect(FlightSchoolCopy.praiseSeconds(.land) > FlightSchoolCopy.praiseSeconds(.dive))
+        // R9: no praise card; the game's own Perfect callout and ring name it in the world.
+        #expect(FlightSchoolCopy.praiseLine(.land) == nil)
+        #expect(FlightSchoolCopy.praiseSeconds(.land) == FlightSchoolCopy.praiseSeconds(.dive))
         #expect(LeadMeter.showsTooClose(teach: true, lead: AppRules.meterDangerZone * 0.5))
         #expect(!LeadMeter.showsTooClose(teach: true, lead: 0.6))
         #expect(!LeadMeter.showsTooClose(teach: false, lead: 0.01))
@@ -1860,7 +1865,7 @@ struct RoundSevenTests {
 
     /// P1-6 / P1-8: the goal sentence early; the Duo only as a fun fact, after an iPhone's first results.
     @Test func goalEarlyAndAWelcomeOnIPhone() {
-        #expect(HomeView.flySubtitle(best: 0, routeReached: 0) == RouteRules.objective)
+        #expect(HomeView.flySubtitle(best: 0, routeReached: 0) == "Next: Gull Point · 4 km")
         #expect(HomeView.flySubtitle(best: 9_000, routeReached: 1).hasPrefix("Next: Saltlight"))
         #expect(HomeView.captionText(duo: false, folded: false, flat: false).contains("Duo") == false)
         // R8 P1-11: no Duo line on an iPhone at all.
@@ -1921,7 +1926,7 @@ struct RoundEightTests {
                 t += 1.0 / 30
             }
             #expect(s.phase == .finished)
-            #expect(shown == (1...7).map { "Flight School · step \($0) of 7" })
+            #expect(shown == [1, 1, 2, 3, 3, 4, 5].map { "Flight School, step \($0) of 5" })
         }
     }
 
@@ -1945,34 +1950,99 @@ struct RoundEightTests {
         #expect(line.contains("✓ Fly 3 km"))
     }
 
-    /// P0-3: one story on the results card.
+    /// R9 (UX-ROUND-9 §2.2): every case of the Results table, as progress ("Caught" appears nowhere).
     @Test func resultsTellOneStory() {
-        let reached = RouteRules.headline(reachedThisRun: 2, meters: 12_830)
-        #expect(reached.title == "Reached Saltlight!")
-        #expect(reached.sub == "The storm caught you 2.17 km before Kestrel Head.")
-        let none = RouteRules.headline(reachedThisRun: 0, meters: 3_200)
-        #expect(none.title == "Caught 800 m short of Gull Point")
-        #expect(none.sub == nil)
+        var i = ResultsHeadline.Input(meters: 12_830, passed: 2, lastPassed: "Saltlight", newLighthouse: true)
+        var h = ResultsHeadline.make(i)
+        #expect(h.overline == "Flight over")
+        #expect(h.headline == "You made it past Saltlight!")
+        #expect(h.chip == "New lighthouse")
+        #expect(h.lines == ["Kestrel Head is 2.2 km further."])
+        i.newLighthouse = false
+        h = ResultsHeadline.make(i)
+        #expect(h.headline == "You made it past Saltlight" && h.chip == nil)
+        h = ResultsHeadline.make(ResultsHeadline.Input(meters: 2_100, passed: 0))
+        #expect(h.headline == "You flew 2.1 km")
+        #expect(h.lines == ["Gull Point is 1.9 km further."])
+        var first = ResultsHeadline.Input(meters: 2_100, passed: 0)
+        first.firstFlight = true
+        h = ResultsHeadline.make(first)
+        #expect(h.overline == "Your first flight")
+        #expect(h.lines == ["Gull Point is 1.9 km further. You'll get there."])
+        var near = ResultsHeadline.Input(meters: 9_600, passed: 2, lastPassed: "Saltlight")
+        near.previousBest = 10_000
+        #expect(ResultsHeadline.make(near).lines == ["Just 400 m short of your best."])
+        near.isNewBest = true
+        #expect(ResultsHeadline.make(near).lines == ["Kestrel Head is 5.4 km further."])
+        var daily = ResultsHeadline.Input(meters: 3_650, passed: 0)
+        daily.dailyTag = "27 Oct"
+        daily.dailyScored = true
+        h = ResultsHeadline.make(daily)
+        #expect(h.overline == "Daily Flight · 27 Oct")
+        #expect(h.lines == ["Gull Point is 350 m further.", "New waves tomorrow."])
+        daily.dailyScored = false
+        daily.dailyPractice = true
+        h = ResultsHeadline.make(daily)
+        #expect(h.overline == "Practice · 27 Oct")
+        #expect(h.lines == ["Practice doesn't count for today."])
+        var ended = ResultsHeadline.Input(meters: 4_230, passed: 1, lastPassed: "Gull Point")
+        ended.endedEarly = true
+        h = ResultsHeadline.make(ended)
+        #expect(h.overline == "Flight ended" && h.headline == "You stopped at 4.2 km")
+        for c in [h, ResultsHeadline.make(i), ResultsHeadline.make(near)] {
+            #expect(!(c.headline + c.lines.joined()).contains("Caught"))
+            #expect(!(c.headline + c.lines.joined()).contains("caught"))
+        }
     }
 
-    /// P0-1: every lighthouse named, the screen filled, Gull Point on it.
-    @Test func routeIsNamedAndFilled() {
-        for i in 0..<12 { #expect(!RouteRules.nodeLabel(index: i, routeReached: 2).hasPrefix("Lighthouse")) }
-        #expect(RouteStrip.nodeCount(routeReached: 0) == 3)
-        for (w, c, edge) in [(CGFloat(951), false, CGFloat(0)), (874, true, 62), (667, true, 0)] {
-            for reached in 0...3 {
-                let n = RouteStrip.nodeCount(routeReached: reached)
-                let s = RouteStrip.fittedSpacing(viewWidth: w, count: n, compact: c, edge: edge)
-                let need = RouteStrip.startPad + edge + CGFloat(n) * s + RouteStrip.endPad
-                // Up to 2 reached, the whole route fits one screen (both pages on the Duo): no scroll, no empty half.
-                if reached <= 2 && w >= 874 { #expect(need <= w + 0.5, "\(n) on \(w)") }
-                // Gull Point (node 0) is clear of the screen edge's inset.
-                #expect(RouteStrip.nodeX(0, width: max(w, need), spacing: s, mirrored: false,
-                                         pad: RouteStrip.startPad + edge) >= edge + 60)
+    /// R9 (UX-ROUND-9 §5): `routeLabelsNeverOverlap` and `routeReadsLeftToRight`, over 7 canvases × route states
+    /// 0–12 × both bird sides (the map ignores the side), with bests in between.
+    @Test func routeLabelsNeverOverlap() {
+        let canvases = testCanvases + [canvas(667, 375, fold: false), canvas(951, 669, fold: true, mirrored: true)]
+        for c in canvases {
+            for reached in 0...12 {
+                for best in [0, RouteRules.meters(max(reached - 1, 0)) + 2_500, RouteRules.meters(reached) - 300] {
+                    let edge = max(c.insets.leading, c.insets.trailing)
+                    let l = RouteLayout.make(viewWidth: c.size.width, compact: c.isCompact, routeReached: reached,
+                                             best: best, edge: edge, fold: c.hasFold ? 447...503 : nil)
+                    var rects = l.nodes.map(\.labelRect) + [l.tailRect]
+                    if let b = l.bestLabelRect { rects.append(b) }
+                    for a in 0..<rects.count {
+                        for b in (a + 1)..<rects.count where rects[a].intersects(rects[b]) {
+                            Issue.record("route labels overlap on \(c.size) at \(reached): \(rects[a]) × \(rects[b])")
+                        }
+                    }
+                    for n in l.nodes {
+                        #expect(n.labelRect.width <= l.spacing - 16 + 0.5)
+                        #expect(n.labelRect.minY > n.tipY)
+                        if let b = l.bestLabelRect { #expect(!b.intersects(n.iconRect)) }
+                    }
+                    // Every name is real, and Gull Point is always the first node, clear of the edge inset.
+                    #expect(l.nodes.first.map { RouteRules.name($0.index) } == "Gull Point")
+                    #expect((l.nodes.first?.x ?? 0) >= edge + 60)
+                    #expect(l.nodes.count == reached + 4)
+                }
             }
         }
-        #expect(RouteStrip.verticalScale(bandHeight: 400) == 1.7)
-        #expect(RouteStrip.verticalScale(bandHeight: 200) == 1)
+    }
+
+    @Test func routeReadsLeftToRight() {
+        for reached in [0, 2, 6] {
+            for compact in [false, true] {
+                let l = RouteLayout.make(viewWidth: 951, compact: compact, routeReached: reached, best: 12_830)
+                let xs = l.nodes.map(\.x)
+                #expect(xs == xs.sorted())
+                #expect(l.harbourX < (xs.first ?? 0))
+                #expect(l.tailRect.minX > (xs.last ?? 0))
+                #expect(l.contentWidth >= l.tailRect.maxX)
+                if let pin = l.bestPin { #expect(pin.x > l.harbourX) }
+            }
+        }
+        // On open the next lighthouse is near 60 % of the width (snapped off the fold band on the Duo).
+        let l = RouteLayout.make(viewWidth: 951, compact: false, routeReached: 6, best: 30_000, fold: 447...503)
+        let nextOnScreen = l.nodes[6].x - l.openOffset
+        #expect(nextOnScreen > 300 && nextOnScreen < 951)
+        #expect(!(425...525).contains(nextOnScreen))
     }
 
     /// P0-5: at most one "New" badge, on the most relevant place.
@@ -1981,6 +2051,8 @@ struct RoundEightTests {
         #expect(HomeView.newBadge(seen: [], routeReached: 2) == "route")
         #expect(HomeView.newBadge(seen: ["route", "goals"], routeReached: 2) == "daily")
         #expect(HomeView.newBadge(seen: ["route", "goals", "daily", "birds"], routeReached: 2) == nil)
+        // R9: the most recent unlock first (a new bird after a level-up).
+        #expect(HomeView.newBadge(seen: [], routeReached: 2, rank: 1) == "birds")
     }
 
     /// P0-6: "Wings folded!" shows the fold done.
@@ -2036,7 +2108,6 @@ struct RoundEightTests {
             #expect(c.isFoldClear(l.seaPromptLow))
             #expect(l.seaPrompt.minY >= PlayLayout.make(c).pause.maxY)
         }
-        #expect(SchoolPrompt.backingOpacity >= 0.8)
     }
 
     /// P1-11: no Duo line on an iPhone's results.
@@ -2057,4 +2128,146 @@ struct RoundEightTests {
         #expect(DemoConfig.parse("session=first:caught").session == .caught)
     }
     #endif
+}
+
+struct RoundNineTests {
+    /// UX-ROUND-9 §1.1: at most 3 in-world words per step, no full stop; the fold words on the Duo, hold on iPhone.
+    @Test func schoolWordsAreFewAndPlain() {
+        for touch in [false, true] {
+            for tapping in touch ? [false, true] : [false] {
+                var s = FlightSchool(touch: touch, tapping: tapping, asksWingCheck: !touch)
+                for step in SchoolStep.allCases {
+                    s.start(at: step, time: 0)
+                    guard let w = s.words(at: 0.5) else { continue }
+                    #expect(w.text.split(separator: " ").count <= 3, "\(w.text)")
+                    #expect(!w.text.hasSuffix("."), "\(w.text)")
+                    for banned in ["tuck", "dive", "drop", "soar", "flap"] { #expect(!w.text.lowercased().contains(banned)) }
+                    if touch && !tapping { #expect(!w.text.lowercased().contains("fold") || step == .wings) }
+                }
+            }
+        }
+        var d = FlightSchool(touch: false, asksWingCheck: false)
+        d.start(at: .dive, time: 0)
+        #expect(d.words(at: 0.1)?.text == "Fold")
+        _ = d.step(SchoolInput(time: 2, landscape: true, flying: true, practice: true,
+                               signals: [.diveDone(heldFraction: 0.2)]))
+        #expect(d.words(at: 2.1)?.text == "Stay folded")
+        var st = FlightSchool(touch: false, asksWingCheck: false)
+        st.start(at: .storm, time: 0)
+        #expect(st.words(at: 1)?.text == "Stay ahead")
+        #expect(st.words(at: 1)?.anchor == .meter)
+    }
+
+    /// The move is shown first: the ghost demo for 1.8 s, then the player's turn; the diagram stays to step 3.
+    @Test func ghostDemoThenYourTurn() {
+        var s = FlightSchool(touch: false, asksWingCheck: false)
+        s.start(at: .dive, time: 10)
+        #expect(s.isGhostDemo(at: 10.5))
+        #expect(!s.isGhostDemo(at: 12))
+        #expect(FlightSchool.ghostTuck(.dive, elapsed: 0.5) == 1)
+        #expect(FlightSchool.ghostTuck(.soar, elapsed: 1.5) == 0)
+        #expect(s.showsDiagram)
+        s.start(at: .soar, time: 0)
+        #expect(!s.showsDiagram)
+        s.start(at: .storm, time: 0)
+        #expect(!s.isGhostDemo(at: 0.1))
+        // Core's ghost paths: which one each step plays, at the practice sea's 0.8×, gone once played.
+        #expect(GhostPlayback.ghostStep(for: .dive, retry: false) == .dive)
+        #expect(GhostPlayback.ghostStep(for: .soar, retry: false) == .soarAndLand)
+        #expect(GhostPlayback.ghostStep(for: .land, retry: true) == .guidedLanding)
+        #expect(GhostPlayback.ghostStep(for: .land, retry: false) == nil)
+        #expect(GhostPlayback.move(for: .rhythm) == .rhythm)
+        let path = PracticeGhost.path(step: .dive)
+        #expect(GhostPlayback.sample(path, elapsed: 0) != nil)
+        #expect(GhostPlayback.sample(path, elapsed: -1) == nil)
+        let end = PracticeGhost.duration(path) / GhostPlayback.speed + 1
+        #expect(GhostPlayback.sample(path, elapsed: end) == nil)
+    }
+
+    /// AR1: the exaggerated fold reads at a glance (122° shows the panels at ≈ 46°), and the rig keeps off the bird.
+    @Test func wingDiagramAndRig() {
+        #expect(abs(WingDiagram.displayAngle(hinge: 122) * 180 / Double.pi - 46.4) < 0.5)
+        #expect(WingDiagram.displayAngle(hinge: 180) == 0)
+        #expect(WingDiagram.displayAngle(hinge: 100) * 180 / Double.pi <= 60.0001)
+        #expect(WingDiagram.hinge(forTuck: 1) == 118 && WingDiagram.hinge(forTuck: 0) == 150)
+        for c in testCanvases {
+            let l = SchoolLayout.make(c)
+            for bird in [CGPoint(x: c.birdPage.midX, y: c.size.height * 0.5),
+                         CGPoint(x: c.birdPage.midX, y: c.size.height * 0.15),
+                         CGPoint(x: c.birdPage.minX + 30, y: c.size.height * 0.7)] {
+                let d = SchoolRig.diagramCenter(bird: bird, canvas: c)
+                #expect(c.isFoldClear(CGRect(x: d.x - 48, y: d.y - 32, width: 96, height: 64)))
+                for anchor in [SchoolWordsAnchor.diagram, .spot, .ring] {
+                    let w = SchoolRig.wordsCenter(anchor: anchor, bird: bird, canvas: c, layout: l, showsDiagram: true)
+                    let words = CGRect(x: w.x - 90, y: w.y - 15, width: 180, height: 30)
+                    #expect(c.isFoldClear(words), "\(anchor) on \(c.size)")
+                    let birdRect = CGRect(x: bird.x - 44, y: bird.y - 44, width: 88, height: 88)
+                    let gap = max(words.minY - birdRect.maxY, birdRect.minY - words.maxY,
+                                  words.minX - birdRect.maxX, birdRect.minX - words.maxX)
+                    #expect(gap >= 79, "words \(gap) pt from the bird on \(c.size)")
+                }
+            }
+            // Dots at the bottom of the bird page; never under the meter.
+            #expect(l.dots.minY > PlayLayout.make(c).meter.maxY + 100)
+            #expect(c.birdPage.contains(CGPoint(x: l.dots.midX, y: l.dots.midY)))
+        }
+    }
+
+    /// UX §4.4: transient text keeps 80 pt off the bird; AR3: "Flight over" sits above the bird, on the bird page.
+    @Test func transientTextAvoidsTheBird() {
+        let c = canvas(951, 669, fold: true, mirrored: true)
+        let bird = CGPoint(x: 200, y: 300)
+        let moved = AppRules.clearOfBird(center: CGPoint(x: 220, y: 320), size: CGSize(width: 300, height: 80),
+                                         bird: bird, canvas: c, hudBottom: 120)
+        let r = CGRect(x: moved.x - 150, y: moved.y - 40, width: 300, height: 80).insetBy(dx: -80, dy: -80)
+        #expect(!r.intersects(CGRect(x: 156, y: 256, width: 88, height: 88)))
+        let kept = AppRules.clearOfBird(center: CGPoint(x: 700, y: 120), size: CGSize(width: 300, height: 80),
+                                        bird: bird, canvas: c, hudBottom: 120)
+        #expect(kept == CGPoint(x: 700, y: 120))
+        let line = CaughtLine.center(bird: CGPoint(x: 720, y: 400), canvas: c)
+        #expect(c.birdPage.contains(line))
+        #expect(line.y < 400)
+        #expect(CaughtLine.text == "Flight over")
+    }
+
+    /// UX §2.3: the level-up is one moment ("New bird: Tern", "Level 2"); new goals shown are the unmet ones only.
+    @Test func birdPageMoment() {
+        var s = ResultSummary(result: makeRun(meters: 12_830, perfects: 11, bestChain: 9, lighthouses: 2),
+                              outcome: RecordOutcome(), title: "Flight", dailyDay: nil, practice: false, share: "")
+        #expect(ResultsView.unlockMoment(s) == nil)
+        #expect(ResultsView.sideGoalRows(s).isEmpty)
+        s.outcome.rankUp = AppRankUp(from: 0, to: 1, birds: [.tern], skies: [], trails: [])
+        let m = ResultsView.unlockMoment(s)
+        #expect(m?.title == "New bird: Tern")
+        #expect(m?.level == "Level 2")
+        #expect(m?.bird == .tern)
+        let met = Goal(id: "a", kind: .reachMeters, target: 3_000, text: "Fly 3 km in one flight")
+        let open = Goal(id: "b", kind: .perfectsInRun, target: 15, text: "15 perfect landings in one flight")
+        s.outcome.nextGoals = [GoalRowOutcome(goal: met, before: 0, after: 1), GoalRowOutcome(goal: open, before: 0, after: 0.7)]
+        #expect(ResultsView.sideGoalRows(s).map(\.goal.id) == ["b"])
+        // The headline input carries the flight's facts.
+        let i = ResultsView.headlineInput(s, today: 300)
+        #expect(i.passed == 2 && i.meters == 12_830 && i.dailyTag == nil)
+    }
+}
+
+struct RoundNineSceneWiringTests {
+    /// Scene SR1: the ghost's `landed` turns on at the path's Perfect; the Studio is in the practice look too.
+    @Test func ghostLandsAndPracticeEverywhere() {
+        let path = PracticeGhost.path(step: .soarAndLand)
+        if let hit = path.first(where: { $0.signals.contains(.landed(.perfect)) }) {
+            #expect(!GhostPlayback.landed(path, elapsed: 0))
+            #expect(GhostPlayback.landed(path, elapsed: hit.t / GhostPlayback.speed + 0.01))
+        }
+        #expect(!GhostPlayback.landed(PracticeGhost.path(step: .dive), elapsed: 99))
+        #expect(SceneAdapter.guide(for: .rhythm) == .rhythmAhead(count: 3))
+        #expect(SceneAdapter.guide(for: .wings) == SceneGuide.none)
+        // Defect #3: Home's menu row for the attract camera, none before the first flight.
+        for c in testCanvases {
+            let l = HomeLayout.make(c)
+            #expect(HomeView.menuRects(l, fresh: true).isEmpty)
+            let r = HomeView.menuRects(l, fresh: false)
+            #expect(r.count == 1 && r[0].contains(l.route) && r[0].contains(l.birds))
+        }
+    }
 }

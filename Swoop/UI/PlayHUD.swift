@@ -49,7 +49,7 @@ struct PlayLayer: View {
             }
             if hud.schoolSea {
                 // Flight School's practice sea: only a quiet pause (the way out); no meter, chip or distance.
-                SwoopIconButton(systemName: "pause.fill", size: 44, compact: true, label: "Pause") { controller.pause() }
+                SchoolPauseButton(compact: true) { controller.pause() }
                     .position(x: l.pause.midX, y: l.pause.midY)
                 if hud.schoolStormHUD {
                     // Step 7 (Scene SC1): the meter and the first lighthouse fade in as the storm arrives.
@@ -57,6 +57,11 @@ struct PlayLayer: View {
                         LeadMeter(lead: hud.lead, stormClose: false, mirrored: info.mirrored)
                             .frame(width: l.meter.width, height: l.meter.height)
                             .position(x: l.meter.midX, y: l.meter.midY)
+                            .onAppear {
+                                // Scene's storm link flows to this icon (the meter's outer end).
+                                controller.noteStormIcon(CGPoint(x: info.mirrored ? l.meter.maxX - 11 : l.meter.minX + 11,
+                                                                 y: l.meter.midY))
+                            }
                         // R8: no goal chip here (its 4.00 km never moved, so the lesson seemed not to count).
                     }
                     .allowsHitTesting(false)
@@ -68,6 +73,9 @@ struct PlayLayer: View {
                 ReachedStage(hud: hud, info: info, reduceMotion: reduceMotion)
                     .allowsHitTesting(false)
             }
+            // R9 (UX-ROUND-9 §2.1, ART §2): "Flight over" at 1.4 s, on the bird page above the bird.
+            CaughtLine(hud: hud, info: info)
+                .allowsHitTesting(false)
             PerfectCalloutView(hud: hud, info: info, reduceMotion: reduceMotion)
                 .allowsHitTesting(false)
             SplashMarkView(hud: hud, info: info, reduceMotion: reduceMotion)
@@ -96,7 +104,8 @@ struct PlayLayer: View {
             }
             ToastStage(hud: hud, compact: c, reduceMotion: reduceMotion)
                 .frame(width: l.toast.width, height: l.toast.height, alignment: .top)
-                .position(x: l.toast.midX, y: l.toast.midY)
+                .position(AppRules.clearOfBird(center: CGPoint(x: l.toast.midX, y: l.toast.midY), size: l.toast.size,
+                                               bird: hud.birdPoint, canvas: info, hudBottom: l.distance.maxY))
                 .allowsHitTesting(false)
                 .opacity(hud.caught ? 0 : 1)
             cards(l)
@@ -329,13 +338,16 @@ struct HUDView: View {
         ZStack(alignment: .topLeading) {
             // QA-1 P1-1: no pause once the storm has caught the bird (the run is over).
             if !hud.caught {
-                SwoopIconButton(systemName: "pause.fill", compact: c, label: "Pause", action: onPause)
+                // ART #12: in play the pause is a solid surface disc (glass only in menus).
+                SchoolPauseButton(compact: c, action: onPause)
                     .position(x: layout.pause.midX, y: layout.pause.midY)
                     .transition(.opacity)
             }
             Group {
-                LeadMeter(lead: hud.lead, stormClose: hud.stormClose, mirrored: mirrored, showsLabels: hud.meterLabel,
-                          teachesDanger: hud.meterTeach)
+                // R9 AR3: at the catch the knob slides into the storm icon and the bar flashes; the HUD fades from
+                // 1.6 s to 2.0 s (not at once). Only the distance stays.
+                LeadMeter(lead: hud.caught ? 0 : hud.lead, stormClose: hud.stormClose || hud.caught, mirrored: mirrored,
+                          showsLabels: hud.meterLabel, teachesDanger: hud.meterTeach)
                     .frame(width: layout.meter.width, height: layout.meter.height)
                     .position(x: layout.meter.midX, y: layout.meter.midY)
                     .allowsHitTesting(false)
@@ -351,6 +363,7 @@ struct HUDView: View {
                     .allowsHitTesting(false)
             }
             .opacity(hud.caught ? 0 : 1)
+            .animation(.easeOut(duration: 0.4).delay(hud.caught ? 1.6 : 0), value: hud.caught)
             VStack(alignment: mirrored ? .leading : .trailing, spacing: 6) {
                 // UX R3 P2-3: no "0 m" during the countdown; the distance fades in at Go.
                 HUDDistance(meters: hud.meters, compact: c, alignTrailing: !mirrored)
@@ -361,7 +374,11 @@ struct HUDView: View {
                     if hud.goalVisible {
                         VStack(alignment: mirrored ? .leading : .trailing, spacing: 2) {
                             // R7: "Your goal" under the distance read as "the distance is the goal".
-                            if hud.goalOverline { SwoopOverline(text: "Next lighthouse", compact: c) }
+                            if hud.goalOverline {
+                                SwoopOverline(text: "Next", compact: c)
+                                    .padding(.horizontal, 6)
+                                    .background(Capsule().fill(SwoopTheme.surface.opacity(0.55)))
+                            }
                             GoalChip(index: hud.goalIndex, metersLeft: hud.goalMetersLeft, mirrored: mirrored,
                                      compact: c)
                         }
@@ -376,6 +393,7 @@ struct HUDView: View {
                     }
                 }
                 .opacity(hud.caught ? 0 : 1)
+                .animation(.easeOut(duration: 0.4).delay(hud.caught ? 1.6 : 0), value: hud.caught)
             }
             .frame(width: layout.distance.width, height: layout.distance.height,
                    alignment: mirrored ? .topLeading : .topTrailing)
@@ -484,9 +502,9 @@ struct LeadMeter: View {
                     let zone = w * CGFloat(AppRules.meterDangerZone)
                     HStack(spacing: 0) {
                         if mirrored { Spacer(minLength: 0) }
+                        // R9 (ART #24): the coral end zone only (α 0.35), no red tick.
                         ZStack(alignment: mirrored ? .leading : .trailing) {
-                            Rectangle().fill(SwoopTheme.coral.opacity(0.4))
-                            Rectangle().fill(SwoopTheme.coral).frame(width: 2)
+                            Rectangle().fill(SwoopTheme.coral.opacity(0.35))
                         }
                         .frame(width: zone)
                         if !mirrored { Spacer(minLength: 0) }
@@ -544,11 +562,13 @@ struct LeadMeter: View {
     }
 
     private var stormIcon: some View {
+        // R9 (ART #25): on a 26 pt surface disc at 0.62, like the knob (it was white on a pale sky).
         Image(systemName: "cloud.bolt.fill")
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(stormClose ? SwoopTheme.coral : SwoopTheme.mist)
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(stormClose ? SwoopTheme.coral : SwoopTheme.foam)
+            .frame(width: 26, height: 26)
+            .background(Circle().fill(SwoopTheme.surface.opacity(0.62)))
             .offset(x: stormClose && pulse ? 1.5 : 0)
-            .swoopLegible()
             .overlay(alignment: .top) {
                 if showsLabels {
                     Text("Storm")
@@ -577,8 +597,10 @@ struct ChainPill: View {
     /// The pill's text, or nil when hidden. Pure; tested.
     nonisolated static func text(chain: Int, tailwind: Bool, teach: Bool = false) -> String? {
         guard chain >= 2 else { return nil }
-        if tailwind { return "×\(chain) · TAILWIND" }
-        return teach ? "×\(chain) in a row" : "×\(chain)"
+        // R9 glossary: a streak is "in a row", always.
+        _ = teach
+        if tailwind { return "×\(chain) in a row · Tailwind" }
+        return "×\(chain) in a row"
     }
 
     var body: some View {
@@ -615,7 +637,7 @@ struct ChainPill: View {
         .animation(.spring(response: 0.28, dampingFraction: 0.62), value: chain)
         .animation(.easeOut(duration: 0.8), value: lost)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(chain >= 2 ? "Perfect chain \(chain)\(tailwind ? ", tailwind" : "")" : "")
+        .accessibilityLabel(chain >= 2 ? "\(chain) perfect landings in a row\(tailwind ? ", Tailwind" : "")" : "")
     }
 }
 
@@ -806,10 +828,6 @@ struct CenterStage: View {
                 }
             } else if let ready = hud.ready {
                 ReadyRing(remaining: ready, total: readyTotal, compact: compact)
-            } else if hud.caught {
-                // The player's R3 note: say what happened before the card.
-                linePill("The storm caught you")
-                    .transition(.opacity)
             }
         }
         .animation(SwoopTheme.pop(reduceMotion), value: hud.countdown)
@@ -864,12 +882,17 @@ struct HintStage: View {
     static let size = CGSize(width: 320, height: 56)
 
     var body: some View {
-        let center: CGPoint = {
+        let center0: CGPoint = {
             if info.hasFold { return CGPoint(x: fixed.midX, y: fixed.midY) }
             guard let bird = hud.birdPoint else { return CGPoint(x: fixed.midX, y: fixed.midY) }
             return HintPlacement.center(bird: bird, size: CGSize(width: min(Self.size.width, info.birdPage.width),
                                                                 height: Self.size.height), canvas: info)
         }()
+        // R9: the one-time lines never sit on the bird (+ 80 pt).
+        let center = hud.tipLine != nil && hud.hint == nil
+            ? AppRules.clearOfBird(center: center0, size: CGSize(width: 340, height: 64), bird: hud.birdPoint,
+                                   canvas: info, hudBottom: PlayLayout.make(info).distance.maxY)
+            : center0
         Group {
             if let tip = hud.tipLine, hud.hint == nil {
                 // R6: the one-time lines (the storm line, the Tailwind teach, the flat tip) use the hint slot.
@@ -1123,14 +1146,16 @@ struct TouchWingFeedback: View {
                         .frame(width: Self.vignetteDepth)
                 }
                 .frame(width: info.size.width, height: info.size.height)
+                // R9 (ART #47): the 36 pt side-view gull on a 44 pt surface disc at 0.5 (the thin "M" read as a
+                // watermark); gold while held.
                 ZStack {
-                    DartGlyph(tuck: u)
-                        .stroke(Color(swoopHex: 0x10233A).opacity(0.4), lineWidth: 2)
-                    DartGlyph(tuck: u)
-                        .fill(u > 0.5 ? SwoopTheme.gold : SwoopTheme.foam)
-                        .opacity(Self.glyphAlpha(tuck: u, birdNear: near))
+                    Circle().fill(SwoopTheme.surface.opacity(0.5)).frame(width: 44, height: 44)
+                    YouGlyph(facingLeft: info.mirrored)
+                        .fill(u > 0.5 ? SwoopTheme.rewardGold : SwoopTheme.foam)
+                        .frame(width: 36, height: 23)
+                        .scaleEffect(x: 1 - 0.2 * u, y: 1)
                 }
-                .frame(width: Self.glyphSize, height: Self.glyphSize * 0.6)
+                .opacity(Self.glyphAlpha(tuck: u, birdNear: near))
                 .position(center)
             }
         }
@@ -1397,8 +1422,10 @@ struct ReachedStage: View {
                 let usual = CGPoint(x: info.farPage.midX, y: info.size.height * 0.40)
                 // SC4: the card also drops to 0.62 h when it would cover the lamp, so the beam is seen leaving it.
                 let avoid = hud.lampPoint ?? hud.sunPoint
-                let p = AppRules.stageCenter(usual: usual, sun: avoid.map { info.screenPoint($0) },
-                                             height: info.size.height)
+                let p0 = AppRules.stageCenter(usual: usual, sun: avoid.map { info.screenPoint($0) },
+                                              height: info.size.height)
+                let p = AppRules.clearOfBird(center: p0, size: CGSize(width: 380, height: 120), bird: hud.birdPoint,
+                                             canvas: info, hudBottom: PlayLayout.make(info).distance.maxY)
                 ReachedCard(reached: r, compact: info.isCompact)
                     .frame(width: min(info.isCompact ? 320 : 380, info.farPage.width))
                     .position(p)
@@ -1420,18 +1447,18 @@ struct ReachedCard: View {
     var body: some View {
         VStack(spacing: 8) {
             LighthouseIcon(state: .reached, size: 44)
-            Text("\(reached.name) reached!")
+            Text("\(reached.name)!")
                 .font(SwoopType.title(compact))
                 .foregroundStyle(SwoopTheme.foam)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-            Text("Lighthouse \(reached.index + 1) · the storm falls back")
+            Text("The storm falls back")
                 .font(SwoopType.body(compact))
                 .foregroundStyle(SwoopTheme.mist)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             if reached.newOnRoute {
-                Text("New on your route")
+                Text("New lighthouse")
                     .font(SwoopType.chip(compact))
                     .kerning(SwoopType.chipKerning(compact))
                     .foregroundStyle(SwoopTheme.ink)
@@ -1445,5 +1472,43 @@ struct ReachedCard: View {
         .background(RoundedRectangle(cornerRadius: compact ? 24 : 28, style: .continuous)
             .fill(SwoopTheme.surface.opacity(0.88)))
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// R9 (UX-ROUND-9 §2.1, ART §2 / AR3): "Flight over" (no full stop) in a `surface` pill at 0.85, `headline`, at the
+/// bird + (0, −110) on the bird page (never over the sea page water), 1.4 s after the catch.
+struct CaughtLine: View {
+    @ObservedObject var hud: HUDState
+    let info: AppCanvas
+
+    static let text = "Flight over"
+    static let delay: Double = 1.4
+
+    /// The pill's centre: above the bird, kept inside the bird page. Pure; tested.
+    nonisolated static func center(bird: CGPoint, canvas c: AppCanvas) -> CGPoint {
+        let bp = c.birdPage
+        let x = min(max(bird.x, bp.minX + 110), bp.maxX - 110)
+        let y = max(bird.y - 110, c.top + 70)
+        return CGPoint(x: bp.width > 220 ? x : bp.midX, y: y)
+    }
+
+    var body: some View {
+        let bird = hud.birdPoint ?? SceneAdapter.defaultBirdPoint(info)
+        ZStack(alignment: .topLeading) {
+            if hud.caught {
+                Text(Self.text)
+                    .font(SwoopType.headline(info.isCompact))
+                    .foregroundStyle(SwoopTheme.foam)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(SwoopTheme.surface.opacity(0.85)))
+                    .fixedSize()
+                    .position(Self.center(bird: bird, canvas: info))
+                    .transition(.opacity.animation(.easeOut(duration: 0.3).delay(Self.delay)))
+            }
+        }
+        .frame(width: info.size.width, height: info.size.height, alignment: .topLeading)
+        .animation(.easeOut(duration: 0.3).delay(hud.caught ? Self.delay : 0), value: hud.caught)
+        .accessibilityHidden(!hud.caught)
     }
 }

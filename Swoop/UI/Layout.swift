@@ -343,7 +343,8 @@ struct PlayLayout: Equatable {
         let hint = CGRect(x: bp.minX, y: c.size.height * 0.62, width: bp.width, height: 64)
         let centerTop = distance.maxY + 4
         let toastY = c.size.height * toastTop
-        let center = CGRect(x: fp.minX, y: centerTop, width: fp.width, height: max(toastY - centerTop, 80))
+        // R9 (ART #26): the countdown and "Ready" sit in the middle of the BIRD page (where the eyes are).
+        let center = CGRect(x: bp.minX, y: centerTop, width: bp.width, height: max(toastY - centerTop, 80))
         let toast = CGRect(x: fp.minX, y: toastY, width: fp.width, height: max(c.bottom - toastY, 60))
         let card = CGRect(x: fp.minX, y: c.top, width: fp.width, height: max(c.bottom - c.top, 0))
         return PlayLayout(pause: pause, meter: meter, tagLine: tagLine, distance: distance, hint: hint, center: center,

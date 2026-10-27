@@ -241,12 +241,19 @@ enum FeelHapticBook {
                 FeelHapticPoint(time: 0.4, value: 0.5), FeelHapticPoint(time: 0.6, value: 0.7),
                 FeelHapticPoint(time: 0.9, value: 0)]
     )
-    /// Caught: one long soft fade.
+    /// Caught (Round 9: the overtake): the front's roll as it passes over (1.2 s), the one thunder jolt at 0.9 s,
+    /// then a long soft fade.
     static let caught = FeelHapticCue(
-        notes: [.buzz(0.5, 0.15, duration: 1.6)],
-        curve: [FeelHapticPoint(time: 0, value: 0.8), FeelHapticPoint(time: 0.5, value: 0.45),
-                FeelHapticPoint(time: 1.6, value: 0)]
+        notes: [.buzz(0.5, 0.15, duration: 2.0), .tap(0.6, 0.3, at: Double(FeelSoundBook.caughtStrike))],
+        curve: [FeelHapticPoint(time: 0, value: 0.35), FeelHapticPoint(time: 0.5, value: 0.9),
+                FeelHapticPoint(time: 1.2, value: 0.5), FeelHapticPoint(time: 2.0, value: 0)]
     )
+    /// Round 9 school beats (the ghost's demos have NO haptic, by design: a touch is always the player's).
+    static let schoolMorph = FeelHapticCue(notes: [.tap(0.3, 0.5, at: 0.75)])
+    static let waveDone = FeelHapticCue(notes: [.tap(0.25, 0.85)])
+    static let stormPushedBack = FeelHapticCue(notes: [.buzz(0.3, 0.2, duration: 0.3)],
+                                               curve: [FeelHapticPoint(time: 0, value: 1),
+                                                       FeelHapticPoint(time: 0.3, value: 0)])
     /// Countdown ticks and the drop.
     static let countdownTick = FeelHapticCue(notes: [.tap(0.35, 0.6)])
     static let started = FeelHapticCue(notes: [.tap(0.6, 0.8)])

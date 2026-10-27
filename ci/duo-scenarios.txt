@@ -120,3 +120,29 @@ s1-16-results|session=first:results|10
 s1-17-home|session=first:home2|8
 s1-18-route|session=first:route|8
 s1-19-goals|session=first:goals|8
+# Round 9 (UX-ROUND-9 §7 R8, ART-ROUND-9 AR6): the school taught by the world (each step's ghost demo and the
+# player's turn), the caught overtake, Results per case, the new-bird card, the Route left to right, Home returning.
+r9-school-wings-demo|session=first:school;school=wings:demo|5
+r9-school-wings-turn|session=first:school;school=wings:turn|5
+r9-school-clearside|session=first:school;school=wingcheck:ask|5
+r9-school-dive-demo|session=first:school;school=dive:demo|6
+r9-school-dive-turn|session=first:school;school=dive:turn|6
+r9-school-dive-fail|session=first:school;school=dive:fail|6
+r9-school-soar-demo|session=first:school;school=soar:demo|6
+r9-school-land-turn|session=first:school;school=land:turn|6
+r9-school-rhythm|session=first:school;school=rhythm:turn;autopilot=perfect|8
+r9-school-storm|session=first:school;school=storm:turn|7
+r9-caught-0.6|session=first:caught;autopilot=casual;freezeOn=caught;freezeAfter=0;freezeDelay=0.6|25
+r9-caught-1.4|session=first:caught;autopilot=casual;freezeOn=caught;freezeAfter=0;freezeDelay=1.4|25
+r9-caught-2.4|session=first:caught;autopilot=casual;freezeOn=caught;freezeAfter=0;freezeDelay=2.4|25
+r9-results-first|session=first:results|10
+r9-results-none|screen=results;seed=7;progress=mid;resultsFrame=caught;autopilot=novice|8
+r9-results-new|screen=results;seed=7;progress=fresh;resultsFrame=newroute;autopilot=perfect|20
+r9-results-past|screen=results;seed=7;progress=late;resultsFrame=reached;autopilot=perfect|20
+r9-results-newbest|screen=results;seed=7;progress=mid;autopilot=expert|20
+r9-results-daily|screen=results;mode=daily;progress=mid;autopilot=expert|12
+r9-results-newbird|screen=results;seed=7;progress=mid;rankUp;autopilot=casual|8
+r9-route-fresh|screen=route;progress=fresh|5
+r9-route-2|session=first:route|8
+r9-route-late|screen=route;progress=late|5
+r9-home-returning|session=first:home2|8

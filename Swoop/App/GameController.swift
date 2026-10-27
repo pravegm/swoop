@@ -141,6 +141,14 @@ final class GameController: ObservableObject, SceneDriver {
     private var flightStart: Double?
     /// D4 (UX §5 HUD): this run teaches the chain ("✦ ×2 in a row") until its first chain of 2.
     private var chainTeachRun = false
+    /// R9: the step whose ghost "watch" cue has played, and Core's ghost paths by step.
+    private var ghostCuePlayed: SchoolStep?
+    /// The step whose guide gull has finished (Scene's `onGhostFinished`): it is not flown again for that step.
+    private var ghostDoneStep: SchoolStep?
+    private var stormIconPoint: CGPoint?
+    /// R9: the flight being recorded was ended from the cover.
+    private var endingFromCover = false
+    private var ghostPaths: [PracticeGhostStep: [GhostSample]] = [:]
     /// The lighthouse index the 300 m "goal near" cue last played for (-1: none this run).
     private var goalNearCued = -1
     private var countdownTotal: Double = 3
@@ -336,7 +344,7 @@ final class GameController: ObservableObject, SceneDriver {
 
     /// The scored Daily's countdown banner title (UX §3 "Daily"): "Daily Flight #298"; nil otherwise.
     var dailyBannerTitle: String? {
-        if case let .daily(day, scored) = mode, scored { return "Daily Flight \(AppRules.dailyTag(day: day))" }
+        if case let .daily(day, scored) = mode, scored { return AppRules.dailyTitle(day: day) }
         return nil
     }
 
@@ -506,7 +514,7 @@ final class GameController: ObservableObject, SceneDriver {
             stepSchool(now: now, tuck: schoolTuck, snapshot: snapshot, events: events)
         }
         if route == .wingCheck { stepStandaloneWingCheck(now: now) }
-        SceneAdapter.setSchool(scene, step: schoolSeaRun ? school?.stepNow : nil,
+        SceneAdapter.setSchool(scene, step: school?.stepNow,
                                slowMo: schoolSeaRun && (school?.timeScale ?? 1) < 0.6)
         if !homeLoop {
             tally.note(events, snapshot: snapshot)
@@ -615,6 +623,9 @@ final class GameController: ObservableObject, SceneDriver {
         newScene.driver = self
         // UX-A1: the callout anchors to where the bird really is (Scene R3, view points, y down).
         SceneAdapter.watchBird(newScene) { [weak self] p in self?.reportedBirdPoint = p }
+        newScene.onGhostFinished = { [weak self] in
+            MainActor.assumeIsolated { self?.ghostFinished() }
+        }
         SceneAdapter.setEffects(newScene, quality: effectsQuality)
         if isDemo { SceneAdapter.storeCapture(newScene) }
         scene = newScene
@@ -680,6 +691,11 @@ final class GameController: ObservableObject, SceneDriver {
     /// Home shows (its wordmark and caption frames) or leaves ([]): the attract bird keeps under the text (R5b).
     func setHomeTextRects(_ rects: [CGRect]) {
         SceneAdapter.setHomeTextRects(scene, rects)
+    }
+
+    /// Defect #3: Home's menu row for the attract camera ([] when Home goes).
+    func setHomeMenuRects(_ rects: [CGRect]) {
+        SceneAdapter.setHomeMenuRects(scene, rects)
     }
 
     func setReduceMotion(_ on: Bool) {
@@ -993,10 +1009,14 @@ final class GameController: ObservableObject, SceneDriver {
     /// Fly (first ever) or Settings › Flight School (replay).
     func startSchool(replay: Bool, at step: SchoolStep = .hold) {
         let now = CACurrentMediaTime()
-        // R7 P0-1: the Wing check is no longer part of the school (it lives in Settings › Bird side): 7 steps.
-        var s = FlightSchool(touch: schoolTouch, tapping: settings.tuckByTapping, asksWingCheck: false)
+        // R9 (UX-ROUND-9 §1.2): step 2 "Clear side" returns as three in-world words, on a Duo's hinge only and only
+        // while it has never been answered (Settings › Bird side keeps "Check again").
+        var s = FlightSchool(touch: schoolTouch, tapping: settings.tuckByTapping,
+                             asksWingCheck: hasHinge && !settings.wingCheckDone)
         s.start(at: step, time: now)
         school = s
+        ghostCuePlayed = nil
+        ghostDoneStep = nil
         AppTrace.t("SWOOP-T school \(s.stepNow.key) prompt")
         if s.stepNow.isSea {
             startSchoolSea()
@@ -1054,6 +1074,23 @@ final class GameController: ObservableObject, SceneDriver {
         nextCountdown = Self.firstCountdown
         firstRealRun = true    // R7: a skip's run is the first real run too (the goal sentence, the storm line)
         start(mode: .flight)
+    }
+
+    /// R9 (ART #11): the Studio steps have the pause too. Paused, the step holds; Resume restarts it.
+    @Published private(set) var schoolStudioPaused = false
+
+    func pauseSchoolStudio() {
+        guard school != nil, !schoolSeaRun else { return }
+        schoolStudioPaused = true
+    }
+
+    func resumeSchoolStudio() {
+        schoolStudioPaused = false
+        guard var s = school else { return }
+        let now = CACurrentMediaTime()
+        s.start(at: s.stepNow, time: now)
+        school = s
+        publishSchool(now)
     }
 
     /// Step 0's escape: "Play with touch instead" (the touch variant from step 1).
@@ -1116,9 +1153,11 @@ final class GameController: ObservableObject, SceneDriver {
 
     private func endSchool() {
         school = nil
-        hud.setSchoolFaster(nil)
-        hud.setSchoolRhythm(nil)
+        schoolStudioPaused = false
         hud.setSchoolStormHUD(false)
+        SceneAdapter.setGuideGhost(scene, sample: nil, move: nil)
+        SceneAdapter.setStormLink(scene, nil)
+        SceneAdapter.setSchoolLighthouse(scene, false)
         schoolSeaRun = false
         feedback.practiceAmbience = false
         hud.setSchoolSea(false)
@@ -1128,7 +1167,8 @@ final class GameController: ObservableObject, SceneDriver {
     /// One frame of the school (from `advance`).
     private func stepSchool(now: TimeInterval, tuck: Double, snapshot s: FlightSnapshot, events: [FlightEvent]) {
         guard var sc = school else { return }
-        publishSchoolBirdHUD(sc, snapshot: s, now: now)
+        if schoolStudioPaused { return }
+        publishSchoolWorld(sc, snapshot: s, now: now)
         #if DEBUG
         if schoolHeld { return }
         #endif
@@ -1144,12 +1184,17 @@ final class GameController: ObservableObject, SceneDriver {
             input.practice = true
             input.signals = session.practiceSignals
         }
+        let wavesBefore = input.signals.compactMap { sig -> Int? in if case let .waveDone(i) = sig { return i }; return nil }
         let out = sc.step(input)
         school = sc
+        // Feel R9: the school's beats.
+        if sc.stepNow == .rhythm { for i in wavesBefore { feedback.cue(.waveDone(i + 1)) } }
+        if sc.stepNow == .storm, input.signals.contains(.landed(.perfect)) { feedback.cue(.stormPushedBack) }
         if out.succeeded {
             feedback.cue(.schoolStep(sc.dotIndex))
+            if sc.stepNow == .storm { feedback.cue(.lighthouseSighted) }
             AppTrace.t("SWOOP-T school \(sc.stepNow.key) done")
-            announce("Done. \(sc.praise ?? "")", priority: 2)
+            announce("Done.", priority: 2)
         }
         if out.rewind {
             feedback.cue(.schoolRewind)
@@ -1163,26 +1208,63 @@ final class GameController: ObservableObject, SceneDriver {
             }
             AppTrace.t("SWOOP-T school \(sc.stepNow.key) prompt")
             announce("Flight School, step \(sc.dotIndex + 1) of \(sc.stepCount). \(sc.prompt(at: now))", priority: 2)
-            if sc.stepNow.isSea && !schoolSeaRun { startSchoolSea() }
+            if sc.stepNow.isSea && !schoolSeaRun {
+                feedback.cue(.schoolMorph)    // the title bird drops into the practice sea
+                startSchoolSea()
+            }
         }
         if out.finished { finishSchool() }
         publishSchool(now)
     }
 
-    /// SC3: the bird-anchored "Faster!" capsule (step 3) and rhythm bar (step 6), drawn by the App (`SchoolBirdHUD`).
-    private func publishSchoolBirdHUD(_ sc: FlightSchool, snapshot s: FlightSnapshot, now: TimeInterval) {
+    /// R9: the world teaches. The storm step's meter, and the guide gull: Core's ghost path for the step, played from
+    /// the step's start (the same wave, just ahead of the waiting bird) and handed to Scene to draw; Feel's "watch"
+    /// whoosh as each demonstration starts. (R9 cut the Faster! bar and the rhythm bar.)
+    private func publishSchoolWorld(_ sc: FlightSchool, snapshot s: FlightSnapshot, now: TimeInterval) {
         hud.setSchoolStormHUD(schoolSeaRun && sc.stepNow == .storm && now - sc.stepStartedAt >= Self.schoolStormHUDAfter)
-        var flying = false
-        if case .flying = s.phase { flying = true }
-        let faster: Double? = schoolSeaRun && flying && sc.stepNow == .dive
-            ? (FlightSchool.fasterFill(speed: s.speed) * 20).rounded() / 20 : nil
-        hud.setSchoolFaster(faster)
-        var rhythm: SchoolRhythm?
-        if schoolSeaRun && sc.stepNow == .rhythm, let pos = FlightSchool.rhythmPosition(x: Double(s.position.x)) {
-            rhythm = SchoolRhythm(wave: pos.wave, fraction: (pos.fraction * 60).rounded() / 60,
-                                  tuck: (s.tuck * 10).rounded() / 10)
+        // Step 6 (Scene): the dotted link from the wall to the meter's storm icon for 1 s as the meter fades in, then
+        // Gull Point rising on the far horizon.
+        let stormElapsed = sc.stepNow == .storm ? sc.elapsed(at: now) : -1
+        let linking = schoolSeaRun && stormElapsed >= Self.schoolStormHUDAfter && stormElapsed < Self.schoolStormHUDAfter + 1
+        SceneAdapter.setStormLink(scene, linking ? stormIconPoint : nil)
+        SceneAdapter.setSchoolLighthouse(scene, schoolSeaRun && stormElapsed >= 3)
+        guard schoolSeaRun, ghostDoneStep != sc.stepNow,
+              let ghostStep = GhostPlayback.ghostStep(for: sc.stepNow, retry: sc.fails > 0) else {
+            SceneAdapter.setGuideGhost(scene, sample: nil, move: nil)
+            return
         }
-        hud.setSchoolRhythm(rhythm)
+        let path = ghostPath(ghostStep)
+        let elapsed = sc.elapsed(at: now)
+        let sample = GhostPlayback.sample(path, elapsed: elapsed)
+        let move = GhostPlayback.move(for: sc.stepNow)
+        if sample != nil, ghostCuePlayed != sc.stepNow, let m = move {
+            ghostCuePlayed = sc.stepNow
+            feedback.cue(.ghost(m))
+        }
+        SceneAdapter.setGuideGhost(scene, sample: sample, move: move?.rawValue,
+                                   landed: GhostPlayback.landed(path, elapsed: elapsed))
+    }
+
+    /// Scene's `onGhostFinished`: the guide gull has handed over (its motes); the player's turn for this step.
+    private func ghostFinished() {
+        ghostDoneStep = school?.stepNow
+        AppTrace.t("SWOOP-T school ghost done \(school?.stepNow.key ?? "-")")
+    }
+
+    /// The meter's storm icon (view points), reported by the school's meter as it fades in (the storm link's target).
+    func noteStormIcon(_ p: CGPoint) { stormIconPoint = p }
+
+    /// The dashed diagram's pose: the guide gull's own tuck while it flies (Scene), else nil.
+    var ghostTuckForDiagram: Double? { SceneAdapter.ghostTuck(scene) }
+    var ghostScreenPoint: CGPoint? { SceneAdapter.ghostScreenPoint(scene) }
+    var ringScreenRect: CGRect? { SceneAdapter.ringScreenRect(scene) }
+
+    /// Core's ghost paths, flown once each (pure and deterministic).
+    private func ghostPath(_ step: PracticeGhostStep) -> [GhostSample] {
+        if let p = ghostPaths[step] { return p }
+        let p = FlightSession.practiceGhostPath(step: step)
+        ghostPaths[step] = p
+        return p
     }
 
     /// Step 7 ends in the air: the real Flight, behind the 1.5 s Ready · Go.
@@ -1203,7 +1285,14 @@ final class GameController: ObservableObject, SceneDriver {
         d.prompt = sc.prompt(at: now)
         d.subline = sc.subline
         d.praise = sc.phase == .praise ? sc.praise : nil
-        d.praiseLine = sc.phase == .praise ? FlightSchoolCopy.praiseLine(sc.stepNow) : nil
+        d.praiseLine = nil
+        if let w = sc.words(at: now) {
+            d.words = w.text
+            d.wordsAnchor = w.anchor
+        }
+        d.stepStartedAt = sc.stepStartedAt
+        d.frozenElapsed = sc.frozenElapsed
+        d.showsDiagram = sc.showsDiagram
         d.dotIndex = sc.dotIndex
         d.stepCount = sc.stepCount
         d.canSkip = sc.canSkip
@@ -1261,7 +1350,7 @@ final class GameController: ObservableObject, SceneDriver {
         outcome.dailyCounted = true
         outcome.dailyStreak = store.data.dailyStreak(today: day)
         var card = ResultSummary(result: result, outcome: outcome,
-                                 title: "Daily Flight \(AppRules.dailyTag(day: day))", dailyDay: day,
+                                 title: AppRules.dailyTitle(day: day), dailyDay: day,
                                  practice: false, share: ShareText.line(for: result, streak: outcome.dailyStreak))
         card.isDailyCard = true
         card.dailySpentUnfiled = record == nil
@@ -1314,6 +1403,7 @@ final class GameController: ObservableObject, SceneDriver {
         let result = tally.result(mode: mode, seed: session.seed, snapshot: session.snapshot, bird: runBird)
         recordedFinish = true
         clearRunPauses()
+        endingFromCover = true
         record(result, immediate: true)
     }
 
@@ -1462,10 +1552,7 @@ final class GameController: ObservableObject, SceneDriver {
                                                                   AppHint.land.rawValue]))
         hud.reset()
         chainTeachRun = !store.data.learnedHints.contains("chain") && !schoolSeaRun
-        // R7 P1-6: the first real run's countdown carries the goal sentence (until Go).
-        if firstRealRun && !homeLoop && !schoolSeaRun {
-            showTip(RouteRules.objective, seconds: countdownTotal, sessionTime: 0)
-        }
+        // R9 (ART #27): one pill at a time: the countdown keeps only its own line (the goal sentence is cut here).
         goalNearCued = -1
 
         let kind = chooseInput()
@@ -1574,8 +1661,8 @@ final class GameController: ObservableObject, SceneDriver {
                                                   serial: calloutSerial))
                         calloutUntil = s.time + Self.calloutSeconds
                         hitStopUntil = now + AppRules.milestoneHitStop
-                        announce(tailwindNow ? "Tailwind, chain \(chain)"
-                                 : (chain >= 2 ? "Perfect, chain \(chain)" : "Perfect"), priority: 1)
+                        announce(tailwindNow ? "Tailwind, \(chain) in a row"
+                                 : (chain >= 2 ? "Perfect, \(chain) in a row" : "Perfect"), priority: 1)
                     }
                 } else if quality == .splash {
                     slowUntil = now + Self.splashSlowSeconds
@@ -1600,7 +1687,7 @@ final class GameController: ObservableObject, SceneDriver {
                 lighthouseUntil = s.time + Self.reachedCardSeconds
                 hitStopUntil = now + AppRules.milestoneHitStop
                 if hud.toast?.kind == .milestone { hud.setToast(nil) }
-                announce(isNew ? "\(placeName) reached. New on your route." : "\(placeName) reached.", priority: 2)
+                announce(isNew ? "\(placeName)! New lighthouse." : "\(placeName)!", priority: 2)
             case let .milestone(km):
                 if AppRules.milestoneToasts(km: km) && hud.lighthouse == nil {
                     toastSerial += 1
@@ -1629,14 +1716,14 @@ final class GameController: ObservableObject, SceneDriver {
                 forceHUD = true
                 caughtAt = s.time
                 hud.setCaught(true)
-                announce("Caught at \(ShareText.distance(s.distanceMeters))", priority: 3)
+                announce("Flight over. \(ShareText.distance(s.distanceMeters))", priority: 3)
             case .finished:
                 handleFinished(immediate: false)
             case .tailwindStarted:
                 // D4: the first Tailwind ever is explained.
                 if !store.data.learnedHints.contains("tailwind") && !schoolSeaRun {
                     if !isDemo { store.learnHint("tailwind") }
-                    showTip("Tailwind! 3 Perfects in a row = a burst of speed.", seconds: 3, sessionTime: s.time)
+                    showTip("Tailwind! 3 in a row = speed boost", seconds: 3, sessionTime: s.time)
                     // R7 P0-4: the teach line says "Tailwind!"; the callout word clipped out from under it.
                     hud.setCallout(nil)
                 }
@@ -1790,20 +1877,15 @@ final class GameController: ObservableObject, SceneDriver {
                 feedback.cue(.goalNear)
             }
         }
-        var overline = false
-        if firstRealRun, let start = flightStart {
-            overline = s.time - start < Self.goalOverlineSeconds
-            if s.time - start < Self.stormLineSeconds && hud.tipLine == nil && !stormLineShown {
-                stormLineShown = true
-                showTip("Storm behind you. Don't let it catch you.", seconds: Self.stormLineSeconds, sessionTime: s.time)
-            }
-        }
-        hud.setGoalOverline(overline)
+        // R9 (UX-ROUND-9 §4.4): the chip always sits under its NEXT overline; the first flight's storm teach line is
+        // cut (the school has shown the storm, and the line covered the bird).
+        hud.setGoalOverline(true)
         if hud.callout != nil && s.time > calloutUntil { hud.setCallout(nil) }
         if hud.chainLost != nil && s.time > chainLostUntil { hud.setChainLost(nil) }
         if hud.splashMark != nil && s.time > splashUntil { hud.setSplashMark(nil) }
         hud.setSunPoint(SceneAdapter.sunDesignPoint(scene))
-        hud.setLampPoint(hud.reached != nil ? SceneAdapter.lampDesignPoint(scene) : nil)
+        hud.setLampPoint(hud.reached != nil || (schoolSeaRun && school?.stepNow == .storm)
+                         ? SceneAdapter.lampDesignPoint(scene) : nil)
         // R4 P1-7 / R6 D4: the first 3 runs explain the meter ("Storm", "You", "Too close") for their first seconds.
         var label = false
         if store.data.runs < 3 && !homeLoop && !schoolSeaRun {
@@ -1841,6 +1923,9 @@ final class GameController: ObservableObject, SceneDriver {
         built.hingeRun = wasHinge
         built.firstRealRun = firstRealRun
         built.explainsDaily = !store.data.learnedHints.contains(AppRules.dailyRowHint)
+        built.flightNumber = store.data.runs
+        built.endedEarly = endingFromCover
+        endingFromCover = false
         firstRealRun = false
         built.dailyBest = Self.isDailyBest(result, data: store.data)
         if wasHinge && store.data.foldToFlyShown < 5 {
@@ -1883,7 +1968,7 @@ final class GameController: ObservableObject, SceneDriver {
             day = d
             practice = !scored
             let n = AppRules.dailyTag(day: d)
-            title = scored ? "Daily Flight \(n)" : "Daily Flight \(n) · Practice"
+            title = scored ? "Daily Flight · \(n)" : "Practice · \(n)"
         }
         return ResultSummary(result: result, outcome: outcome, title: title, dailyDay: day, practice: practice,
                              share: ShareText.line(for: result, streak: outcome.dailyStreak))
@@ -2059,18 +2144,7 @@ final class GameController: ObservableObject, SceneDriver {
                 AppTrace.t("SWOOP-T flatTip shown")
             }
         }
-        if demo.schoolStep == .wingCheck {
-            // R7 P0-1: the Wing check lives in Settings only; its frames show that check at the phase asked.
-            startAttract()
-            openWingCheck()
-            if let p = demo.schoolPhase.flatMap(WingCheckFlow.Phase.init(rawValue:)) {
-                standaloneWingCheck?.force(p)
-                wingCheckDisplay = p
-            }
-            demoWingHeld = true
-            AppTrace.t("SWOOP-T wingcheck \(demo.schoolPhase ?? "explain")")
-            return
-        }
+        // R9: school=wingcheck:<phase> is the school's step 2 again (on a Duo's hinge; an iPhone starts at step 3).
         if let stage = demo.session, launchFirstSession(stage, demo: demo, today: today) { return }
         if let step = demo.schoolStep {
             startSchool(replay: false, at: step)

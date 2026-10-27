@@ -280,6 +280,21 @@ final class SceneEffects {
         spray.spawn(mist, size: 90 / 1.3 / z, color: foamColor, texture: softTexture)
     }
 
+    /// R9 caught: a rain-ring ripple on the water (an ellipse 24 → 60 pt in foam at α 0.4, 0.9 s).
+    func ripple(at point: CGPoint, zoom z: CGFloat, color: UIColor) {
+        let zz = max(z, 0.01)
+        ring(at: point, color: color, start: 24 / 200 / zz, end: 60 / 200 / zz, duration: 0.9, delay: 0, alpha: 0.4,
+             rides: false)
+    }
+
+    /// R9 guide gull: its "ghost Perfect", the ring in gold outline only (no drops, no stars), at `point`.
+    func ghostPerfect(at point: CGPoint, zoom z: CGFloat) {
+        let zz = max(z, 0.01)
+        ring(at: point, color: ringReward, start: SceneLook.perfectRingFrom / 200 / zz,
+             end: SceneLook.perfectRingTo / 200 / zz, duration: SceneLook.perfectRingTime + 0.1, delay: 0, alpha: 0.9,
+             rides: false)
+    }
+
     /// A Good landing: a modest splash.
     func good(at point: CGPoint, zoom z: CGFloat, color: UIColor) {
         splashDroplets(at: point, count: reduceMotion ? 6 : 12, speed: 300, zoom: z, color: color)

@@ -133,6 +133,10 @@ enum SchoolStep: Int, CaseIterable, Comparable {
     }
 }
 
+/// R9: where a step's in-world words sit: beside the diagram, at the bird's spot (≥ 80 pt off it), by the ring, by
+/// the meter, or on both halves (the clear-side check).
+enum SchoolWordsAnchor: Equatable { case diagram, spot, ring, meter, pages }
+
 /// One frame of what the school sees.
 struct SchoolInput: Equatable {
     var time: Double
@@ -178,7 +182,12 @@ struct FlightSchool: Equatable {
 
     // Timings (UX §1.1, §1.2).
     static let minPromptSeconds: Double = 1.2
-    static let praiseSeconds: Double = 1.2
+    /// R9 (UX-ROUND-9 §1.1): each step first shows the move (the ghost and the diagram), then waits for the player.
+    static let ghostDemoSeconds: Double = 1.8
+    /// R9: no praise words; the world answers, then moves on.
+    static let praiseSeconds: Double = 0.5
+    /// R9 step 6: the Perfect in the storm's guided ring passes it; this long passes it anyway.
+    static let stormPassAfter: Double = 15
     static let touchOfferAfter: Double = 10
     static let idleHelpAfter: Double = 6
     static let maxFails = 3
@@ -220,6 +229,11 @@ struct FlightSchool: Equatable {
     private var upFace = false
     private var waves = 0
     private var landAttempts = 0
+    /// R9: step 3 was missed at least once ("Stay folded" at the spot).
+    private(set) var missedOnce = false
+    /// Demo `school=<step>:demo|turn|fail`: the frame's moment in the step, held (the ghost demonstrating, or the
+    /// player's turn).
+    private(set) var frozenElapsed: Double?
 
     init(touch: Bool, tapping: Bool = false, asksWingCheck: Bool) {
         self.touch = touch
@@ -227,17 +241,88 @@ struct FlightSchool: Equatable {
         self.asksWingCheck = asksWingCheck && !touch
     }
 
-    /// Steps shown in the dots (7 without the Wing check).
-    var stepCount: Int { asksWingCheck ? 8 : 7 }
+    /// R9 (UX-ROUND-9 §1.2): 6 dots on a Duo asking the clear-side check, else 5. "Hold" folds into Wings (dot 1) and
+    /// "Up and land" is one dot (soar + land).
+    var stepCount: Int { asksWingCheck ? 6 : 5 }
 
-    /// The dot index of the current step (the Wing check is skipped on touch).
+    /// The dot of the current step. Pure; tested.
     var dotIndex: Int {
-        if asksWingCheck || stepNow < .wingCheck { return stepNow.rawValue }
-        return stepNow.rawValue - 1
+        let c = asksWingCheck ? 1 : 0
+        switch stepNow {
+        case .hold, .wings: return 0
+        case .wingCheck: return 1
+        case .dive: return 1 + c
+        case .soar, .land: return 2 + c
+        case .rhythm: return 3 + c
+        case .storm: return 4 + c
+        }
     }
 
-    /// "FLIGHT SCHOOL · STEP 3 OF 8".
-    var overline: String { "Flight School · step \(dotIndex + 1) of \(stepCount)" }
+    /// VoiceOver only (R9 cut the visible overline): "Flight School, step 3 of 6".
+    var overline: String { "Flight School, step \(dotIndex + 1) of \(stepCount)" }
+
+    /// R9: the step shows its move first (the ghost, the diagram's dashed pose), for `ghostDemoSeconds`.
+    func isGhostDemo(at time: Double) -> Bool {
+        guard phase == .prompt, Self.hasDemo(stepNow) else { return false }
+        return elapsed(at: time) < Self.ghostDemoSeconds
+    }
+
+    /// Seconds into the step (a demo frame's held moment, else the clock).
+    func elapsed(at time: Double) -> Double { frozenElapsed ?? (time - stepStartedAt) }
+
+    static func hasDemo(_ step: SchoolStep) -> Bool {
+        switch step {
+        case .wings, .dive, .soar, .land, .rhythm: return true
+        case .hold, .wingCheck, .storm: return false
+        }
+    }
+
+    /// The demonstration's scripted tuck at `elapsed` seconds into the step (the diagram's dashed ghost; Scene's guide
+    /// gull flies Core's ghost path). Pure; tested.
+    static func ghostTuck(_ step: SchoolStep, elapsed e: Double) -> Double {
+        let loop = 0.5 - 0.5 * cos(2 * Double.pi * max(e, 0) / 1.4)
+        switch step {
+        case .wings, .rhythm: return loop
+        case .dive: return 1
+        case .soar: return e < 0.9 ? 1 : 0
+        case .hold, .wingCheck, .land, .storm: return 0
+        }
+    }
+
+    /// R9: the step's in-world words (≤ 3, no full stop) and where they sit; nil = none. Pure; tested.
+    func words(at time: Double) -> (text: String, anchor: SchoolWordsAnchor)? {
+        let e = elapsed(at: time)
+        guard phase == .prompt else { return nil }
+        switch stepNow {
+        case .hold:
+            return touch ? nil : ("Hold it open", .diagram)
+        case .wings:
+            if tapping { return (folded ? "Tap again" : "Tap", .diagram) }
+            if folded { return (touch ? "Now let go" : "Now open", .diagram) }
+            return (touch ? "Hold anywhere" : "Fold a little", .diagram)
+        case .wingCheck:
+            switch wingCheck.phase {
+            case .explain: return ("Open flat", .pages)
+            case .fold: return ("Now fold", .pages)
+            case .ask: return ("Tap clear side", .pages)
+            case .confirm: return nil
+            }
+        case .dive:
+            if missedOnce { return (touch ? "Keep holding" : "Stay folded", .spot) }
+            return (tapping ? "Tap" : (touch ? "Hold" : "Fold"), .diagram)
+        case .soar:
+            return (tapping ? "Tap again" : (touch ? "Let go" : "Open"), .spot)
+        case .land:
+            return ("Land here", .ring)
+        case .rhythm:
+            return e < 3.5 ? ("One per wave", .spot) : nil
+        case .storm:
+            return ("Stay ahead", .meter)
+        }
+    }
+
+    /// The live diagram rides the bird until step 3 (Down) has passed (UX-ROUND-9 §1.1 rule 6).
+    var showsDiagram: Bool { stepNow <= .dive && stepNow != .wingCheck }
 
     /// The prompt for the current step (and, for timed steps, the moment within it).
     func prompt(at time: Double) -> String {
@@ -317,6 +402,7 @@ struct FlightSchool: Equatable {
         upFace = false
         waves = 0
         landAttempts = 0
+        missedOnce = false
         wingCheck = WingCheckFlow()
     }
 
@@ -331,6 +417,13 @@ struct FlightSchool: Equatable {
             praise = FlightSchoolCopy.praise(stepNow, wingCheck: wingCheck)
         case "fail":
             subline = FlightSchoolCopy.failure(stepNow, touch: touch)
+            missedOnce = true
+            frozenElapsed = Self.ghostDemoSeconds + 1
+        case "demo":
+            frozenElapsed = Self.ghostDemoSeconds * 0.5
+        case "turn":
+            frozenElapsed = Self.ghostDemoSeconds + 1
+            if stepNow == .wings { folded = false }
         case "1", "2", "3":
             // R7: step 7's three lines as held frames (a 2 s wall-clock capture caught the launch's portrait frame).
             let k = Double(Int(key) ?? 1)
@@ -473,10 +566,10 @@ struct FlightSchool: Equatable {
                 if quality == .perfect {
                     pendingSuccess = true
                 } else if landAttempts >= Self.maxFails {
-                    subline = "Perfects come with practice."
+                    subline = "Perfect landings come with practice."
                     pendingSuccess = true
                 } else {
-                    subline = quality == .splash ? "Splash! Aim for the downslope." : "Close! Aim for the ring."
+                    subline = quality == .splash ? "Splash! Aim for the way down." : "Close! Aim for the ring."
                     // Core's practice sea: back into the air over the guided downslope for another go.
                     if input.practice { out.rewind = true }
                 }
@@ -496,10 +589,14 @@ struct FlightSchool: Equatable {
             }
             if waves >= 3 { pendingSuccess = true }
         case .storm:
-            if elapsed >= 3 * Self.stormLineSeconds { pendingSuccess = true }
+            // R9: the Perfect in the next guided ring passes the storm step (3 landings, or 15 s, pass it anyway).
+            for sig in input.signals { if case let .landed(q) = sig { landAttempts += 1; if q == .perfect { pendingSuccess = true } } }
+            for e in input.events where !input.practice { if case let .touchdown(q, _, _) = e { landAttempts += 1; if q == .perfect { pendingSuccess = true } } }
+            if landAttempts >= Self.maxFails || elapsed >= Self.stormPassAfter { pendingSuccess = true }
         }
 
-        if pendingSuccess && elapsed >= Self.minPromptSeconds {
+        let minPrompt = Self.hasDemo(stepNow) ? Self.ghostDemoSeconds : Self.minPromptSeconds
+        if pendingSuccess && elapsed >= minPrompt {
             pendingSuccess = false
             out.succeeded = true
             if stepNow == .hold { canSkip = true }
@@ -523,6 +620,7 @@ struct FlightSchool: Equatable {
             return
         }
         fails += 1
+        missedOnce = true
         if fails >= Self.maxFails {
             subline = "Good enough. Let's fly."
             pendingSuccess = true
@@ -623,7 +721,7 @@ enum FlightSchoolCopy {
         case .storm:
             let line = FlightSchool.stormLineSeconds
             if elapsed < line { return "A storm is chasing you." }
-            if elapsed < 2 * line { return "Perfects push the storm back." }
+            if elapsed < 2 * line { return "Perfect landings push the storm back." }
             return "Fly to \(RouteRules.name(0)) · \(ShareText.target(RouteRules.meters(0)))."
         }
     }
@@ -635,7 +733,7 @@ enum FlightSchoolCopy {
         case .wings: return touch ? nil : "Not that far. Just a little."
         case .dive: return touch ? "You let go too soon. Keep holding." : "You opened too soon. Stay folded."
         case .soar: return touch ? "Let go to take off." : "Open to take off."
-        case .land: return "Splash! Aim for the downslope."
+        case .land: return "Splash! Aim for the way down."
         case .wingCheck, .rhythm, .storm: return nil
         }
     }
@@ -654,18 +752,11 @@ enum FlightSchoolCopy {
         case .storm: return ""
         }
     }
-    /// R7 P0-2: the line under the praise, where a step teaches a word. Step 5 names the Perfect outright.
-    static func praiseLine(_ step: SchoolStep) -> String? {
-        switch step {
-        case .land: return "Land on a downslope = Perfect. Perfects push the storm back."
-        default: return nil
-        }
-    }
+    /// R9: no praise cards; the game's own Perfect callout and ring name the Perfect in the world. Kept for the API.
+    static func praiseLine(_ step: SchoolStep) -> String? { nil }
 
-    /// How long the praise stays up (the teaching line needs time to read).
-    static func praiseSeconds(_ step: SchoolStep) -> Double {
-        praiseLine(step) == nil ? FlightSchool.praiseSeconds : 3.0
-    }
+    /// How long the world pauses on a success before the next step (no words).
+    static func praiseSeconds(_ step: SchoolStep) -> Double { FlightSchool.praiseSeconds }
 }
 
 // MARK: - The route and the objective (D3, UX §4)
@@ -674,7 +765,7 @@ enum FlightSchoolCopy {
 /// Pure; tested.
 enum RouteRules {
     /// The framing sentence (UX §4.1).
-    static let objective = "Outfly the storm. Reach the next lighthouse."
+    static let objective = "Stay ahead of the storm. Reach the lighthouses."
 
     /// The lighthouse's name (fixed by index in every mode).
     static func name(_ index: Int) -> String {
@@ -744,12 +835,14 @@ enum RouteRules {
     /// The "Next time" tip (UX §4.6), the first rule that applies.
     static func nextTip(firstRealRun: Bool, perfects: Int, splashes: Int, bestChain: Int, nearBestHook: String?)
         -> String {
-        if firstRealRun { return "Land Perfects to push the storm back." }
-        if perfects == 0 { return "Next time: land on a downslope for a Perfect." }
-        if splashes > perfects { return "Next time: open on the way up, so you come down on a downslope." }
-        if bestChain < 3 { return "Next time: 3 Perfects in a row = a Tailwind." }
-        if let nearBestHook { return nearBestHook }
-        return "Next time: chain Perfects to push the storm back."
+        // R9 glossary (UX-ROUND-9 §3): "the way down / up", "perfect landings"; the near-best line moved to the
+        // card's quiet line, so `nearBestHook` is no longer used here.
+        _ = nearBestHook
+        if firstRealRun { return "Perfect landings push the storm back." }
+        if perfects == 0 { return "Next time: land on the way down for a Perfect." }
+        if splashes > perfects { return "Next time: open on the way up, so you land on the way down." }
+        if bestChain < 3 { return "Next time: 3 perfect landings in a row = a Tailwind." }
+        return "Next time: land Perfect after Perfect to push the storm back."
     }
 
     /// The route page's summary (UX §4.4).
@@ -778,5 +871,66 @@ enum RouteRules {
     static func nodeLabel(index: Int, routeReached: Int) -> String {
         // R8 P0-1: every lighthouse by its real fixed name ("Lighthouse 5" read as a placeholder).
         name(index)
+    }
+}
+
+// MARK: - R9 Results framed as progress (UX-ROUND-9 §2)
+
+/// The far card's words, as one pure function of the flight (UX-ROUND-9 §2.2's case table): the ending is never the
+/// headline (every flight ends with the storm); the headline is how far you got, in lighthouses. Pure; tested.
+struct ResultsHeadline: Equatable {
+    var overline: String
+    var headline: String
+    /// "New lighthouse" beside the headline when a new one was passed.
+    var chip: String?
+    /// One quiet line (two on a scored Daily).
+    var lines: [String]
+
+    struct Input: Equatable {
+        var meters: Double
+        /// Lighthouses passed this flight, and the last one's name.
+        var passed: Int
+        var lastPassed: String = ""
+        var newLighthouse = false
+        var previousBest: Double = 0
+        var isNewBest = false
+        var firstFlight = false
+        var dailyTag: String?
+        var dailyScored = false
+        var dailyPractice = false
+        var endedEarly = false
+    }
+
+    static func make(_ i: Input) -> ResultsHeadline {
+        let overline: String
+        if i.endedEarly { overline = "Flight ended" }
+        else if let tag = i.dailyTag { overline = i.dailyPractice ? "Practice · \(tag)" : "Daily Flight · \(tag)" }
+        else if i.firstFlight { overline = "Your first flight" }
+        else { overline = "Flight over" }
+
+        let flown = ShareText.distance(i.meters)
+        let headline: String
+        var chip: String?
+        if i.endedEarly {
+            headline = "You stopped at \(flown)"
+        } else if i.passed >= 1 {
+            let name = i.lastPassed.isEmpty ? RouteRules.name(i.passed - 1) : i.lastPassed
+            headline = "You made it past \(name)" + (i.newLighthouse ? "!" : "")
+            if i.newLighthouse { chip = "New lighthouse" }
+        } else {
+            headline = "You flew \(flown)"
+        }
+
+        let next = Lighthouses.next(afterMeters: i.meters)
+        var line = "\(next.name) is \(ShareText.distance(next.metersFurther)) further."
+        if i.firstFlight && i.passed == 0 { line += " You'll get there." }
+        let m = i.meters.isFinite ? max(i.meters, 0) : 0
+        if !i.isNewBest && i.previousBest > 0 && m < i.previousBest && i.previousBest - m <= i.previousBest * 0.10 {
+            line = "Just \(ShareText.distance(i.previousBest - m, roundUp: true)) short of your best."
+        }
+        if i.dailyPractice { line = "Practice doesn't count for today." }
+        var lines = [line]
+        if i.dailyScored { lines.append("New waves tomorrow.") }
+        return ResultsHeadline(overline: overline, headline: headline, chip: chip, lines: lines)
     }
 }

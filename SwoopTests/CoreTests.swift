@@ -1401,4 +1401,128 @@ struct CoreTests {
         normal.nextGuidedSwell()
         #expect(normal.snapshot.position.x == x0)
     }
+
+    // MARK: Round 9 (the guide gull's ghost paths, results-headline inputs)
+
+    private func ghostSignals(_ path: [GhostSample]) -> [PracticeSignal] {
+        var out: [PracticeSignal] = []
+        for g in path { out.append(contentsOf: g.signals) }
+        return out
+    }
+
+    @Test func ghostPathsAreDeterministicAndSmooth() {
+        for step in PracticeGhostStep.allCases {
+            let a: [GhostSample] = FlightSession.practiceGhostPath(step: step)
+            let b: [GhostSample] = PracticeGhost.path(step: step)
+            #expect(a == b, "\(step)")
+            #expect(a.count > 30, "\(step)")
+            let d: Double = PracticeGhost.duration(a)
+            #expect(d > 0.8 && d < PracticeGhost.maxSeconds, "\(step) lasts \(d) s")
+            var i: Int = 1
+            while i < a.count {
+                #expect(abs(a[i].t - a[i - 1].t - PracticeGhost.sampleDt) < 1e-9)
+                #expect(a[i].x >= a[i - 1].x - 1e-9, "\(step) goes backwards at \(i)")
+                #expect(a[i].x - a[i - 1].x < 3200 * PracticeGhost.sampleDt, "\(step) jumps at \(i)")
+                #expect(a[i].tuck >= 0 && a[i].tuck <= 1)
+                i += 1
+            }
+        }
+    }
+
+    @Test func ghostDiveIsTheIdealDive() {
+        let path: [GhostSample] = PracticeGhost.path(step: .dive)
+        #expect(abs((path.first?.x ?? -1) - (Tuning.practiceCrestAX + 1)) < 1e-9)
+        #expect((path.last?.x ?? 0) >= Tuning.practiceTroughX)
+        var held: Double = -1
+        for sig in ghostSignals(path) {
+            if case .diveDone(let f) = sig, held < 0 { held = f }
+        }
+        #expect(held >= 0.9, "held \(held)")
+        // The fold-path fill: folded all the way down once the tuck is in.
+        let downhill = path.filter { (g: GhostSample) -> Bool in g.x > 200 && g.x < Tuning.practiceTroughX - 50 }
+        #expect(!downhill.isEmpty)
+        #expect(downhill.allSatisfy { (g: GhostSample) -> Bool in g.folded && g.skimming })
+    }
+
+    @Test func ghostSoarsAndLandsPerfect() {
+        for step in [PracticeGhostStep.soarAndLand, PracticeGhostStep.guidedLanding] {
+            let sigs: [PracticeSignal] = ghostSignals(PracticeGhost.path(step: step))
+            var landed: TouchdownQuality? = nil
+            var launchTuck: Double = -1
+            for sig in sigs {
+                switch sig {
+                case .launched(let u): if launchTuck < 0 { launchTuck = u }
+                case .landed(let q): if landed == nil { landed = q }
+                default: break
+                }
+            }
+            #expect(landed == .perfect, "\(step)")
+            if step == .soarAndLand {
+                #expect(launchTuck >= 0 && launchTuck <= 0.3)
+            }
+        }
+    }
+
+    @Test func ghostRhythmRidesEachWave() {
+        let path: [GhostSample] = PracticeGhost.path(step: .rhythm)
+        var waves: [Int] = []
+        var perfects: Int = 0
+        var launches: Int = 0
+        for sig in ghostSignals(path) {
+            switch sig {
+            case .waveDone(let i): waves.append(i)
+            case .landed(let q): if q == .perfect { perfects += 1 }
+            case .launched: launches += 1
+            default: break
+            }
+        }
+        #expect(waves == [0, 1, 2])
+        #expect(launches >= 3)
+        #expect(perfects >= 2)
+        // Folded and open both appear: one fold down, one open up per wave.
+        #expect(path.contains(where: { (g: GhostSample) -> Bool in g.folded }))
+        #expect(path.contains(where: { (g: GhostSample) -> Bool in !g.folded && !g.skimming }))
+    }
+
+    @Test func ghostSampleInterpolates() {
+        let path: [GhostSample] = PracticeGhost.path(step: .soarAndLand)
+        #expect(PracticeGhost.sample([], at: 0) == nil)
+        #expect(PracticeGhost.sample(path, at: -1) == path.first)
+        #expect(PracticeGhost.sample(path, at: 99) == path.last)
+        if path.count > 10 {
+            let a = path[5], b = path[6]
+            let mid = PracticeGhost.sample(path, at: (a.t + b.t) / 2)
+            #expect(mid != nil)
+            if let m = mid {
+                #expect(abs(m.x - (a.x + b.x) / 2) < 1e-9)
+                #expect(abs(m.y - (a.y + b.y) / 2) < 1e-9)
+            }
+        }
+    }
+
+    @Test func practiceIsUnchangedByGhosts() {
+        // Building ghosts runs their own headless sessions; a live practice session is untouched.
+        let live = FlightSession.practice(bird: .gull)
+        _ = live.step(dt: 1.0 / 60.0, tuck: 0)
+        let before = live.snapshot
+        _ = PracticeGhost.path(step: .rhythm)
+        #expect(live.snapshot == before)
+        #expect(abs(live.timeScale - Tuning.practiceTimeScale) < 1e-12)
+    }
+
+    @Test func nextLighthouseFurther() {
+        let a = Lighthouses.next(afterMeters: 2_100)
+        #expect(a.index == 0 && a.name == "Gull Point" && a.metersFurther == 1_900)
+        let b = Lighthouses.next(afterMeters: 12_800)
+        #expect(b.index == 2 && b.name == "Kestrel Head" && b.metersFurther == 2_200)
+        let c = Lighthouses.next(afterMeters: 3_650)
+        #expect(c.metersFurther == 350)
+        let d = Lighthouses.next(afterMeters: 9_000)
+        #expect(d.name == "Kestrel Head" && d.metersFurther == 6_000)
+        #expect(Lighthouses.roundedFurther(meters: 1_234) == 1_300)
+        #expect(Lighthouses.roundedFurther(meters: 341) == 350)
+        #expect(Lighthouses.roundedFurther(meters: 5) == 10)
+        #expect(Lighthouses.roundedFurther(meters: 0) == 10)
+        #expect(Lighthouses.next(afterMeters: -5).index == 0)
+    }
 }

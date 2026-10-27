@@ -47,7 +47,7 @@ struct ResultsView: View {
         switch kind {
         case .flight: return "Flight"
         case .firstFlight: return "First flight"
-        case .scoredDaily, .dailyCard, .dailySpent: return "Daily Flight \(tag)"
+        case .scoredDaily, .dailyCard, .dailySpent: return "Daily Flight · \(tag)"
         case .practiceDaily: return "Daily \(tag) · practice"
         }
     }
@@ -134,50 +134,67 @@ struct ResultsView: View {
 
     // MARK: The far card
 
+    /// R9 (UX-ROUND-9 §2.2): the card's words for this flight.
+    private var framing: ResultsHeadline {
+        ResultsHeadline.make(Self.headlineInput(summary, today: today))
+    }
+
+    /// The case table's inputs from the summary. Pure; tested.
+    nonisolated static func headlineInput(_ s: ResultSummary, today: Int) -> ResultsHeadline.Input {
+        let kind = classify(isDailyCard: s.isDailyCard, dailyDay: s.dailyDay, practice: s.practice, title: s.title,
+                            spentUnfiled: s.dailySpentUnfiled)
+        var i = ResultsHeadline.Input(meters: s.result.meters, passed: s.result.lighthouses)
+        i.lastPassed = s.result.lastLighthouseName
+        i.newLighthouse = s.outcome.newOnRoute
+        i.previousBest = s.outcome.previousBest
+        i.isNewBest = s.outcome.showsNewBest
+        i.firstFlight = kind == .firstFlight
+        if kind.isDaily { i.dailyTag = AppRules.dailyTag(day: s.dailyDay ?? today) }
+        i.dailyScored = kind == .scoredDaily || kind == .dailyCard
+        i.dailyPractice = kind == .practiceDaily
+        i.endedEarly = s.endedEarly
+        return i
+    }
+
     private func header(_ plan: ResultsPlan) -> some View {
         let c = plan.compact
         let chip = Self.chip(showsNewBest: outcome.showsNewBest, dailyBest: summary.dailyBest, kind: kind)
-        let head = RouteRules.headline(reachedThisRun: result.lighthouses, meters: result.meters)
-        var headText: [String] = []
-        if plan.headline {
-            headText.append(head.title)
-            if plan.headlineSub, let sub = head.sub { headText.append(sub) }
-        }
-        return VStack(alignment: .leading, spacing: c ? 2 : 4) {
-            SwoopOverline(text: Self.overline(kind, day: summary.dailyDay), compact: c)
-            // R6 D3 (UX §4.6): lead with the objective: the mini route, then "Caught 0.8 km short of Saltlight" /
-            // "Reached Kestrel Head!".
+        let f = framing
+        return VStack(alignment: .leading, spacing: c ? 4 : 6) {
+            SwoopOverline(text: kind == .dailySpent ? Self.overline(kind, day: summary.dailyDay) : f.overline,
+                          compact: c)
+            // The mini route, left to right; tapping it opens the Route.
             if plan.routeStrip {
-                MiniRouteStrip(reachedThisRun: result.lighthouses, meters: result.meters, mirrored: info.mirrored)
-                    .frame(height: ResultsPlan.stripHeight)
-            }
-            if plan.headline {
-                // R7 P0-4: the name is never cut ("Reached Cormorant…"): the chip goes first when space runs out.
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) {
-                        headlineText(head.title, reached: head.reached, compact: c).fixedSize()
-                        if outcome.newOnRoute { newOnRouteChip(c) }
-                    }
-                    headlineText(head.title, reached: head.reached, compact: c).fixedSize()
-                    headlineText(head.title, reached: head.reached, compact: c)
-                        .minimumScaleFactor(0.6)
+                Button { controller.show(.route) } label: {
+                    MiniRouteStrip(reachedThisRun: result.lighthouses, meters: result.meters)
+                        .frame(height: ResultsPlan.stripHeight)
+                        .contentShape(Rectangle())
                 }
-                if plan.headlineSub, let sub = head.sub {
-                    Text(sub)
-                        .font(SwoopType.body(c))
-                        .foregroundStyle(SwoopTheme.mist)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Your route")
+                .accessibilityHint("Opens the Route")
             }
             if kind == .dailySpent {
                 // R5 P1-4: a spent, unfiled try never leads with "0 m".
                 Text("Today's try is spent.")
                     .font(SwoopType.title(c))
                     .foregroundStyle(SwoopTheme.foam)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
+                if plan.headline {
+                    // The name is never cut: the headline wraps, and the chip drops under it when space runs out.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 8) {
+                            headlineText(f.headline, gold: f.chip != nil, compact: c).fixedSize()
+                            if let lc = f.chip { goldChip(lc, compact: c) }
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            headlineText(f.headline, gold: f.chip != nil, compact: c)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if let lc = f.chip { goldChip(lc, compact: c) }
+                        }
+                    }
+                }
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text(ShareText.distance(shownMeters))
                         .font(SwoopType.hero(c))
@@ -188,28 +205,30 @@ struct ResultsView: View {
                         SwoopPill(text: chip, fill: SwoopTheme.rewardGold, fontSize: c ? 12 : 14)
                     }
                 }
-            }
-            if let best = Self.bestLine(kind, showsNewBest: outcome.showsNewBest, best: outcome.best,
-                                        previousBest: outcome.previousBest) {
-                Text(best)
-                    .font(SwoopType.body(c))
-                    .foregroundStyle(SwoopTheme.mist)
-                    .lineLimit(1)
+                if plan.headlineSub {
+                    ForEach(f.lines, id: \.self) { line in
+                        Text(line)
+                            .font(SwoopType.body(c))
+                            .foregroundStyle(SwoopTheme.mist)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel((headText + [accessibleHeader(chip: chip)]).joined(separator: ", "))
+        .accessibilityLabel(([f.overline, f.headline, f.chip ?? "", ShareText.distance(result.meters), chip ?? ""]
+            + f.lines).filter { !$0.isEmpty }.joined(separator: ", "))
     }
 
-    private func headlineText(_ s: String, reached: Bool, compact c: Bool) -> some View {
+    private func headlineText(_ s: String, gold: Bool, compact c: Bool) -> some View {
         Text(s)
-            .font(SwoopType.headline(c))
-            .foregroundStyle(reached ? SwoopTheme.rewardGold : SwoopTheme.foam)
-            .lineLimit(1)
+            .font(SwoopType.title(c))
+            .foregroundStyle(gold ? SwoopTheme.rewardGold : SwoopTheme.foam)
+            .lineLimit(2)
     }
 
-    private func newOnRouteChip(_ c: Bool) -> some View {
-        Text("New on your route")
+    private func goldChip(_ s: String, compact c: Bool) -> some View {
+        Text(s)
             .font(SwoopType.chip(c))
             .foregroundStyle(SwoopTheme.ink)
             .padding(.horizontal, 8)
@@ -219,16 +238,7 @@ struct ResultsView: View {
             .fixedSize()
     }
 
-    private func accessibleHeader(chip: String?) -> String {
-        var parts = [Self.overline(kind, day: summary.dailyDay),
-                     kind == .dailySpent ? "Today's try is spent." : ShareText.distance(result.meters)]
-        if let chip { parts.append(chip) }
-        if let best = Self.bestLine(kind, showsNewBest: outcome.showsNewBest, best: outcome.best,
-                                    previousBest: outcome.previousBest) { parts.append(best) }
-        return parts.joined(separator: ", ")
-    }
-
-    /// R6 (UX §4.6): the "Next time" tip (the best hook replaces the last rule within 10 % of the best).
+    /// R9: one tip, on the first 5 flights only (no lightbulb, no Route link: the strip opens the Route).
     private var hook: String? {
         Self.nextTip(summary)
     }
@@ -237,84 +247,30 @@ struct ResultsView: View {
     nonisolated static func nextTip(_ s: ResultSummary) -> String? {
         if s.isDailyCard { return nil }
         let r = s.result
-        let o = s.outcome
-        var nearBest: String?
-        if o.previousBest > 0 && r.meters < o.previousBest && o.previousBest - r.meters <= o.previousBest * 0.10 {
-            nearBest = "\(ShareText.distance(o.previousBest - r.meters, roundUp: true)) short of your best"
-        }
         return RouteRules.nextTip(firstRealRun: s.firstRealRun, perfects: r.perfects, splashes: r.splashes,
-                                  bestChain: r.bestChain, nearBestHook: nearBest)
+                                  bestChain: r.bestChain, nearBestHook: nil)
     }
 
     @ViewBuilder
     private func farDetails(_ plan: ResultsPlan) -> some View {
         let c = plan.compact
         if plan.hasHook, let hook {
-            HStack(alignment: .top, spacing: 6) {
-                Image(systemName: "lightbulb")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(SwoopTheme.mist)
-                    .padding(.top, 2)
-                Text(hook)
-                    .font(SwoopType.body(c))
-                    .foregroundStyle(SwoopTheme.mist)
-                    .lineLimit(ResultsPlan.hookLines)
-                    .minimumScaleFactor(0.85)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 4)
-                // UX §4.4: the Route entry at the end of the tip line.
-                Button { controller.show(.route) } label: {
-                    Text("Route ›")
-                        .font(SwoopType.body(c))
-                        .foregroundStyle(SwoopTheme.foam)
-                        .lineLimit(1)
-                        .fixedSize()
-                        .frame(minHeight: AppCanvas.minTap * 0.75)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Open your route")
-            }
-        }
-        if plan.routeNote {
-            // D4 (UX §5): the first results ever.
-            Text("Every lighthouse you reach goes on your Route.")
-                .font(SwoopType.caption(c))
-                .foregroundStyle(SwoopTheme.mist)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        if plan.hasStats {
-            Text(AppRules.statsLine(perfects: result.perfects, chain: 0, lighthouses: 0))
-                .font(SwoopType.body(c).monospacedDigit())
-                .foregroundStyle(SwoopTheme.mist)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-        }
-        if plan.spentLine {
-            Text("Today's try is spent.")
+            Text(hook)
                 .font(SwoopType.body(c))
                 .foregroundStyle(SwoopTheme.mist)
-                .lineLimit(1)
+                .fixedSize(horizontal: false, vertical: true)
         }
         if plan.deckSummary, let line = Self.deckSummary(summary) {
             Text(line)
                 .font(SwoopType.caption(c))
                 .foregroundStyle(SwoopTheme.goldLight)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
-
-    /// The split deck's one line for the bird-page content: "You ranked up! New bird: Tern · Rank 2 · Gull Wing" or
-    /// "2 of 3 goals · next: Chain 12 Perfects". Pure; tested.
+    /// The split deck's one line for the bird-page content: "New bird: Tern · Level 2" or "1 of 3 goals · next: …".
+    /// Pure; tested.
     nonisolated static func deckSummary(_ s: ResultSummary) -> String? {
-        if let up = s.outcome.rankUp {
-            let unlocks = RankUpBanner.unlockLine(birds: up.birds.map { BirdCatalog.bird($0).name },
-                                                  skies: up.skies.map { SkyCatalog.sky($0).name }, trails: up.trailNames)
-            return RankUpBanner.title(from: up.from, to: up.to) + (unlocks.isEmpty ? "" : " " + unlocks)
-                + " · " + RankUpBanner.rankLine(rank: up.to, title: GoalCatalog.rankTitle(up.to))
-        }
+        if let m = unlockMoment(s) { return m.title + " · " + m.level }
         let rows = s.outcome.goals
         guard !rows.isEmpty else { return nil }
         let done = rows.filter { $0.isMet }.count
@@ -322,6 +278,27 @@ struct ResultsView: View {
             return "\(done) of \(rows.count) goals · next: \(next.goal.text)"
         }
         return "\(done) of \(rows.count) goals"
+    }
+
+    /// R9 (UX-ROUND-9 §2.3): a level-up's one moment: "New bird: Tern" (title), "Level 2" (mist), and the bird to fly.
+    /// Pure; tested.
+    nonisolated static func unlockMoment(_ s: ResultSummary) -> (title: String, level: String, bird: BirdID?)? {
+        guard let up = s.outcome.rankUp else { return nil }
+        let level = "Level \(up.to + 1)"
+        if let b = up.birds.first { return ("New bird: \(BirdCatalog.bird(b).name)", level, b) }
+        if let sky = up.skies.first { return ("New sky: \(SkyCatalog.sky(sky).name)", level, nil) }
+        if let trail = up.trailNames.first { return ("New trail: \(trail)", level, nil) }
+        return (level, GoalCatalog.rankTitle(up.to), nil)
+    }
+
+    /// R9: the bird page's goal rows: after a level-up only the new level's UNMET goals (a goal this flight already met
+    /// is credited, never shown as a pre-ticked "new goal"); otherwise the rows, when one of them moved; at most 3.
+    /// Pure; tested.
+    nonisolated static func sideGoalRows(_ s: ResultSummary) -> [GoalRowOutcome] {
+        if s.outcome.rankUp != nil { return Array(s.outcome.nextGoals.filter { $0.after < 1 }.prefix(3)) }
+        let rows = s.outcome.goals
+        guard rows.contains(where: { $0.after > $0.before }) else { return [] }
+        return Array(rows.prefix(3))
     }
 
     // MARK: The bird-page card
@@ -334,20 +311,18 @@ struct ResultsView: View {
                 shareThumbnail(side: ResultsPlan.thumbSide(width: width, compact: c))
                 StreakDots(flown: Self.lastSevenDays(controller.store.data, today: today), today: today, compact: c)
             }
-            if plan.rankUp, let rankUp = outcome.rankUp {
-                RankUpBanner(rankUp: rankUp, compact: c, nextGoals: outcome.nextGoals)
-                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+            if plan.rankUp, let m = Self.unlockMoment(summary) {
+                NewUnlockCard(title: m.title, level: m.level, bird: m.bird, compact: c) { bird in
+                    controller.chooseBird(bird)
+                    controller.flyAgain()
+                }
+                .opacity(goalsShown ? 1 : 0)
+                .animation(.easeOut(duration: 0.3).delay(0.6), value: goalsShown)
             } else if plan.goals > 0 {
                 VStack(alignment: .leading, spacing: c ? 6 : 10) {
                     SwoopOverline(text: "Goals", compact: c)
-                    ForEach(outcome.goals) { row in
-                        GoalProgressRow(goal: row.goal, progress: goalsShown ? row.after : row.before,
-                                        done: goalsShown ? row.isMet : row.before >= 1,
-                                        justMet: goalsShown && row.justMet,
-                                        caption: AppRules.goalCaption(row.goal, before: row.before, run: result,
-                                                                      lifetime: controller.store.data.lifetimeMeters,
-                                                                      done: goalsShown ? row.isMet : row.before >= 1),
-                                        compact: c)
+                    ForEach(Self.sideGoalRows(summary)) { row in
+                        GoalLineRow(text: row.goal.text, done: goalsShown ? row.isMet : row.before >= 1, compact: c)
                     }
                 }
             }
@@ -362,7 +337,6 @@ struct ResultsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .swoopCard(padding: ResultsPlan.padding(c), radius: SwoopTheme.cardRadius(c))
     }
-
     /// The small lines, most important first: the streak grace, the star goals,
     /// the rest line. At most `limit`. Pure; tested.
     nonisolated static func smallLines(_ s: ResultSummary, limit: Int = 4) -> [String] {
@@ -417,11 +391,10 @@ struct ResultsView: View {
                 }
             }
             if plan.dailyRow && plan.dailyExplain {
-                Text("Daily Flight: one try a day, same sea for everyone. Not flown yet.")
+                Text("One try a day. Same waves for everyone.")
                     .font(SwoopType.caption(c))
                     .foregroundStyle(SwoopTheme.mist)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
+                    .fixedSize(horizontal: false, vertical: true)
                     .onAppear { controller.learnHint(AppRules.dailyRowHint) }
             }
             if plan.helper {
@@ -600,6 +573,17 @@ struct ResultsPlan: Equatable {
     var shareThumb = false
     /// Short cards: Fly again, Home and Share in one row (the labelled Fly again stays the biggest control).
     var oneRow = false
+    /// R9: the headline's and the quiet lines' estimated wrapped line counts.
+    var headlineLines = 1
+    var subLines = 1
+
+    /// Lines a text wraps to at `size` in `width` (0.56 em per character, rounded up). Pure.
+    static func lines(_ s: String, size: CGFloat, width: CGFloat) -> Int {
+        guard width > 0 else { return 1 }
+        return max(1, Int((CGFloat(s.count) * size * 0.56 / width).rounded(.up)))
+    }
+
+    static func title(_ c: Bool) -> CGFloat { c ? 28 : 34 }
 
     var hasSideCard: Bool { rankUp || goals > 0 || smallLines > 0 || shareThumb }
 
@@ -632,22 +616,30 @@ struct ResultsPlan: Equatable {
                                         title: s.title, spentUnfiled: s.dailySpentUnfiled)
         let c = cardHeight < compactCardHeight
         var p = ResultsPlan(kind: kind, compact: c, twoPages: !canvas.singlePage)
-        p.hasBest = ResultsView.bestLine(kind, showsNewBest: s.outcome.showsNewBest, best: s.outcome.best,
-                                         previousBest: s.outcome.previousBest) != nil
-        p.hasHook = kind != .dailySpent && ResultsView.nextTip(s) != nil
+        // R9 (UX-ROUND-9 §2.2): overline, strip, headline, distance (+ New best!), one quiet line, a tip on the first 5
+        // flights, buttons. Nothing else: no best line, stats, route note or Route link.
+        p.hasBest = false
+        p.hasHook = kind != .dailySpent && s.flightNumber <= 5 && ResultsView.nextTip(s) != nil
         p.headline = kind != .dailySpent
-        p.headlineSub = p.headline && s.result.lighthouses >= 1
+        let framing = ResultsHeadline.make(ResultsView.headlineInput(s, today: AppRules.launchDay))
+        let inner0 = ResultsLayout.far(canvas).width - 2 * padding(c)
+        p.headlineLines = framing.chip == nil
+            ? Self.lines(framing.headline, size: Self.title(c), width: inner0)
+            : Self.lines(framing.headline + " New lighthouse", size: Self.title(c), width: inner0)
+        p.subLines = framing.lines.map { Self.lines($0, size: Self.body(c), width: inner0) }.reduce(0, +)
+        p.headlineSub = p.headline
         p.routeStrip = p.headline && !c
-        p.routeNote = p.hasHook && s.firstRealRun && !kind.isDaily
+        p.routeNote = false
         p.dailyExplain = s.explainsDaily
-        p.hasStats = kind != .dailySpent && !AppRules.statsLine(perfects: s.result.perfects, chain: 0, lighthouses: 0).isEmpty
+        p.hasStats = false
         p.spentLine = false    // the spent card says it in its hero (R5 P1-4)
         p.dailyRow = (kind == .flight || kind == .firstFlight) && dailyRowAllowed
         p.helper = (kind == .flight || kind == .firstFlight) && s.showsFoldHelper
         p.streak = kind == .scoredDaily || kind == .dailyCard || kind == .dailySpent
         if p.twoPages {
-            p.rankUp = s.outcome.rankUp != nil && !kind.isDailyCardKind
-            p.goals = p.rankUp || kind.isDailyCardKind ? 0 : s.outcome.goals.count
+            // R9 (UX-ROUND-9 §2.3): one moment, not a list: a new unlock, else up to 3 goal rows that moved.
+            p.rankUp = ResultsView.unlockMoment(s) != nil && !kind.isDailyCardKind
+            p.goals = p.rankUp || kind.isDailyCardKind ? 0 : ResultsView.sideGoalRows(s).count
             p.smallLines = ResultsView.smallLines(s, limit: smallLineLimit(c)).count
             // The flown Daily card's hero is its share card; a spent try has nothing to share.
             p.shareThumb = kind == .dailyCard
@@ -688,11 +680,11 @@ struct ResultsPlan: Equatable {
         var h = 2 * Self.padding(c)
         h += Self.line(Self.overline(c)) + (c ? 2 : 4) + Self.line(Self.hero(c))
         if routeStrip { h += Self.stripHeight + (c ? 2 : 4) }
-        if headline { h += Self.line(Self.headline(c)) + (c ? 2 : 4) }
-        if headlineSub { h += Self.line(Self.body(c)) + (c ? 2 : 4) }
+        if headline { h += CGFloat(headlineLines) * Self.line(Self.title(c)) + (c ? 4 : 6) }
+        if headlineSub { h += CGFloat(subLines) * Self.line(Self.body(c)) + (c ? 4 : 6) }
         if routeNote { h += s + Self.line(Self.caption(c)) }
         if hasBest { h += (c ? 2 : 4) + Self.line(Self.body(c)) }
-        if hasHook { h += s + CGFloat(Self.hookLines) * Self.line(Self.body(c)) }
+        if hasHook { h += (c ? 4 : 6) + CGFloat(Self.hookLines) * Self.line(Self.body(c)) }
         if hasStats { h += s + Self.line(Self.body(c)) }
         if spentLine { h += s + Self.line(Self.body(c)) }
         if deckSummary { h += s + Self.line(Self.caption(c)) }
@@ -720,9 +712,9 @@ struct ResultsPlan: Equatable {
         var parts: [CGFloat] = []
         if shareThumb { parts.append(Self.thumbSide(width: width, compact: c) + s + StreakDots.height(c)) }
         if rankUp {
-            parts.append(RankUpBanner.height(c))
+            parts.append(NewUnlockCard.height(c))
         } else if goals > 0 {
-            let row = GoalProgressRow.height(c)
+            let row = GoalLineRow.height(c)
             let gap: CGFloat = c ? 6 : 10
             parts.append(Self.line(Self.overline(c)) + gap + CGFloat(goals) * row + CGFloat(goals - 1) * gap)
         }
@@ -781,7 +773,7 @@ enum ResultsButtons {
             }
             var rows: [[ResultsButton]] = []
             if dailyRow {
-                rows.append([ResultsButton(action: .daily, title: "Daily Flight \(dailyTag) · one try", icon: "calendar")])
+                rows.append([ResultsButton(action: .daily, title: "Daily Flight · \(dailyTag)", icon: "calendar")])
             }
             rows.append([fly])
             rows.append([home, share])
@@ -791,10 +783,10 @@ enum ResultsButtons {
                     [ResultsButton(action: .freeFlight, title: "Free flight", icon: "paperplane.fill"), home]]
         case .dailyCard:
             return [[ResultsButton(action: .share, title: "Share", icon: "square.and.arrow.up", primary: true)],
-                    [ResultsButton(action: .practise, title: c ? "Practise" : "Practise today's sea",
+                    [ResultsButton(action: .practise, title: c ? "Practise" : "Practise today's waves",
                                    icon: "arrow.clockwise"), home]]
         case .dailySpent:
-            return [[ResultsButton(action: .practise, title: "Practise today's sea", icon: "arrow.clockwise",
+            return [[ResultsButton(action: .practise, title: "Practise today's waves", icon: "arrow.clockwise",
                                    primary: true)],
                     [ResultsButton(action: .home, title: "Home", icon: "house.fill")]]
         case .practiceDaily:
@@ -962,7 +954,7 @@ struct ShareCardView: View {
     /// "Daily Flight #1 · 23 Perfects · past Saltlight" / "23 Perfects · past Saltlight". Pure; tested.
     nonisolated static func subtitle(_ s: ResultSummary) -> String {
         var parts: [String] = []
-        if let day = s.dailyDay { parts.append("Daily Flight \(AppRules.dailyTag(day: day))") }
+        if let day = s.dailyDay { parts.append(AppRules.dailyTitle(day: day)) }
         if s.result.perfects > 0 { parts.append(ShareText.perfects(s.result.perfects)) }
         let past = s.result.lastLighthouseName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !past.isEmpty { parts.append("past \(past)") }
@@ -1131,5 +1123,71 @@ struct RankUpBanner: View {
                     .stroke(SwoopTheme.stroke, lineWidth: 1))
         )
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// R9 (UX-ROUND-9 §2.3, ART #35): the level-up moment, one card (no card in a card): the new bird large, "New bird:
+/// Tern", "Level 2", and "Fly as Tern" (selects it and flies).
+struct NewUnlockCard: View {
+    let title: String
+    let level: String
+    let bird: BirdID?
+    var compact = false
+    let onFlyAs: (BirdID) -> Void
+
+    nonisolated static func artHeight(_ c: Bool) -> CGFloat { c ? 48 : 104 }
+
+    nonisolated static func height(_ c: Bool) -> CGFloat {
+        artHeight(c) + 8 + 2 * ResultsPlan.line(ResultsPlan.title(c)) + 4 + ResultsPlan.line(ResultsPlan.body(c)) + 10
+            + ResultsPlan.secondary
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let bird {
+                TitleBirdView(bird: BirdCatalog.bird(bird), tuck: 0)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: Self.artHeight(compact))
+                    .padding(.bottom, 4)
+            }
+            Text(title)
+                .font(SwoopType.title(compact))
+                .foregroundStyle(SwoopTheme.rewardGold)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(level)
+                .font(SwoopType.body(compact))
+                .foregroundStyle(SwoopTheme.mist)
+            if let bird {
+                SwoopButton(kind: .secondary, height: ResultsPlan.secondary, compact: compact, action: { onFlyAs(bird) }) {
+                    Text("Fly as \(BirdCatalog.bird(bird).name)").lineLimit(1).minimumScaleFactor(0.8)
+                }
+                .padding(.top, 6)
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// R9 (ART #36): a goal as one line that wraps to two (never truncated), with an 18 pt check / circle before it.
+struct GoalLineRow: View {
+    let text: String
+    let done: Bool
+    var compact = false
+
+    nonisolated static func height(_ c: Bool) -> CGFloat { 2 * ResultsPlan.line(ResultsPlan.body(c)) }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(done ? SwoopTheme.rewardGold : SwoopTheme.mist)
+            Text(text)
+                .font(SwoopType.body(compact))
+                .foregroundStyle(done ? SwoopTheme.foam : SwoopTheme.mist)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(done ? "Done" : "Not yet")
     }
 }

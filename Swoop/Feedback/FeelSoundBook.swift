@@ -516,24 +516,120 @@ enum FeelSoundBook {
         ]
     }
 
-    /// The storm catches the bird: the rain sweeps over (swells, then fades), a low soft "whoom", and everything
-    /// settles into a calm A major pad with one soft bell. Self-contained one-shots (~5 s), so it plays out even if
-    /// the frames stop; the bed fades the wind out underneath (`caughtGlide`).
+    /// Round 9 (ART-ROUND-9 §2): the storm visibly overtakes the bird in 1.2 s.
+    static let caughtSweep: Float = 1.2
+    /// The single thunder strike, ahead of the bird inside the wall (the ART bolt at 0.9 s).
+    static let caughtStrike: Float = 0.9
+
+    /// The storm catches the bird (Round 9: the overtake).
+    /// - 0–1.2 s: the front passes over. A rush of wind and rain swells and brightens as the wall crosses the bird
+    ///   (peaking as the anvil rim passes at ~0.5 s), then the rain curtain settles in.
+    /// - 0.9 s: ONE thunder strike, ahead of the bird: a dry crack, then a short roll.
+    /// - From 1.2 s: everything settles into a calm A-major pad with one soft bell.
+    /// Self-contained one-shots (~6 s), so it plays out even if the frames stop; the bed fades the wind out underneath
+    /// (`caughtGlide`).
     static func caught(dice: inout FeelDice) -> [FeelSynthCommand] {
         var commands: [FeelSynthCommand] = [
-            .noise(FeelNoiseSpec(.bandPass, cutoff: 3000, q: 0.6, attack: 0.7, decay: 1.0, gain: 0.12)),
-            .noise(FeelNoiseSpec(.lowPass, cutoff: 400, to: 140, sweep: 1.0, q: 0.8, attack: 0.25, decay: 0.5,
-                                 gain: 0.12)),
+            // The sweep: a wide rush that rises and opens up as the wall passes, then falls away.
+            .noise(FeelNoiseSpec(.bandPass, cutoff: 400, to: 1800, sweep: 0.55, q: 0.7, attack: 0.45, decay: 0.35,
+                                 gain: 0.13)),
+            .noise(FeelNoiseSpec(.lowPass, cutoff: 500, to: 160, sweep: caughtSweep, q: 0.8, attack: 0.3,
+                                 decay: 0.45, gain: 0.11)),
+            // The rain curtain arrives with the edge and stays.
+            .noise(FeelNoiseSpec(.bandPass, cutoff: 3000, q: 0.6, attack: 0.6, decay: 1.1, gain: 0.11,
+                                 delay: 0.2)),
+            // The strike: a dry crack ahead, then a short roll.
+            .noise(FeelNoiseSpec(.highPass, cutoff: 1800, q: 0.7, attack: 0.001, decay: 0.03, gain: 0.12,
+                                 delay: caughtStrike)),
+            .noise(FeelNoiseSpec(.bandPass, cutoff: 900, to: 300, sweep: 0.3, q: 0.7, attack: 0.004, decay: 0.12,
+                                 gain: 0.1, delay: caughtStrike + 0.01)),
+            .noise(FeelNoiseSpec(.lowPass, cutoff: 360, to: 110, sweep: 0.9, q: 0.8, attack: 0.03, decay: 0.5,
+                                 gain: 0.18, delay: caughtStrike + 0.03)),
+            .tone(FeelToneSpec(start: 90, end: 58, glide: 0.6, duration: 1.0, attack: 0.03, decay: 0.35, gain: 0.08,
+                               harmonics: 5, delay: caughtStrike + 0.02)),
         ]
         let pad: [Float] = [220.0, 277.18, 329.63, 440.0]
         for index in 0..<pad.count {
             commands.append(.tone(FeelToneSpec(start: pad[index], duration: 5.0, attack: 0.9, decay: 1.8, gain: 0.045,
                                                harmonics: 2, vibratoRate: 4.1 + 0.6 * Float(index),
-                                               vibratoDepth: 0.003, delay: 0.35)))
+                                               vibratoDepth: 0.003, delay: caughtSweep)))
         }
         commands.append(.ring(FeelRingSpec(.chime, fundamental: 440, partials: 4, decay: 1.5, brightness: 0.3,
-                                           gain: 0.06, delay: 0.6, seed: dice.seed32())))
+                                           gain: 0.06, delay: caughtSweep + 0.4, seed: dice.seed32())))
         return commands
+    }
+
+    // MARK: Round 9: the guide gull and the redesigned school beats (UX-ROUND-9 §1, ART-ROUND-9 §1)
+
+    /// The ghost's demonstrations are breaths of air, never the player's sounds. They have no thump, no chime, no
+    /// tick and no haptic, sit at about half the level of the player's own swish (≤ `ghostPeak`), and are pitched
+    /// in a narrower, airier band (Q 1.6). So "watch" can never be mistaken for "you did it".
+    static let ghostPeak: Float = 0.04
+
+    /// The guide gull flies `move`: a soft "watch" whoosh shaped like the move.
+    /// - dive: falls as it slides down the wave (1.8 s).
+    /// - soar: rises off the bottom (≈ 1.2 s).
+    /// - land: a hush that settles; the ghost Perfect itself is silent (ART §1A).
+    /// - rhythm: a down-up pair per swell, over two swells.
+    static func ghost(_ move: FeelGhostMove) -> [FeelSynthCommand] {
+        switch move {
+        case .dive:
+            return [ghostBreath(from: 2400, to: 900, sweep: 1.6, attack: 0.3, decay: 0.5, gain: ghostPeak)]
+        case .soar:
+            return [ghostBreath(from: 800, to: 2400, sweep: 1.1, attack: 0.25, decay: 0.45, gain: ghostPeak)]
+        case .land:
+            return [ghostBreath(from: 1800, to: 1000, sweep: 0.9, attack: 0.3, decay: 0.45, gain: ghostPeak * 0.8)]
+        case .rhythm:
+            let times: [Float] = [0, 0.9, 1.8, 2.7]
+            var commands: [FeelSynthCommand] = []
+            for (index, time) in times.enumerated() {
+                let down = index % 2 == 0
+                commands.append(ghostBreath(from: down ? 2200 : 800, to: down ? 900 : 2200, sweep: 0.7, attack: 0.2,
+                                            decay: 0.3, gain: ghostPeak * 0.85, delay: time))
+            }
+            return commands
+        }
+    }
+
+    private static func ghostBreath(from start: Float, to end: Float, sweep: Float, attack: Float, decay: Float,
+                                    gain: Float, delay: Float = 0) -> FeelSynthCommand {
+        .noise(FeelNoiseSpec(.bandPass, cutoff: start, to: end, sweep: sweep, q: 1.6, attack: attack, decay: decay,
+                             gain: gain, delay: delay))
+    }
+
+    /// The title bird sweeps down into the sea and becomes the play bird (0.8 s morph): a soft falling swoosh that
+    /// touches the water with a light kiss.
+    static func schoolMorph() -> [FeelSynthCommand] {
+        [
+            .noise(FeelNoiseSpec(.bandPass, cutoff: 2600, to: 700, sweep: 0.7, q: 0.8, attack: 0.2, decay: 0.3,
+                                 gain: 0.05)),
+            .noise(FeelNoiseSpec(.bandPass, cutoff: 2400, to: 1300, sweep: 0.06, q: 0.9, attack: 0.002, decay: 0.05,
+                                 gain: 0.04, delay: 0.75)),
+        ]
+    }
+
+    /// Step 5: a swell flown right leaves its gold bead on the crest (ART §1E): a tiny tick that climbs per wave (1–3).
+    static func waveDone(_ index: Int) -> [FeelSynthCommand] {
+        let notes: [Float] = [1318.5, 1480.0, 1760.0]
+        let f = notes[min(max(index, 1), notes.count) - 1]
+        return [.ring(FeelRingSpec(.marimba, fundamental: f, partials: 2, decay: 0.08, brightness: 0.3, gain: 0.06))]
+    }
+
+    /// Step 6: the player's Perfect hits the storm with gust streaks and it falls back: a rising gust, and a low
+    /// rumble that recedes.
+    static func stormPushedBack() -> [FeelSynthCommand] {
+        [
+            .noise(FeelNoiseSpec(.bandPass, cutoff: 500, to: 2600, sweep: 0.35, q: 0.8, attack: 0.04, decay: 0.15,
+                                 gain: 0.07)),
+            .noise(FeelNoiseSpec(.lowPass, cutoff: 220, to: 90, sweep: 0.6, q: 0.8, attack: 0.05, decay: 0.45,
+                                 gain: 0.08, delay: 0.15)),
+        ]
+    }
+
+    /// Step 6: the first lighthouse rises on the far horizon: its bell, far away and quiet (not the "reached" moment).
+    static func lighthouseSighted(dice: inout FeelDice) -> [FeelSynthCommand] {
+        [.ring(FeelRingSpec(.bell, fundamental: Float(lighthouseBellHz[0]), partials: 5, decay: 1.2, brightness: 0.4,
+                            gain: 0.06, seed: dice.seed32()))]
     }
 
     // MARK: Countdown

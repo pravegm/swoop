@@ -33,35 +33,37 @@ enum ShareText {
         return "\(grouped(Int(m.rounded(.down)))) m"
     }
 
-    /// The HUD distance (REVIEW-1 P1-9): whole metres below 1 km ("842" "m"), then kilometres with the hundredths still
-    /// ticking ("1.24" "km"), rounded down, whatever the locale.
+    /// The HUD distance: whole metres below 1 km ("842" "m"), then kilometres with ONE decimal ("12.8" "km", R9 UX
+    /// §4.2: the HUD ticks every 100 m), rounded down, whatever the locale.
     static func hudDistance(_ meters: Double) -> (value: String, unit: String) {
         let m = meters.isFinite ? max(meters, 0) : 0
         if m < 1000 { return (String(Int(m.rounded(.down))), "m") }
-        let hundredths = Int((m / 10).rounded(.down))
-        let whole = hundredths / 100
-        let frac = hundredths % 100
-        return ("\(grouped(whole)).\(frac < 10 ? "0" : "")\(frac)", "km")
+        let tenths = Int((m / 100).rounded(.down))
+        return ("\(grouped(tenths / 10)).\(tenths % 10)", "km")
     }
 
-    /// THE distance formatter for every on-screen distance (R4 P0-4): "89 m" under 1 km, then "11.88 km", rounded
-    /// down, the same as the HUD and the cover. `roundUp` (distances still to go: "550 m short of…") rounds up to 10 m.
-    /// Share lines keep `km` (one decimal), the social format.
+    /// THE distance formatter for every on-screen distance (R9 UX §4.2): "850 m" under 1 km, then one decimal,
+    /// "12.8 km". Distances flown round DOWN; `roundUp` (distances still to go: the chip, "further", "Best in") rounds
+    /// UP, to 10 m under 1 km and to 0.1 km above ("2.17 km" → "2.2 km", 341 m → "350 m").
     static func distance(_ meters: Double, roundUp: Bool = false) -> String {
         var m = meters.isFinite ? max(meters, 0) : 0
-        if roundUp { m = (m / 10).rounded(.up) * 10 }
+        if roundUp {
+            let up10 = (m / 10).rounded(.up) * 10
+            m = up10 < 1000 ? up10 : (m / 100).rounded(.up) * 100
+        }
         let d = hudDistance(m)
         return "\(d.value) \(d.unit)"
     }
 
-    /// A goal target: "500 m", "3 km", "2.50 km" (whole kilometres drop the decimals).
+    /// A goal target: "500 m", "3 km", "2.5 km" (whole kilometres drop the decimal).
     static func target(_ meters: Double) -> String {
         let m = meters.isFinite ? max(meters, 0) : 0
         if m >= 1000 && m.truncatingRemainder(dividingBy: 1000) == 0 { return "\(grouped(Int(m / 1000))) km" }
         return distance(m)
     }
 
-    static func perfects(_ n: Int) -> String { n == 1 ? "1 Perfect" : "\(n) Perfects" }
+    /// R9 glossary: the landing is "Perfect"; counted, "perfect landings".
+    static func perfects(_ n: Int) -> String { n == 1 ? "1 perfect landing" : "\(n) perfect landings" }
 
     /// "6 h 12 m" / "12 m" (never "0 m": under a minute reads "1 m"), rounded up to the minute.
     static func nextIn(seconds: Double) -> String {

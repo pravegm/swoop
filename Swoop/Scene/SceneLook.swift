@@ -330,8 +330,10 @@ enum SceneLook {
     /// The cloud edge never sits further behind than this (px from the behind edge), far → near.
     static let stormEdgeFar: CGFloat = 70
     static let stormEdgeNear: CGFloat = 190
-    /// Caught: the sweep carries the edge to this fraction of the width (past the fold band).
-    static let stormCaughtEdge: CGFloat = 0.62
+    /// Caught (R9, ART-ROUND-9 §2): the front sweeps past the bird to cover this fraction of the width (measured from
+    /// the storm side: 0.10 w from the ahead edge), over `caughtSweepTime`, ease-in-out.
+    static let stormCaughtEdge: CGFloat = 0.90
+    static let caughtSweepTime: Double = 1.2
     /// The wall's height as a fraction of the *visible* sky above its base, far → near.
     static let stormHeightFar: CGFloat = 0.42
     static let stormHeightNear: CGFloat = 1.15
@@ -349,7 +351,7 @@ enum SceneLook {
     static let skyShadeReach: CGFloat = 0.45
     static let skyShadeCapAtBird: CGFloat = 0.5
     /// The grey wash over the sea reaches this far (px) ahead of the cloud edge; opacity far → near.
-    static let stormShadeReach: CGFloat = 170
+    static let stormShadeReach: CGFloat = 260
     static let stormShadeFar: CGFloat = 0.25
     static let stormShadeNear: CGFloat = 0.65
     /// The sun dims by 0.15 c in play, and by half when caught.
@@ -363,10 +365,24 @@ enum SceneLook {
     static let flashPeak: CGFloat = 0.14
     /// Caught: the calm grey wash (≈ 30 % desaturation; the far page takes 60 % of it), the sun dimmed by half, over
     /// 1.5 s ease-in-out.
-    static let caughtWashAlpha: CGFloat = 0.30
-    static let caughtWashFarPage: CGFloat = 0.6
-    static let caughtSunDim: CGFloat = 0.5
-    static let caughtEase: CGFloat = 1.5
+    static let caughtWashAlpha: CGFloat = 0.45
+    static let caughtWashFarPage: CGFloat = 1.0
+    static let caughtSunDim: CGFloat = 0.7
+    static let caughtEase: CGFloat = 2.4
+    /// Ahead of the caught front a 0.10 w strip keeps a warm horizon glow at α 0.6 ("the light is still out there").
+    static let caughtHorizonStrip: CGFloat = 0.10
+    static let caughtHorizonAlpha: CGFloat = 0.6
+    /// Caught, the rain covers the whole wall and leads its edge by 60 pt.
+    static let caughtRainCover: CGFloat = 1.0
+    static let caughtRainLead: CGFloat = 60
+    /// Caught beats (s after the catch): the bolt ahead of the bird, the bird settling (tuck 0.6, nose −4°, 15 % wet),
+    /// three rain rings, and a +4 % camera push-in from 0.6 to 2.4 s.
+    static let caughtBoltAt: Double = 0.9
+    static let caughtTuck: Double = 0.6
+    static let caughtNose: CGFloat = -4 * .pi / 180
+    static let caughtWet: CGFloat = 0.15
+    static let caughtRipples: [Double] = [0.6, 1.1, 1.6]
+    static let caughtPushIn: Double = 0.04
 
     // MARK: Props (ART-S13)
 
@@ -491,4 +507,113 @@ enum SceneLook {
     static let moteCount: Int = 12
     static let moteDelay: Double = 0.2
     static let moteTime: Double = 1.2
+
+    // MARK: Round 9: practice fixes (ART-ROUND-9 SR5)
+
+    /// Step 6's storm rolls in to cover the bird page's outer 20 % (Duo mirrored: x ≥ 760), at this closeness, so it
+    /// is plainly on screen before any words.
+    static let rollInEdge: CGFloat = 0.20
+    static let rollInCloseness: CGFloat = 0.3
+    /// A Perfect in the school's storm step pushes the wall back by this much (pt), springing back over 1.5 s.
+    static let schoolPushBack: CGFloat = 90
+    /// The practice sun: a smaller, softer glow (360 pt at α 0.55) under a white disk, so it never reads as an eclipse.
+    static let practiceSunGlow: CGFloat = 360
+    static let practiceSunGlowAlpha: CGFloat = 0.55
+    /// The practice camera keeps the bird within 35–70 % of the visible height and the horizon ≥ 15 % inside the top.
+    static let practiceBirdLow: Double = 0.35
+    static let practiceBirdHigh: Double = 0.70
+    static let practiceHorizonInset: Double = 0.15
+    /// The far-front fill darkens into the near sea's mean colour over its first 200 pt below the horizon (no flat
+    /// "second sea" slab above a deep trough).
+    static let farShadeDepth: CGFloat = 200
+    static let farShadeStrength: CGFloat = 0.85
+
+    // MARK: Round 9: water cues (SR2)
+
+    static let cueFadeIn: CGFloat = 0.25
+    static let cueFadeOut: CGFloat = 0.3
+    /// The fold zone: a 16 pt band on the foam line from the crest to 85 % of the way to the trough, gold at α 0.55,
+    /// with a 6 pt additive edge glow at α 0.25. Covered while folded it turns solid; covered open it greys to mist.
+    static let foldZoneEnd: Double = 0.85
+    static let foldBandWidth: CGFloat = 16
+    static let foldBandAlpha: CGFloat = 0.55
+    static let foldBandGlow: CGFloat = 6
+    static let foldBandGlowAlpha: CGFloat = 0.25
+    static let foldBandDoneAlpha: CGFloat = 1.0
+    static let foldBandMissAlpha: CGFloat = 0.4
+    /// The tuck that counts as folded for the band's paint.
+    static let foldedTuck: Double = 0.5
+    /// Fold chevrons: 18 × 10 pt, 3 pt, gold at α 0.95, 36 pt apart, 10 pt above the foam line, 120 pt/s down the slope.
+    static let cueChevronWidth: CGFloat = 18
+    static let cueChevronHeight: CGFloat = 10
+    static let cueChevronStroke: CGFloat = 3
+    static let cueChevronAlpha: CGFloat = 0.95
+    static let foldChevronGap: CGFloat = 36
+    static let foldChevronLift: CGFloat = 10
+    static let foldChevronSpeed: CGFloat = 120
+    /// The book glyphs: two 14 × 20 pt panels on a 2 pt spine, 34 pt above the water, 1 pt ink outline at 40 %;
+    /// closing 170° → 110° (gold, at the crest) or opening 110° → 170° (teal, at the launch), every 1.2 s.
+    static let bookPanelWidth: CGFloat = 14
+    static let bookPanelHeight: CGFloat = 20
+    static let bookLift: CGFloat = 34
+    static let bookCycle: Double = 1.2
+    /// Lift chevrons above the open glyph: teal, stacked 14 pt apart, 0.15 s stagger.
+    static let liftChevronGap: CGFloat = 14
+    /// The done bead: 14 pt gold with an ink tick, 24 pt above the crest.
+    static let beadSize: CGFloat = 14
+    static let beadLift: CGFloat = 24
+    /// Teal "open" (`accentOn`).
+    static let openTeal = RGBA(hex: 0x5CC2D6)
+    static let mist = RGBA(hex: 0xB6CCDA)
+
+    // MARK: Round 9: the landing ring (SR3)
+
+    /// 180 × 58 pt, a 4 pt stroke at α 0.95, an 8 pt additive glow at α 0.35, a fill at α 0.12, breathing 0.96 ↔ 1.04
+    /// at 1.2 Hz; ≥ 200 pt ahead of the bird; brighter (α 1, 1.1×) once the bird is within 120 pt above it.
+    static let ringWidth: CGFloat = 180
+    static let ringStroke: CGFloat = 4
+    static let ringGlow: CGFloat = 8
+    static let ringGlowAlpha: CGFloat = 0.35
+    static let ringFillAlpha: CGFloat = 0.12
+    static let ringAlpha: CGFloat = 0.95
+    static let ringBreathHz: Double = 1.2
+    static let ringAhead: Double = 200
+    static let ringNear: Double = 120
+    /// The drop marker: 3 pt dots every 9 pt from 96 pt above the ring, under a 22 pt down-chevron bobbing ±6 pt at 1 Hz.
+    static let dropHeight: CGFloat = 96
+    static let dropDotGap: CGFloat = 9
+    static let dropChevron: CGFloat = 22
+    /// While a cue or the ghost wants room ahead, the camera shifts the bird back by up to this fraction of the width
+    /// (the ring 0.25 w, the ghost 0.22 w), but never closer than `biasEdgeClearance` to the behind edge.
+    static let ringCameraBias: CGFloat = 0.25
+    static let ghostCameraBias: CGFloat = 0.22
+    static let biasEdgeClearance: CGFloat = 90
+    static let ghostMaxZoom: Double = 0.78
+
+    // MARK: Round 9: the guide gull (SR1)
+
+    /// The ghost: the player's bird at 0.9×, foam at α 0.38 (body) / 0.30 (wings), a 1.5 pt gold outline at α 0.85, an
+    /// 18 pt additive gold glow at α 0.18.
+    static let ghostScale: CGFloat = 0.9
+    static let ghostBodyAlpha: CGFloat = 0.38
+    static let ghostWingAlpha: CGFloat = 0.30
+    static let ghostOutline: CGFloat = 1.5
+    static let ghostOutlineAlpha: CGFloat = 0.85
+    static let ghostGlow: CGFloat = 18
+    static let ghostGlowAlpha: CGFloat = 0.18
+    /// Its dotted path: 4 pt dots every 14 pt, gold at α 0.75, each fading over 1.6 s.
+    static let ghostDotSize: CGFloat = 4
+    static let ghostDotGap: CGFloat = 14
+    static let ghostDotAlpha: CGFloat = 0.75
+    static let ghostDotLife: Double = 1.6
+    /// It starts this far (screen pt) ahead of the player, holds its last pose 0.6 s, then dissolves into 10 motes.
+    static let ghostLead: CGFloat = 420
+    static let ghostHold: Double = 0.6
+    static let ghostMotes: Int = 10
+
+    // MARK: Round 9: the storm link (UX-ROUND-9 §1.2 step 6)
+
+    /// A dotted line from the storm's front to the meter's storm icon: foam dots at α 0.7, 10 pt apart, flowing.
+    static let linkDotGap: CGFloat = 10
+    static let linkAlpha: CGFloat = 0.7
 }

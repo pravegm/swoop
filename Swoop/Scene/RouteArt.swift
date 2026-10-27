@@ -126,6 +126,85 @@ enum RouteArt {
         return sorted.first(where: fits) ?? proposed
     }
 
+    // MARK: Round 9: the Route reads left to right (ART-ROUND-9 §4)
+
+    /// The coast's base line: Duo 150, iPhone 118 (y down).
+    static let coastBaseDuo: CGFloat = 150
+    static let coastBasePhone: CGFloat = 118
+    /// Each lighthouse stands on a seaward point: a cosine bump +34 pt, 120 pt wide.
+    static let pointBulge: CGFloat = 34
+    static let pointWidth: CGFloat = 120
+    /// The label row sits this far under the headland tips; a colliding label drops one row of 40 pt.
+    static let labelDrop: CGFloat = 64
+    static let labelRowStep: CGFloat = 40
+    static let labelGap: CGFloat = 16
+
+    /// R9 coast: y = base + 20 sin(x / 170) + 10 sin(x / 61 + 1.3), plus a +34 pt point under each lighthouse, so every
+    /// lighthouse stands on a point, never in a cove.
+    static func coastY(at x: CGFloat, headlands: [CGFloat], base: CGFloat) -> CGFloat {
+        var y = base + 20 * sin(x / 170) + 10 * sin(x / 61 + 1.3)
+        let half = pointWidth * 0.5
+        for h in headlands {
+            let d = abs(x - h) / half
+            if d < 1 { y += pointBulge * 0.5 * (1 + cos(CGFloat.pi * d)) }
+        }
+        return y
+    }
+
+    /// R9 land from the strip's top down to the coast (fill `#3E4466 → #2A2E4A`, sand rim 3 pt `#C9B98F`).
+    static func coastPath(width: CGFloat, headlands: [CGFloat], base: CGFloat, top: CGFloat = 0) -> CGPath {
+        let p = CGMutablePath()
+        let w = max(width, 1)
+        p.move(to: CGPoint(x: 0, y: top))
+        p.addLine(to: CGPoint(x: w, y: top))
+        var x = w
+        while x > 0 {
+            p.addLine(to: CGPoint(x: x, y: coastY(at: x, headlands: headlands, base: base)))
+            x -= 4
+        }
+        p.addLine(to: CGPoint(x: 0, y: coastY(at: 0, headlands: headlands, base: base)))
+        p.closeSubpath()
+        return p
+    }
+
+    /// R9 coastline alone, `offset` pt seaward (0: the sand rim; 4: the foam line), and the contours (+30 / +60 / +100).
+    static func coastline(width: CGFloat, headlands: [CGFloat], base: CGFloat, offset: CGFloat = 0) -> CGPath {
+        line(width: width) { (x: CGFloat) -> CGFloat in coastY(at: x, headlands: headlands, base: base) + offset }
+    }
+
+    /// R9 lighthouse x by index, left to right on every device and bird side: the first at `spacing`, then every
+    /// `spacing` (Duo 150, iPhone 130). The harbour quay sits at x 48 and the storm glyph behind it at x 16.
+    static func lighthouseXs(count: Int, spacing: CGFloat) -> [CGFloat] {
+        guard count > 0 else { return [] }
+        return (0..<count).map { spacing * CGFloat($0 + 1) }
+    }
+
+    /// The scroll offset that puts lighthouse `index` at 60 % of the view's width (then snap with `snapOffset`).
+    static func focusOffset(index: Int, spacing: CGFloat, viewWidth: CGFloat) -> CGFloat {
+        max(spacing * CGFloat(index + 1) - viewWidth * 0.6, 0)
+    }
+
+    /// Lays label rects out on one baseline row: a label that would come within `gap` of an earlier one drops a row
+    /// (`rowStep`), up to `maxRows` rows; nothing overlaps. The rects keep their x; the result is in the same order.
+    static func labelRows(_ rects: [CGRect], gap: CGFloat = RouteArt.labelGap, rowStep: CGFloat = RouteArt.labelRowStep,
+                          maxRows: Int = 4) -> [CGRect] {
+        var placed: [CGRect] = []
+        let pad = -gap / 2
+        for r in rects {
+            var c = r
+            var row = 0
+            while row < maxRows {
+                let grown = c.insetBy(dx: pad, dy: pad)
+                let hit = placed.contains { $0.insetBy(dx: pad, dy: pad).intersects(grown) }
+                if !hit { break }
+                row += 1
+                c = r.offsetBy(dx: 0, dy: rowStep * CGFloat(row))
+            }
+            placed.append(c)
+        }
+        return placed
+    }
+
     // MARK: Glyphs (a `size` × `size` box, y down)
 
     /// The storm glyph: an anvil cloud (flat spreading top, tower, billowed base). Fill it with the storm body colour.
@@ -222,8 +301,30 @@ enum DuoDiagramArt {
         var phi: CGFloat
     }
 
-    static func geometry(angle: Double, box: CGSize) -> Geometry {
+    /// R9 (ART-ROUND-9 §1D, the wing diagram riding with the bird): the exaggerated display angle
+    /// φd = min(1.6 · (180° − θ) / 2, 60°), so a full tuck (122°) shows at 46° and reads at a glance.
+    static func displayPhi(angle: Double) -> CGFloat {
         let theta = min(max(angle.isFinite ? angle : maxAngle, minAngle), maxAngle)
+        return CGFloat(min(1.6 * (180 - theta) / 2, 60) * Double.pi / 180)
+    }
+
+    /// R9: the inner faces darken by 25 % · sin φd.
+    static func innerShade(angle: Double) -> CGFloat { 0.25 * sin(displayPhi(angle: angle)) }
+
+    /// R9: the same geometry with the exaggerated display angle (no gauge; the App's `WingDiagram`).
+    static func geometry(angle: Double, box: CGSize, exaggerated: Bool) -> Geometry {
+        guard exaggerated else { return geometry(angle: angle, box: box) }
+        let phid = Double(displayPhi(angle: angle)) * 180 / Double.pi
+        return geometry(angle: 180 - 2 * phid, box: box, clampAngle: false)
+    }
+
+    static func geometry(angle: Double, box: CGSize) -> Geometry {
+        geometry(angle: angle, box: box, clampAngle: true)
+    }
+
+    private static func geometry(angle: Double, box: CGSize, clampAngle: Bool) -> Geometry {
+        let lo = clampAngle ? minAngle : 60
+        let theta = min(max(angle.isFinite ? angle : maxAngle, lo), maxAngle)
         let phi = CGFloat((180 - theta) * 0.5 * Double.pi / 180)
         let cx = box.width * 0.5, cy = box.height * 0.5
         let half = spineWidth * 0.5

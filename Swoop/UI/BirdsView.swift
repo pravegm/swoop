@@ -30,7 +30,7 @@ struct BirdsView: View {
 
     /// A locked tile's label: "Rank 3 goals" (R6 D4) for the next unlock, nil (a lock only) for the rest. Pure; tested.
     nonisolated static func lockedLabel(unlockRank: Int, next: Int?) -> String? {
-        unlockRank == next ? "Rank \(unlockRank + 1) goals" : nil
+        unlockRank == next ? "Level \(unlockRank + 1)" : nil
     }
 
     var body: some View {

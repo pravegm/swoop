@@ -75,6 +75,8 @@ final class SceneStorm {
     private let shade: SKSpriteNode
     private let flash: SKSpriteNode
     private let calm: SKSpriteNode
+    /// R9 caught: the warm horizon strip ahead of the front.
+    private let strip: SKSpriteNode
     private var sheets: [SKSpriteNode] = []
     private var drops: [SKSpriteNode] = []
     private var dropPos: [CGPoint] = []
@@ -121,6 +123,7 @@ final class SceneStorm {
         shade = SKSpriteNode(color: .clear, size: CGSize(width: 1800, height: 670))
         flash = SKSpriteNode(color: .white, size: CGSize(width: 952, height: 670))
         calm = SKSpriteNode(color: .clear, size: CGSize(width: 952, height: 670))
+        strip = SKSpriteNode(texture: SceneTextures.band)
 
         skyShade.anchorPoint = .zero
         skyShade.zPosition = 0.1
@@ -186,6 +189,12 @@ final class SceneStorm {
         calm.zPosition = 1
         frontRoot.addChild(calm)
         frontRoot.addChild(flash)
+        strip.anchorPoint = CGPoint(x: 0, y: 0.5)
+        strip.colorBlendFactor = 1
+        strip.blendMode = .add
+        strip.zPosition = 1.5
+        strip.isHidden = true
+        frontRoot.addChild(strip)
 
         // Rain moves +u (away from the storm, toward the bird): it is u-space, so mirrored it moves left on screen.
         let streak = SceneTextures.streak
@@ -232,6 +241,7 @@ final class SceneStorm {
         calm.color = .white
         calm.colorBlendFactor = 0
         for d in drops { d.color = rain }
+        strip.color = ScenePaint.ui(p.sunline)
     }
 
     func clear() {
@@ -330,7 +340,8 @@ final class SceneStorm {
         // Rain: always under the cloud, onto the left half once the storm is close, everywhere when caught.
         let closeK = min(max(1 - self.lead / 0.2, 0), 1)
         var rainEdge = max(e + 50, closeK * size.width * 0.5)
-        rainEdge += (size.width + 80 - rainEdge) * caughtness
+        // Caught (R9): the rain covers the whole wall and leads its edge by 60 pt.
+        rainEdge += (max(e + SceneLook.caughtRainLead, rainEdge) * SceneLook.caughtRainCover - rainEdge) * caughtness
         let rainAlpha = (0.24 + 0.18 * c + 0.22 * closeK) * (1 - 0.3 * caughtness) * rainK
         let raining = rainAlpha > 0.01 && rainEdge > -40
         let spawnTop = caughtness > 0.3 ? maxY + 160 : min(wallTop, maxY + 60)
@@ -393,6 +404,14 @@ final class SceneStorm {
             calm.position = CGPoint(x: -2, y: -2)
             calm.alpha = caughtness * SceneLook.caughtWashAlpha
         }
+        // Ahead of the caught front, the light is still out there: a warm strip on the horizon.
+        let stripW = size.width - e + 40
+        strip.isHidden = caughtness < 0.01 || stripW < 4
+        if !strip.isHidden {
+            strip.position = CGPoint(x: e - 20, y: horizonY + 24)
+            strip.size = CGSize(width: max(stripW, SceneLook.caughtHorizonStrip * size.width), height: 200)
+            strip.alpha = caughtness * SceneLook.caughtHorizonAlpha
+        }
     }
 
     /// No periodic glow for the next `seconds` (step 7 names the storm with its own glow at +1.2 s).
@@ -408,6 +427,15 @@ final class SceneStorm {
         glowLevel = max(glowLevel, min(max(strength, 0.2), 1))
     }
 
+    /// R9 caught: one bolt inside the wall at u `x` (ahead of the bird: the storm is now over and ahead of it).
+    func strike(strength: CGFloat, atU x: CGFloat) {
+        forcedX = x
+        strike(strength: strength)
+        forcedX = nil
+    }
+
+    private var forcedX: CGFloat?
+
     /// A lightning strike now (also on `stormClose`). Reduce Motion: no flash or bolt, only a glow in the cloud.
     func strike(strength: CGFloat) {
         let interval = Double(rng.range(SceneLook.strikeIntervalMin, SceneLook.strikeIntervalMax))
@@ -420,8 +448,8 @@ final class SceneStorm {
         flashLevel = st
         guard edge > 60 else { return }
         let lo = max(12, edge - 300), hi = edge - 40
-        guard hi > lo else { return }
-        var x = rng.range(lo, hi)
+        guard hi > lo || forcedX != nil else { return }
+        var x = forcedX ?? rng.range(lo, hi)
         let top = min(wallTop - 30, canvas.height + 10)
         var y = top
         let bottom = horizon + rng.range(10, 60)

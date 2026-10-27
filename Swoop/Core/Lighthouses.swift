@@ -68,6 +68,23 @@ public enum Lighthouses {
     public static func meters(index: Int) -> Double {
         return x(index: index) / Tuning.pointsPerMeter
     }
+
+    /// The results headline's inputs (UX-ROUND-9 §2.2): the next lighthouse beyond a flight's distance and how far
+    /// beyond it is, rounded up the way the copy reads it ("Kestrel Head is 2.2 km further", "Gull Point is 350 m
+    /// further"). The lighthouses passed come from `RunResult.lighthouses` / `lastLighthouseName` (fixed names).
+    public static func next(afterMeters meters: Double) -> (index: Int, name: String, metersFurther: Double) {
+        let d: Double = meters.isFinite ? max(0, meters) : 0
+        let i: Int = nextIndex(afterMeters: d)
+        return (index: i, name: name(index: i), metersFurther: roundedFurther(meters: Lighthouses.meters(index: i) - d))
+    }
+
+    /// "Further" rounded UP: to 100 m (0.1 km) from 1 km, to 10 m below 1 km; never below 10 m.
+    public static func roundedFurther(meters: Double) -> Double {
+        if !(meters > 0) { return 10 }
+        let step: Double = meters >= 1000 ? 100 : 10
+        // A hair of tolerance so an exact 2.2 km doesn't round up to 2.3 km through float noise.
+        return max(10, (meters / step - 1e-9).rounded(.up) * step)
+    }
 }
 
 // MARK: - Daily Flight seeds (GAME-DESIGN §8): the same sea for everyone, worldwide, each UTC day.

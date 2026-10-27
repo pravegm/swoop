@@ -71,8 +71,8 @@ final class SceneBackdrop {
         frontHaze = SKSpriteNode(texture: SceneTextures.verticalGradient(
             key: "fronthaze", colors: [UIColor(white: 1, alpha: 1), UIColor(white: 1, alpha: 0)], locations: [0, 1]))
         farShade = SKSpriteNode(texture: SceneTextures.verticalGradient(
-            key: "farshade2", colors: [UIColor(white: 1, alpha: 0), UIColor(white: 1, alpha: 1),
-                                       UIColor(white: 1, alpha: 1)], locations: [0, 0.4, 1]))
+            key: "farshade9", colors: [UIColor(white: 1, alpha: 0), UIColor(white: 1, alpha: 1),
+                                       UIColor(white: 1, alpha: 1)], locations: [0, 0.59, 1]))
 
         skySprite.anchorPoint = CGPoint(x: 0.5, y: 0)
         skySprite.zPosition = -20
@@ -164,7 +164,7 @@ final class SceneBackdrop {
     /// fraction of the height (0.16; Flight School 0.24).
     func update(width w: CGFloat, height h: CGFloat, visibleTop: CGFloat, meanY: CGFloat, zoom z: CGFloat,
                 scroll: CGFloat, time t: Double, dt: CGFloat, sunDim: CGFloat, drift: Bool, farAlpha: CGFloat = 1,
-                sunLift: CGFloat = SceneLook.sunLiftFraction) {
+                sunLift: CGFloat = SceneLook.sunLiftFraction, practice: CGFloat = 0) {
         if abs(builtWidth - w) > 0.5 { buildSwells(width: w) }
         let period = SceneLook.farPeriod
         scrollBack = (scrollBack + scroll * SceneLook.farBackParallax).truncatingRemainder(dividingBy: period)
@@ -187,9 +187,11 @@ final class SceneBackdrop {
         frontHaze.position = CGPoint(x: w * 0.5, y: frontBase + SceneLook.farFrontAmp)
         frontHaze.size = CGSize(width: w + 8, height: SceneLook.farFrontHaze)
         frontHaze.alpha = 0.7
+        // R9 (defects #6, #18): the far-front fill darkens into the near sea's mean over its first 200 pt, so a deep
+        // trough never shows a flat "second sea" slab.
         farShade.position = CGPoint(x: w * 0.5, y: frontBase - 2)
-        farShade.size = CGSize(width: w + 8, height: max(frontBase + 40, 40))
-        farShade.alpha = SceneLook.farShadeAlpha
+        farShade.size = CGSize(width: w + 8, height: max(frontBase + 40, SceneLook.farShadeDepth / 0.59))
+        farShade.alpha = SceneLook.farShadeStrength
 
         // The sky: zenith at the top of the canvas, the sunline exactly at the horizon.
         let skyBottom = backBase - 2
@@ -200,10 +202,16 @@ final class SceneBackdrop {
         sunBrightness = max(0, 1 - sunDim)
         sunPosition = CGPoint(x: w * SceneLook.sunU, y: max(sunY, backBase + 30))
         sunDisk.position = sunPosition
-        sunDisk.alpha = diskAlpha * sunBrightness
+        // R9 (defect #15): the practice sun is a white disk over a smaller, softer glow (never an "eclipse" ring).
+        let pk = min(max(practice, 0), 1)
+        sunDisk.alpha = (diskAlpha + (1 - diskAlpha) * pk) * sunBrightness
+        sunDisk.colorBlendFactor = 0.55 * (1 - pk)
         sunGlow.position = sunPosition
+        let glowSize = SceneLook.sunGlowSize * glowScale
+        let g = glowSize + (SceneLook.practiceSunGlow - glowSize) * pk
+        sunGlow.size = CGSize(width: g, height: g)
         sunGlow.setScale(1 + 0.03 * CGFloat(sin(t * 0.9)))
-        sunGlow.alpha = sunBrightness
+        sunGlow.alpha = sunBrightness * (1 + (SceneLook.practiceSunGlowAlpha - 1) * pk)
         haze.position = CGPoint(x: w * 0.5, y: backBase)
         haze.size = CGSize(width: w + 8, height: SceneLook.hazeHeight)
         haze.alpha = (SceneLook.hazeAlpha + (SceneLook.hazePulseAlpha - SceneLook.hazeAlpha) * pulseLevel)

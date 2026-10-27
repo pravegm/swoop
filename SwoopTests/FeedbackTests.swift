@@ -814,4 +814,104 @@ struct FeedbackTests {
         director.handle([.stormClose], telemetry: flying(speed: 900, lead: 0.05))
         #expect(director.practiceAmbience == false)
     }
+
+    // MARK: Round 9: the guide gull, the overtake, the school beats
+
+    /// The ghost's "watch" cues can never be mistaken for the player's: breath only (no thump, chime, tick or drop),
+    /// about half the level of the player's own swish, in a narrower band.
+    @Test func ghostCuesAreSoftBreathsUnlikeThePlayersOwn() {
+        let launchPeak = FeelSoundBook.launch(speed: 1000).map { $0.gain }.max() ?? 0
+        for move in FeelGhostMove.allCases {
+            let cue = FeelSoundBook.ghost(move)
+            #expect(!cue.isEmpty)
+            for command in cue {
+                #expect(command.gain > 0)
+                #expect(command.gain <= FeelSoundBook.ghostPeak)
+                #expect(command.gain < launchPeak * 0.5)
+                if case .noise(let noise) = command {
+                    #expect(noise.mode == .bandPass)
+                    #expect(noise.q >= 1.5)
+                    #expect(noise.cutoff >= 700 && noise.cutoffEnd >= 700)
+                } else {
+                    Issue.record("a ghost cue must be breath only")
+                }
+            }
+        }
+        // Shaped like the move: dive falls, soar rises; rhythm is two down-up pairs.
+        if case .noise(let dive) = FeelSoundBook.ghost(.dive)[0] { #expect(dive.cutoffEnd < dive.cutoff) }
+        if case .noise(let soar) = FeelSoundBook.ghost(.soar)[0] { #expect(soar.cutoffEnd > soar.cutoff) }
+        #expect(FeelSoundBook.ghost(.rhythm).count == 4)
+    }
+
+    @Test func caughtOvertakeSweepsThenStrikesOnceThenCalms() {
+        var dice = FeelDice(seed: 31)
+        let caught = FeelSoundBook.caught(dice: &dice)
+        var cracks = 0
+        var padStart: Float = 99
+        var sweepEnds: Float = 0
+        for command in caught {
+            switch command {
+            case .noise(let noise):
+                if noise.mode == .highPass {
+                    cracks += 1
+                    #expect(abs(noise.delay - FeelSoundBook.caughtStrike) < 0.0001)
+                }
+                if noise.delay == 0 { sweepEnds = max(sweepEnds, noise.attack + noise.sweep) }
+            case .tone(let tone):
+                if tone.duration >= 4 { padStart = min(padStart, tone.delay) }
+            default:
+                break
+            }
+            #expect(command.gain <= 0.2)
+        }
+        // One strike, ahead of the bird, inside the 1.2 s sweep; the calm pad only once the front has passed.
+        #expect(cracks == 1)
+        #expect(FeelSoundBook.caughtStrike < FeelSoundBook.caughtSweep)
+        #expect(abs(FeelSoundBook.caughtSweep - 1.2) < 0.0001)
+        #expect(abs(padStart - FeelSoundBook.caughtSweep) < 0.0001)
+        #expect(sweepEnds <= FeelSoundBook.caughtSweep + 0.6)
+        // The haptic: the front's roll and exactly one jolt with the strike.
+        let transients = FeelHapticBook.caught.notes.filter { $0.kind == .transient }
+        #expect(transients.count == 1)
+        #expect(abs((transients.first?.time ?? 0) - Double(FeelSoundBook.caughtStrike)) < 1e-6)
+    }
+
+    @Test func schoolBeatsHaveSoftCues() {
+        var dice = FeelDice(seed: 32)
+        let beats: [[FeelSynthCommand]] = [FeelSoundBook.schoolMorph(), FeelSoundBook.waveDone(1),
+                                           FeelSoundBook.waveDone(3), FeelSoundBook.stormPushedBack(),
+                                           FeelSoundBook.lighthouseSighted(dice: &dice)]
+        for beat in beats {
+            #expect(!beat.isEmpty)
+            for command in beat {
+                #expect(command.gain > 0)
+                #expect(command.gain <= 0.08)
+            }
+        }
+        // The wave beads climb, and clamp.
+        var pitches: [Float] = []
+        for index in [0, 1, 2, 3, 9] {
+            if case .ring(let ring) = FeelSoundBook.waveDone(index)[0] { pitches.append(ring.fundamental) }
+        }
+        #expect(pitches.count == 5)
+        if pitches.count == 5 {
+            #expect(pitches[0] == pitches[1])
+            #expect(pitches[1] < pitches[2])
+            #expect(pitches[2] < pitches[3])
+            #expect(pitches[3] == pitches[4])
+        }
+        // The sighting is quieter than the "reached" bell.
+        var a = FeelDice(seed: 1)
+        var b = FeelDice(seed: 1)
+        let sighted = FeelSoundBook.lighthouseSighted(dice: &a).map { $0.gain }.max() ?? 1
+        let reached = FeelSoundBook.lighthouseReached(index: 0, dice: &b).map { $0.gain }.max() ?? 0
+        #expect(sighted < reached * 0.5)
+        let director = FeedbackDirector()
+        director.soundOn = false
+        director.hapticProfile = .off
+        let cues: [FeelCue] = [.ghost(.dive), .ghost(.soar), .ghost(.land), .ghost(.rhythm), .schoolMorph,
+                               .waveDone(1), .waveDone(2), .waveDone(3), .stormPushedBack, .lighthouseSighted]
+        for cue in cues { director.cue(cue) }
+        #expect(director.hapticsOn == false)
+    }
 }

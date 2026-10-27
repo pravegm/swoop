@@ -64,6 +64,7 @@ final class SceneBirdView {
     private var bird: Bird = SceneDefaults.bird
     private var squashAge: CGFloat = 1
     private var isDark = false
+    private var wetLevel: CGFloat = 0
     private(set) var angle: CGFloat = 0
     private(set) var scale: CGFloat = 1
     /// Wing paths built since the scene was made (tests, tuning).
@@ -185,6 +186,7 @@ final class SceneBirdView {
         glowGold = false
         wingCache.removeAll()
         poseKey = -1
+        wetLevel = 0
     }
 
     /// Sets the wings for this tuck and flap phase (quantised; each pose's paths are built once and cached), and the
@@ -231,6 +233,30 @@ final class SceneBirdView {
         nearTip.path = pose.nearTip
         leadingEdge.path = pose.leadingEdge
     }
+
+    /// R9 caught: the bird is wet, its body and wings up to `SceneLook.caughtWet` darker (`k` 0…1).
+    func setWet(_ k: CGFloat) {
+        let q = (min(max(k, 0), 1) * 10).rounded() / 10
+        guard q != wetLevel else { return }
+        wetLevel = q
+        let d = Double(SceneLook.caughtWet * q)
+        body.fillColor = ScenePaint.ui(ScenePaint.darker(bird.body, d))
+        belly.fillColor = ScenePaint.ui(ScenePaint.darker(bird.body, SceneLook.bellyDarken + d))
+        nearWing.fillColor = ScenePaint.ui(ScenePaint.darker(bird.wing, d))
+        farWing.fillColor = ScenePaint.ui(ScenePaint.darker(bird.wing, 0.22 + d))
+    }
+
+    /// The bird's art paths for a ghost (the same species and pose cache key; canvas units at scale 1).
+    func ghostPaths(tuck: Double) -> (body: CGPath, near: CGPath, far: CGPath) {
+        let p = BirdArt.path(for: bird, tuck: tuck, flap: 0)
+        return (scaled(p.body), scaled(p.nearWing), scaled(p.farWing))
+    }
+
+    /// The trail's stored points (tests: a jump starts a new strand).
+    var trailPointCount: Int { trailPoints.count }
+
+    /// The current bird (the guide gull copies its species).
+    var currentBird: Bird { bird }
 
     /// A touchdown: the 90 ms squash.
     func squash() { squashAge = 0 }
@@ -301,7 +327,15 @@ final class SceneBirdView {
             return
         }
         if let last = trailPoints.last {
-            if hypot(emit.x - last.x, emit.y - last.y) > SceneLook.trailSpacing / z {
+            let gap = hypot(emit.x - last.x, emit.y - last.y)
+            // R9 (defect #29): a jump longer than 3 spacings (a session switch, a rewind, a held frame) starts a new
+            // strand, so the ribbon never draws a straight "contrail" from where the bird used to be.
+            if gap > 3 * SceneLook.trailSpacing / max(z, 0.01) {
+                trailPoints.removeAll(keepingCapacity: true)
+                trailTimes.removeAll(keepingCapacity: true)
+                trailPoints.append(emit)
+                trailTimes.append(time)
+            } else if gap > SceneLook.trailSpacing / z {
                 trailPoints.append(emit)
                 trailTimes.append(time)
             }

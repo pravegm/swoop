@@ -2,6 +2,11 @@ import Foundation
 import QuartzCore
 import UIKit
 
+/// Round 9: the guide gull's moves (ART-ROUND-9 §1A).
+enum FeelGhostMove: String, CaseIterable, Sendable {
+    case dive, soar, land, rhythm
+}
+
 /// Round 3: one-shot cues for states the App owns (`FeedbackDirector.cue(_:)`; UX-SPEC §2, §9, §10, F1/F4).
 enum FeelCue: Sendable, Equatable {
     /// Home: the first fold of the title bird (≥ 18°): a soft wind swell.
@@ -35,6 +40,16 @@ enum FeelCue: Sendable, Equatable {
     case schoolStorm
     /// 300 m before the next lighthouse (the goal chip).
     case goalNear
+    /// Round 9: the guide gull starts a demonstration (a soft "watch" whoosh; sound only, never a haptic).
+    case ghost(FeelGhostMove)
+    /// Round 9: the title bird morphs into the play bird and drops into the practice sea.
+    case schoolMorph
+    /// Round 9, step 5: wave `n` (1–3) flown right (its gold bead appears).
+    case waveDone(Int)
+    /// Round 9, step 6: the Perfect pushes the storm back.
+    case stormPushedBack
+    /// Round 9, step 6: the first lighthouse rises on the horizon.
+    case lighthouseSighted
 }
 
 /// Audio + haptics for Swoop (GAME-DESIGN §7). The App calls `start()` once at launch, sets the three toggles from its
@@ -277,6 +292,20 @@ final class FeedbackDirector: FeedbackSink {
         case .schoolStorm:
             audio.play(FeelSoundBook.schoolStorm(dice: &dice))
             playHaptic(FeelHapticBook.schoolStorm)
+        case .ghost(let move):
+            // Sound only: a touch always means the player did something.
+            audio.play(FeelSoundBook.ghost(move))
+        case .schoolMorph:
+            audio.play(FeelSoundBook.schoolMorph())
+            playHaptic(FeelHapticBook.schoolMorph)
+        case .waveDone(let index):
+            audio.play(FeelSoundBook.waveDone(index))
+            playHaptic(FeelHapticBook.waveDone)
+        case .stormPushedBack:
+            audio.play(FeelSoundBook.stormPushedBack())
+            playHaptic(FeelHapticBook.stormPushedBack)
+        case .lighthouseSighted:
+            audio.play(FeelSoundBook.lighthouseSighted(dice: &dice))
         case .goalNear:
             guard now - lastGoalNear >= 2 else { return }
             lastGoalNear = now

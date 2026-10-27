@@ -80,12 +80,21 @@ struct SchoolDisplay: Equatable {
     /// R7 P0-2: the teaching line under the praise ("Land on a downslope = Perfect. …").
     var praiseLine: String?
     var dotIndex = 0
-    var stepCount = 7
+    var stepCount = 5
     var canSkip = false
     var offersTouch = false
     var touch = false
     var wingPhase: WingCheckFlow.Phase = .explain
     var wingNeedsFlatHelp = false
+    /// R9: the step's ≤ 3 in-world words and where they sit (nil: none).
+    var words: String?
+    var wordsAnchor: SchoolWordsAnchor = .diagram
+    /// When the step began (the diagram's dashed ghost pose plays from it).
+    var stepStartedAt: Double = 0
+    /// Demo frames: the step's held moment (overrides the clock).
+    var frozenElapsed: Double?
+    /// The live wing diagram rides the bird (until step 3 has passed).
+    var showsDiagram = true
     /// The Studio steps (title bird + diagram) vs the Sea steps (the practice sea).
     var isSea: Bool { step.isSea }
 }
@@ -268,6 +277,10 @@ struct ResultSummary: Equatable {
     var firstRealRun = false
     /// D4: the Daily row's one-time sub-line is due (captured when the card is built).
     var explainsDaily = false
+    /// R9: which flight this was (1 = the first): the tip shows on the first 5 only. 0 = unknown (tests, demos).
+    var flightNumber = 0
+    /// R9: ended from the cover ("You stopped at 4.2 km", overline "Flight ended").
+    var endedEarly = false
 }
 
 /// A run paused mid-flight (the cover display's Paused state, UX-D1), built at the pause.
@@ -611,6 +624,29 @@ enum AppRules {
 
     /// The milestone hit-stop: Feel's `FeelSoundBook.hitStop` (60 ms), so the pop and the tap land on its release.
     static let milestoneHitStop: Double = Double(FeelSoundBook.hitStop)
+    /// R9 (UX-ROUND-9 §4.4): transient text (lighthouse card, toasts, first-time lines) is never within 80 pt of the
+    /// bird's rect (radius 44): if it would be, it moves to the other page's top band under the HUD. Pure; tested.
+    static func clearOfBird(center: CGPoint, size: CGSize, bird: CGPoint?, canvas c: AppCanvas,
+                            hudBottom: CGFloat) -> CGPoint {
+        guard let bird else { return center }
+        let rect = CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width,
+                          height: size.height).insetBy(dx: -80, dy: -80)
+        let birdRect = CGRect(x: bird.x - 44, y: bird.y - 44, width: 88, height: 88)
+        guard rect.intersects(birdRect) else { return center }
+        let onBirdPage = c.birdPage.contains(center)
+        let page = onBirdPage ? c.farPage : c.birdPage
+        let alt = CGPoint(x: page.midX, y: hudBottom + 8 + size.height / 2)
+        let altRect = CGRect(x: alt.x - size.width / 2, y: alt.y - size.height / 2, width: size.width,
+                             height: size.height).insetBy(dx: -80, dy: -80)
+        if !altRect.intersects(birdRect) { return alt }
+        // Both near the bird (a single-page canvas): the opposite vertical half of the screen.
+        return CGPoint(x: center.x, y: bird.y > c.size.height / 2 ? hudBottom + 8 + size.height / 2
+                                                                    : c.bottom - 12 - size.height / 2)
+    }
+
+    /// R9 (UX-ROUND-9 §4.1): "Daily Flight · 27 Oct", the one way the Daily is named.
+    static func dailyTitle(day: Int) -> String { "Daily Flight · \(dailyTag(day: day))" }
+
     /// D4 one-time explanations (`ProgressData.learnedHints`).
     static let dailyRowHint = "dailyRow"
 
@@ -663,11 +699,11 @@ enum AppRules {
     /// The start tuck above which "Go" never comes (Feel R5 P1-8: never start fully tucked).
     static let maxStartTuck: Double = 0.5
 
-    /// The HUD's published distance: whole metres under 1 km, 10 m steps above (the km hundredths). The pause and
+    /// The HUD's published distance: whole metres under 1 km, 100 m steps above (R9: one decimal). The pause and
     /// closing cards show THIS value (R5 P1-3). Pure; tested.
     static func hudMeters(_ distance: Double) -> Int {
         let m = distance.isFinite ? Int(max(distance, 0).rounded(.down)) : 0
-        return m < 1000 ? m : (m / 10) * 10
+        return m < 1000 ? m : (m / 100) * 100
     }
 
     /// R5 P1-8: what the countdown does this frame. Within the 4 s budget a flat or nudge hold holds. Once spent, a
@@ -813,14 +849,14 @@ enum AppRules {
     static func statsLine(perfects: Int, chain: Int, lighthouses: Int) -> String {
         var parts: [String] = []
         if perfects > 0 { parts.append(ShareText.perfects(perfects)) }
-        if chain >= 2 { parts.append("chain \(chain)") }
+        if chain >= 2 { parts.append("\(chain) in a row") }
         if lighthouses > 0 { parts.append(lighthouses == 1 ? "1 lighthouse" : "\(lighthouses) lighthouses") }
         return parts.joined(separator: " · ")
     }
 
     /// The milestone toast's second line.
     static func milestoneLine(_ km: Int) -> String {
-        km % 10 == 0 ? "Outflying the storm" : "Still ahead of the storm"
+        km % 10 == 0 ? "Way ahead of the storm" : "Still ahead of the storm"
     }
 
     /// The hint text (UX §2), with the touch words and the mirrored arrows. Tested.
@@ -831,7 +867,7 @@ enum AppRules {
         case .fold: return touch ? "\(down) Hold on the way down" : "\(down) Fold on the way down"
         case .open: return touch ? "\(up) Let go on the way up" : "\(up) Open on the way up"
         case .land: return "Land on the way down"
-        case .storm: return "Perfects push the storm back"
+        case .storm: return "Perfect landings push the storm back"
         case .keepBend: return "Keep a little bend"
         }
     }

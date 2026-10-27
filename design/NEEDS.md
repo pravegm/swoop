@@ -400,3 +400,107 @@ gutter, so ART-S15's `SceneDriver.hasFold` isn't needed. Please wire these `Flig
   - SC3 is App-drawn (`SchoolBirdHUD`): the Faster! capsule at bird + (0, −46) and the rhythm bar at bird + (0, +38),
     one bar per λ 2000 wave from `Tuning.practiceRhythmWaveEnds`.
   - Not used yet: `RouteArt.snapOffset`. The Route scroll centres the next lighthouse on the far page.
+## Core → Scene / App (Round 9: the guide gull, headline inputs)
+- **Ghost paths:** `FlightSession.practiceGhostPath(step:)` (= `PracticeGhost.path(step:)`) returns `[GhostSample]`, one
+  sample every 1/60 s of sim time. Each sample has `t`, `x`, `y` (sea space, the same wave as the player),
+  `bodyAngle`, `tuck`, `skimming`, `folded` (for the fold-path fill) and the `signals` that happened there (launch,
+  landing quality, wave done).
+  - Steps: `.dive` (crest A to the trough, folded), `.soarAndLand` (trough, open, launch, Perfect in the ring),
+    `.guidedLanding` (from the retry point past crest B) and `.rhythm` (the 3 waves).
+  - The paths are pure and deterministic, flown with the practice sea's own physics at 1× time, so playing them at
+    0.5× or 1.25× is up to Scene/App. Draw the ghost "one swell ahead" by offsetting x.
+  - `PracticeGhost.sample(path, at: t)` interpolates; `PracticeGhost.duration(path)` gives the length.
+- **Results headline:** `Lighthouses.next(afterMeters:) -> (index, name, metersFurther)`, with "further" already
+  rounded up per UX §2.2 (100 m steps from 1 km, 10 m below). The passed count and name come from
+  `RunResult.lighthouses` and `lastLighthouseName`, which use fixed names. `Lighthouses.roundedFurther(meters:)` is
+  exposed too.
+
+## Feel → App (Round 9: the guide gull, the overtake, the school beats)
+- **Ghost demo:** `feedback.cue(.ghost(.dive | .soar | .land | .rhythm))` when the guide gull starts each
+  demonstration. It's a breath-only "watch" whoosh at about half the level of the player's swish, with no haptic (a
+  touch always means the player did it). `FeelGhostMove` matches Scene's move names.
+- **Caught:** nothing to call. The `caught` event now plays the 1.2 s storm sweep, ONE thunder strike at 0.9 s
+  (`FeelSoundBook.caughtStrike`, matching ART's bolt), then the calm pad. The haptic jolts once with the strike.
+- **School beats** (UX-ROUND-9 §1.2):
+  - `.schoolStep(dot)` on each success (unchanged);
+  - `.schoolRewind` on each rewind (unchanged);
+  - **new** `.schoolMorph` when the title bird drops into the sea (0.8 s);
+  - **new** `.waveDone(1…3)` when each step-5 swell's gold bead appears;
+  - `.schoolStorm` when the wall rolls in;
+  - **new** `.stormPushedBack` on step 6's Perfect;
+  - **new** `.lighthouseSighted` when Gull Point rises on the horizon.
+- **Cut:** no Feel cue was ever tied to the Faster! bar or the rhythm bar, so there is nothing to remove. Don't add any.
+
+## App → Scene (Round 9: the hooks the App calls; each is one line in `SceneAdapter` to point at your API)
+- **Guide gull (SR1):** the App plays Core's `PracticeGhost` path for the step (0.8×, from the step's start, no x offset:
+  the ghost flies the same wave just ahead of the waiting bird) and calls `SceneAdapter.setGuideGhost(scene, sample:,
+  move:)` every frame (`GhostSample?` in sea space, `move` = "dive" | "soar" | "land" | "rhythm"; nil hides it). It is a
+  no-op today: please expose e.g. `scene.guideGhost = (sample, move)` and say so; the App wires it the same round.
+- **Ring rect (SR7):** the App places "Land here" ahead of the bird for now. Please publish `ringScreenRect` (view points)
+  so the words sit beside the ring; also `ghostScreenPoint` for the 80 pt avoid rule.
+- **Gull Point label (step 6):** UX wants the in-world name by the rising lighthouse; the App has no lamp point in
+  practice (no tower there). Scene's in-world label, or a `practiceLighthouseScreenPoint`, either works.
+- **Unchanged and still called:** `practiceSea`, `guide` (exact sea x), `slowMoBloom`, `rollInStorm()`.
+
+## App status (Round 9)
+- **Core:** `FlightSession.practiceGhostPath(step:)` / `PracticeGhost.sample(_:at:)` / `duration` are played by
+  `GhostPlayback` (pure, tested). The Results headline uses `Lighthouses.next(afterMeters:)` (its rounded "further").
+- **Feel:** `.ghost(move)` at each demonstration's start, `.schoolMorph` (Studio → sea), `.waveDone(1…3)`,
+  `.schoolStorm`, `.stormPushedBack` (step 6's Perfect), `.lighthouseSighted` (step 6 done), plus `.schoolStep` /
+  `.schoolRewind` as before.
+## Scene → App (Round 9: answers to "App → Scene", plus the new hooks)
+- **Guide gull (SR1):** `scene.guideGhost = SceneGhostPose(x:, y:, tuck:, bodyAngle:, move:, landed:)` every frame
+  while you play Core's `PracticeGhost` path. Map each `GhostSample` one for one: `x`, `y`, `tuck`, `bodyAngle`.
+  `move` is `SceneGhostMove(name: "dive" | "soar" | "land" | "rhythm")`. Set `landed: true` from the sample where the
+  path's signals show its Perfect, and the scene fires the ghost Perfect once.
+  - Set it to nil when the demo ends. The ghost then dissolves into 10 motes, and `onGhostFinished` fires once.
+  - `SceneAdapter.setGuideGhost(scene, sample:, move:)` becomes that one line.
+  - While it shows, the camera zooms to ≤ 0.78 and shifts the bird back by up to 0.22 w (`cameraBias`), so the ghost
+    stays on screen.
+  - **Without Core's path:** `scene.playGhost(.dive)` flies the scene's own stand-in on the sea ahead.
+  - **Diagram:** `ghostTuck` gives the pose for the dashed diagram. `ghostScreenPoint` (view points) is for the 80 pt
+    avoid rule.
+- **Ring (SR3, SR7):** `ringScreenRect` (view points) covers the ellipse and its drop marker, so put "Land here"
+  beside it. The ring respawns by itself on the next downslope ≥ 200 pt ahead after a miss (a Good or Splash near it,
+  or flying past it). Keep passing `.landing(at:)` for the first one. While it is live, the camera looks 0.25 w ahead.
+- **Water cues (SR2):**
+  - `.foldPath(from:to:)` now draws the 16 pt gold fold zone. It paints solid behind a folded bird and greys out where
+    the bird flies open; a done swell leaves a gold bead. Fold chevrons run down it, and the closing book sits at the
+    crest.
+  - `.openMark(at:)` draws the opening teal book with lift chevrons at the launch.
+  - Step 5: `guide = .rhythmAhead(count: 3)`, or `.rhythm(swells:)` with the exact crest and trough x. Each swell
+    gets its fold zone, fold book and open book.
+  - `scene.foldPaint` reports the paint, if the App wants to match its success check to it.
+- **Practice from step 0 (defect #5):** please set `scene.practiceSea = true` for **every** school step, the Studio
+  steps 1–2 too (`SceneAdapter.setSchool` passes `step?.isSea` today, so the Studio shows the storm, the rain and the
+  muddy sun).
+  - In school the scene now never shows a caught wash, the storm or a dimmed sun until `rollInStorm()`.
+  - Step 6's wall now rolls in to cover the bird page's outer 20 % (Duo x ≥ 760).
+  - A Perfect after the roll-in pushes it back with a gust; nothing to call.
+- **Step 6 extras:**
+  - `scene.stormLinkTarget = <meter storm icon, view points>` for about 1 s: dots flow from the wall to the icon.
+  - `scene.schoolLighthouse = true` when Gull Point should rise on the far horizon (1.2 s). Its lamp is
+    `lampCanvasPoint` (canvas, y up), so put the in-world "Gull Point" label there. Set it false when school ends.
+- **Home (defect #3):** `scene.homeMenuRects = [the Goals / Route / Birds row]` (view points), and the attract camera
+  keeps the water 24 pt under its bottom (never lower than 6 % of the height). Clear it when you leave Home. If that
+  sea is too thin for taste, the alternative is your plate behind the row.
+- **Caught (§2):** the Scene part is automatic:
+  - the front sweeps past the bird to 0.10 w from the ahead edge in 1.2 s;
+  - the light changes (wash 0.45, sun −70 %, a warm horizon strip ahead);
+  - one bolt at 0.9 s, which Feel's strike matches;
+  - the bird settles wet with 3 rain rings, and the camera pushes in +4 %.
+  - Your part is the HUD fade from 1.6 to 2.0 s and the label at bird + (0, −110).
+- **Wing diagram (AR1):** `DuoDiagramArt.geometry(angle:box:exaggerated: true)` uses φd = min(1.6 · (180° − θ) / 2,
+  60°), and `DuoDiagramArt.innerShade(angle:)` gives the 25 % · sin φd inner-face darkening.
+- **Route L→R (AR5), pure helpers:**
+  - the coast: `RouteArt.coastY(at:headlands:base:)`, `coastPath(width:headlands:base:)` and
+    `coastline(width:headlands:base:offset:)` (base 150 / 118, a +34 pt point under each lighthouse);
+  - `lighthouseXs(count:spacing:)` (150 / 130, left to right) and `focusOffset(index:spacing:viewWidth:)` (60 %);
+  - `labelRows(_:)`: one baseline, and a colliding label drops 40 pt, never overlapping. This is the
+    `routeLabelsNeverOverlap` core.
+- **Speed is shown in the world:** in school the speed lines start at 600 pt/s, and the trail turns gold as the dive
+  reaches speed. Nothing to call; the Faster! bar and the rhythm bar can go.
+
+## Scene → Core (Round 9)
+- Nothing blocking. `GhostSample` maps onto `SceneGhostPose` one for one, through the App. `folded` isn't needed: the
+  scene paints the fold zone from the player's own tuck.

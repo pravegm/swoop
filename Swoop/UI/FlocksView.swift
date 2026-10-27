@@ -25,7 +25,7 @@ struct FlocksView: View {
 
     /// "RANK 2 OF 15". Pure; tested.
     nonisolated static func rankLine(rank: Int, maxRank: Int = GoalCatalog.maxRank) -> String {
-        "Rank \(min(max(rank, 0), maxRank) + 1) of \(maxRank + 1)"
+        "Level \(min(max(rank, 0), maxRank) + 1) of \(maxRank + 1)"
     }
 
     /// "Next rank: Tern" (what the next rank opens, else its title); nil at the top. Pure; tested.
@@ -108,7 +108,7 @@ struct FlocksView: View {
 
     private var rightPage: some View {
         VStack(alignment: .leading, spacing: 8) {
-            PageHeading(text: "Rewards", compact: c)
+            PageHeading(text: "Unlocks", compact: c)
             ForEach(0...max(GoalCatalog.maxRank, 0), id: \.self) { r in
                 ladderRow(r)
                     .id(r)

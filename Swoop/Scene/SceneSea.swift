@@ -104,7 +104,9 @@ final class SceneSeaView {
             colors: [ScenePaint.ui(p.nearCrest), ScenePaint.ui(p.nearCrest), ScenePaint.ui(lit), ScenePaint.ui(p.nearMean),
                      ScenePaint.ui(mean85), ScenePaint.ui(p.nearDeep), ScenePaint.ui(deep70)],
             locations: [0, 0.18, 0.26, 0.33, 0.40, 0.48, 1])
-        fill.strokeColor = ScenePaint.ui(p.foam, alpha: 0.95)
+        // R9 (defect #6): in school the foam line is pure white at full strength.
+        let practice = key?.hasPrefix("practice") ?? false
+        fill.strokeColor = ScenePaint.ui(p.foam, alpha: practice ? 1 : 0.95)
         band.strokeColor = ScenePaint.ui(p.nearCrest, alpha: SceneLook.bandAlpha)
         litWide.strokeColor = ScenePaint.ui(p.nearCrest, alpha: SceneLook.litFaceAlpha * 0.5)
         litNarrow.strokeColor = ScenePaint.ui(p.nearCrest, alpha: SceneLook.litFaceAlpha * 0.5)

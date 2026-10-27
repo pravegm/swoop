@@ -87,25 +87,13 @@ struct HomeView: View {
             }
             .position(x: l.settings.midX, y: l.settings.midY)
             .accessibilitySortPriority(5)
-            SwoopIconButton(systemName: "trophy.fill", compact: info.isCompact, label: "Game Center leaderboards") {
+            SwoopIconButton(systemName: "trophy.fill", compact: info.isCompact, label: "Top scores") {
                 // QA-1 P1-5: never a dead button. Signed out with no sheet to offer: say how to sign in.
                 if GameCenterManager.shared.showDashboard() == .signedOut { showSignInHint() }
             }
             .position(x: l.gameCenter.midX, y: l.gameCenter.midY)
             .accessibilitySortPriority(4)
-            if isDuo {
-                // R6 D4 (UX §5 Home): the corner icon gets a visible label on the Duo.
-                Text("Leaderboards")
-                    .font(SwoopType.caption(info.isCompact))
-                    .foregroundStyle(SwoopTheme.mist)
-                    .lineLimit(1)
-                    .swoopLegible()
-                    .frame(width: 120, alignment: info.mirrored ? .trailing : .leading)
-                    .position(x: info.mirrored ? l.gameCenter.minX - 6 - 60 : l.gameCenter.maxX + 6 + 60,
-                              y: l.gameCenter.midY)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
+            // R9 (ART #2): no text labels on the corner icons; VoiceOver says Settings and Top scores.
             if gameCenterHint {
                 Text("Sign in to Game Center in Settings to see leaderboards.")
                     .font(SwoopType.caption(info.isCompact))
@@ -133,12 +121,16 @@ struct HomeView: View {
         .frame(width: info.size.width, height: info.size.height, alignment: .topLeading)
         .onAppear {
             controller.setHomeTextRects(layout.textRects)
+            controller.setHomeMenuRects(Self.menuRects(layout, fresh: fresh))
             titleHidden = false
             withAnimation(SwoopTheme.settle(reduceMotion).delay(0.05)) { appeared = true }
         }
         .onChange(of: info) { _, _ in controller.setHomeTextRects(layout.textRects) }
         .onChange(of: controller.sceneGeneration) { _, _ in controller.setHomeTextRects(layout.textRects) }
-        .onDisappear { controller.setHomeTextRects([]) }
+        .onDisappear {
+            controller.setHomeTextRects([])
+            controller.setHomeMenuRects([])
+        }
         .onChange(of: controller.flyGlowSerial) { _, _ in
             guard !reduceMotion else { return }
             withAnimation(.easeOut(duration: Self.glowSeconds / 2)) { flyGlow = true }
@@ -197,7 +189,7 @@ struct HomeView: View {
         if duo && lowRest { return "Open it a little wider." }
         // R6 D3: a returning player's caption is the objective (UX §4.1).
         if returning { return RouteRules.objective }
-        if duo { return folded ? "Fold going down. Open going up." : "Hold your Duo like a book. These are your wings." }
+        if duo { return folded ? "Fold going down. Open going up." : "Hold it like a book. These are your wings." }
         // R7 P1-7: "Press and hold" everywhere (anywhere on the screen, not only the bird).
         return folded ? "Hold going down. Let go going up." : "Hold anywhere. The wings fold."
     }
@@ -207,7 +199,7 @@ struct HomeView: View {
         let folded = controller.homeFolded || !fresh
         let text = Self.captionText(duo: isDuo, folded: folded, flat: controller.homeFlat,
                                     lowRest: isDuo && controller.homeLowRest,
-                                    returning: !fresh && store.data.routeReached > 0)
+                                    returning: store.data.flightSchool != .notStarted && !fresh)
         // R8: one colour for the line on every visit (it changed from white to yellow between visits).
         let gold = false
         return VStack(alignment: info.mirrored ? .trailing : .leading, spacing: 8) {
@@ -257,13 +249,19 @@ struct HomeView: View {
 
     /// R8 P0-5: at most one "New" badge, on the most relevant unseen place: the Route once a lighthouse is reached,
     /// then Goals, the Daily, the Birds. Pure; tested.
-    nonisolated static func newBadge(seen: Set<String>, routeReached: Int) -> String? {
-        let order = (routeReached > 0 ? ["route"] : []) + ["goals", "daily", "birds"]
+    nonisolated static func newBadge(seen: Set<String>, routeReached: Int, rank: Int = 0) -> String? {
+        // R9 (UX-ROUND-9 §4.5 #12): the most recent unlock first: a new bird, then the Route, Goals, the Daily.
+        let order = (rank > 0 ? ["birds"] : []) + (routeReached > 0 ? ["route"] : []) + ["goals", "daily", "birds"]
         return order.first { !seen.contains($0) }
     }
 
     private var newBadge: String? {
-        Self.newBadge(seen: store.data.seenDestinations, routeReached: store.data.routeReached)
+        Self.newBadge(seen: store.data.seenDestinations, routeReached: store.data.routeReached, rank: store.data.rank)
+    }
+
+    /// Defect #3: the Goals / Route / Birds row the attract water keeps under (none before the first flight).
+    nonisolated static func menuRects(_ l: HomeLayout, fresh: Bool) -> [CGRect] {
+        fresh ? [] : [l.flocks.union(l.route).union(l.birds)]
     }
 
     /// R5 (every critic): the tile is always "Goals"; the sub-line "1 of 3 · Crest Hopper" truncates at its tail.
@@ -287,8 +285,9 @@ struct HomeView: View {
     /// Fly's second line (R6 UX §4.5): "Next: Saltlight · 9 km · best 6.42 km", shortened to fit. R7 P1-6: until the
     /// first lighthouse is reached it is the goal sentence. Pure; tested.
     nonisolated static func flySubtitle(best: Double, routeReached: Int = 0, compact: Bool = false) -> String {
-        if routeReached <= 0 { return RouteRules.objective }
-        return RouteRules.homeNext(routeReached: routeReached, best: best, maxChars: compact ? 30 : 40)
+        // R9 (UX-ROUND-9 §4.1): the goal reads one way everywhere: "Next: Gull Point · 4 km".
+        _ = best
+        return RouteRules.homeNext(routeReached: routeReached, best: 0, maxChars: compact ? 30 : 40)
     }
 
     private func flyButton(_ r: CGRect) -> some View {
@@ -341,7 +340,7 @@ struct HomeView: View {
                     .font(.system(size: 19, weight: .heavy))
                     .foregroundStyle(SwoopTheme.foam)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Daily Flight \(AppRules.dailyTag(day: today))")
+                    Text(AppRules.dailyTitle(day: today))
                         .font(SwoopType.headline(true))
                         .foregroundStyle(SwoopTheme.foam)
                         .lineLimit(1)
@@ -361,7 +360,7 @@ struct HomeView: View {
         .frame(width: r.width, height: r.height)
         .position(x: r.midX, y: r.midY)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Daily Flight \(AppRules.dailyTag(day: today)). \(status)\(streak >= 2 ? ", \(streak)-day streak" : "")")
+        .accessibilityLabel("\(AppRules.dailyTitle(day: today)). \(status)\(streak >= 2 ? ", \(streak)-day streak" : "")")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { if attempted { controller.openDailyCard() } else { controller.playDaily() } }
     }
@@ -371,7 +370,7 @@ struct HomeView: View {
     nonisolated static func dailyStatus(record: DailyRecord?, attempted: Bool, nextIn: String) -> String {
         if let record { return "Flown \(ShareText.distance(record.meters)) · next in \(nextIn)" }
         if attempted { return "Tried · next in \(nextIn)" }
-        return "Everyone's sea · one try"
+        return "Same waves for everyone · 1 try"
     }
 
     enum TileIcon { case symbol(String), lighthouse, bird }
@@ -451,7 +450,7 @@ struct HomeView: View {
             if dot {
                 NewCapsule()
                     .fixedSize()
-                    .offset(x: 4, y: -7)
+                    .offset(x: -8, y: 6)    // ART #4: inside the tile, top-right inset 8 pt
                     .allowsHitTesting(false)
             }
         }
