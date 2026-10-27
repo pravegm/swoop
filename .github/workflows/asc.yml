@@ -39,7 +39,7 @@ on:
         type: string
         default: ""
       placements_run:
-        description: "ID of a run with a store-placements artifact (header + search art). Swoop's store.yml makes none yet: leave empty"
+        description: "ID of a store.yml run with a store-placements artifact (header + search art; make one with placements_from). Empty = none"
         type: string
         default: ""
       inherit_from:

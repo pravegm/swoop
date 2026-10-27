@@ -15,7 +15,7 @@ GitHub → **Actions** → **App Store Connect tool** → **Run workflow**:
 | `only` | Optional step list, e.g. `nomination` or `gamecenter,attach` |
 | `store_run` | A green **App Store screenshots** run (`store.yml`). Empty = `DEFAULT_STORE_RUN` in the workflow |
 | `ci_run` | A green **CI** run whose `screenshots` artifact holds `badges/`. Empty = the latest green run on `main` |
-| `placements_run` | A run with a `store-placements` artifact (product page header and search art). Swoop's `store.yml` makes none yet: leave it empty |
+| `placements_run` | A `store.yml` run with a `store-placements` artifact (product page header and search art, `docs/appstore/header-search.md`). Make one with `gh workflow run store.yml -R pravegm/swoop -f placements_from=<store run>`. Empty = the placements step changes nothing |
 | `inherit_from` | Default `com.pravegm.squish`. See "Personal data" |
 | `build` | The release build number to attach to 1.0 (the `build` step). Empty = leave it |
 
@@ -50,7 +50,7 @@ The copyright is different from Brim's: Swoop's `DECISIONS.md` #31 sets `© 2026
 | `gamecenter` | Enables Game Center for the app and version 1.0. Creates 12 achievements (`swoop.ach.*`, 625 points, none hidden, none repeatable) with en-GB and en-US text ("kilometer" in en-US) and a badge each. Creates 2 leaderboards: `swoop.longest` (classic) and `swoop.daily` (recurring daily from 28 Oct 2026 00:00 UTC), both Integer, High to Low, best score, range 0–1,000,000, suffix " m" (singular and plural) |
 | `attach` | Adds every achievement and leaderboard version to the draft iOS review submission. It never adds the build and never submits |
 | `screenshots` | 6.9" (2868 × 1320, `store-69`): P01–P08. 6.3" (2622 × 1206, `store-63`), which goes in Apple's required "Dynamic Island, medium" class, the tool's `APP_IPHONE_61` key: P01–P08. iPhone Duo inner (2853 × 2007, `store-duo`): D01–D08, only if the API offers a Duo placement group (`check` says). All landscape. P09/D09 (Route) and P10/D10 (Flight School) are "recommended" in `screenshots.md`: add them to `FRAMES` in `build-metadata.js` to upload them |
-| `placements` | Only with `placements_run`. Swoop has no header or search art yet, so this step changes nothing (it shows as a gap) |
+| `placements` | Only with `placements_run`: the product page header (`header-3840x1646.png`) and the search results art (`search-3840x2560.png`) from that run's `store-placements` artifact, drawn by `store.yml`'s `placements` job (`ci/store-placements.sh` + `ci/store-banner.swift`, `docs/appstore/header-search.md`), placed on the en-GB and en-US 1.0 localizations. It refuses an artifact whose `MANIFEST.txt` reports problems. Without `placements_run` it changes nothing (a gap) |
 | `price` | £1.99, base territory United Kingdom; Apple equalises the rest ($1.99). Available everywhere except China mainland and Vietnam (DECISIONS #10: both need a local game licence) |
 | `accessibility` | Nothing for 1.0: labels go on by hand on launch day |
 | `nomination` | The App Launch featuring nomination from `featuring-nomination.md`, publish date 30 Oct 2026 (the expected go-live). It's **submitted** (`"submit": true`), not left as a draft. |

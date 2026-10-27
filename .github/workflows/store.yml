@@ -10,6 +10,12 @@ name: App Store screenshots
 #  • assemble: captions every set with ci/store-set.sh + ci/store-frame.swift. D01 (a real Duo inner capture) becomes the
 #    book-pose composite that is frame 1 of EVERY set, so this job waits for both capture jobs. Artifacts store-duo,
 #    store-69, store-63: upload-ready PNGs (store/*.png in name order), MANIFEST.txt / MANIFEST.tsv, and _flagged/.
+#  • placements: after assemble, the two optional creative assets (docs/appstore/header-search.md): the product page
+#    header (3840 × 1646) and the search results art (3840 × 2560), drawn by ci/store-placements.sh and
+#    ci/store-banner.swift from the Duo pass's clean captures (raw-duo + store-duo). Artifact store-placements.
+#    With placements_from set, the run ONLY re-renders them from that earlier run's raw-duo and store-duo artifacts:
+#    phones, duo and assemble are skipped whatever their ticks say (minutes, nothing captured), and it runs in its own
+#    concurrency group, so it never cancels a capture run.
 # One bad frame never fails the run: it is listed in its MANIFEST (and the run summary) as MISSING, FLAGGED, FAILED or
 # REJECTED (a caption with a glossary-banned word: no frame is made).
 on:
@@ -47,18 +53,28 @@ on:
         description: "Book-pose hinge angle in degrees, or auto (the capture's logged hinge angle, else 140)"
         type: string
         default: "auto"
+      placements_from:
+        description: "Header/search art ONLY: ID of an earlier store run whose raw-duo + store-duo to draw from (captures nothing)"
+        type: string
+        default: ""
+      banner_args:
+        description: "Extra ci/store-banner.swift options: header=--yaw -8; search=--layout side; <name>=--kind search --from D03-storm (review)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
   actions: read
 
+# A placements-only run (placements_from set) has its own group, so it never cancels a capture run (or is cancelled
+# by one).
 concurrency:
-  group: store-${{ github.ref }}
+  group: store-${{ github.ref }}${{ inputs.placements_from != '' && '-placements' || '' }}
   cancel-in-progress: true
 
 jobs:
   phones:
-    if: ${{ inputs.phones }}
+    if: ${{ inputs.phones && inputs.placements_from == '' }}
     runs-on: xcode-27
     timeout-minutes: 110
     env:
@@ -153,7 +169,7 @@ jobs:
         run: xcrun simctl shutdown all || true
 
   duo:
-    if: ${{ inputs.duo && inputs.duo_from_run == '' }}
+    if: ${{ inputs.duo && inputs.duo_from_run == '' && inputs.placements_from == '' }}
     runs-on: xcode-27
     timeout-minutes: 130
     env:
@@ -272,7 +288,7 @@ jobs:
 
   assemble:
     needs: [phones, duo]
-    if: ${{ always() && !cancelled() }}
+    if: ${{ always() && !cancelled() && inputs.placements_from == '' }}
     runs-on: xcode-27
     timeout-minutes: 45
     env:
@@ -386,3 +402,76 @@ jobs:
             [[ -s "$d/logs/store-frame-build.log" ]] && { echo "== $d"; tail -40 "$d/logs/store-frame-build.log"; }
           done
           true
+
+  placements:
+    needs: assemble
+    # After assemble in a run that has Duo captures (captured here or reused with duo_from_run), or on its own from an
+    # earlier run's artifacts (placements_from). `!cancelled()` lets it run when assemble was skipped.
+    if: ${{ !cancelled() && (inputs.placements_from != '' || (needs.assemble.result == 'success' && (inputs.duo || inputs.duo_from_run != ''))) }}
+    runs-on: xcode-27
+    timeout-minutes: 30
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 27.1
+        timeout-minutes: 15
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcrun swift --version
+          for attempt in 1 2 3; do command -v gtimeout >/dev/null && break; brew install coreutils || sleep 10; done
+
+      # raw-duo = the unframed Duo captures and their app logs; store-duo = the captioned frames and MANIFEST
+      # (assemble's raw-duo/store/), unpacked back into raw-duo/store/ so a capture counts as clean only if its frame did.
+      - name: Download the Duo captures (this run)
+        if: ${{ inputs.placements_from == '' && inputs.duo_from_run == '' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: raw-duo
+          path: raw-duo
+
+      - name: Download the Duo captures (run ${{ inputs.placements_from || inputs.duo_from_run }})
+        if: ${{ inputs.placements_from != '' || inputs.duo_from_run != '' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: raw-duo
+          path: raw-duo
+          run-id: ${{ inputs.placements_from || inputs.duo_from_run }}
+          github-token: ${{ github.token }}
+
+      - name: Download the Duo frames (this run)
+        if: ${{ inputs.placements_from == '' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: store-duo
+          path: raw-duo/store
+
+      - name: Download the Duo frames (run ${{ inputs.placements_from }})
+        if: ${{ inputs.placements_from != '' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: store-duo
+          path: raw-duo/store
+          run-id: ${{ inputs.placements_from }}
+          github-token: ${{ github.token }}
+
+      - name: Draw the header and the search results art
+        timeout-minutes: 20
+        env:
+          SOURCE_RUN: ${{ inputs.placements_from || inputs.duo_from_run || github.run_id }}
+          BANNER_ARGS: ${{ inputs.banner_args }}
+          BOOK_ANGLE: ${{ inputs.book_angle }}
+        run: bash ci/store-placements.sh raw-duo store-placements
+
+      - name: Upload the placements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-placements
+          path: store-placements/
+          if-no-files-found: ignore

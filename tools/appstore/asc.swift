@@ -1269,9 +1269,9 @@ func screenshotsFromDirectory(_ dir: URL) throws -> [ScreenshotSet] {
 
 // MARK: - Creative assets: product page header and search results art (iOS 27 App Store, 5 Oct 2026)
 
-/// One optional creative asset. Swoop has no header or search results art yet (no docs/appstore/header-search.md and no
-/// store-placements job in store.yml, 27 Oct 2026), so this step is opt-in and a no-op until a folder is given; kept from
-/// Brim so the art can be added for 1.0 or 1.0.1 without new code. Placement type IDs are read from the asset library
+/// One optional creative asset. store.yml's `placements` job draws Swoop's (ci/store-placements.sh, ci/store-banner.swift,
+/// docs/appstore/header-search.md) into a store-placements artifact; this step is opt-in and a no-op until a folder is
+/// given (ASC_PLACEMENTS_DIR, asc.yml's placements_run). Placement type IDs are read from the asset library
 /// reference data at run time. PRODUCT_PAGE_HEADER_ASSET is named in Apple's API docs; APP_STORE_SEARCH_RESULTS_ASSET
 /// is what developers report (UNCONFIRMED in Apple's pages, 26 Oct 2026). If an ID is absent from the reference data,
 /// the one placement type whose ID contains `typeWord` is used instead.
