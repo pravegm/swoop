@@ -17,9 +17,14 @@ on:
         description: "Regex of scenario names to capture"
         type: string
         default: "."
+      device:
+        description: "Capture simulator (empty = iPhone 18 Pro; ci/screenshots.sh syntax), e.g. screen:750x1334 for the smallest iPhone"
+        type: string
+        default: ""
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # A run on another device never cancels (or is cancelled by) the main iPhone 18 Pro runs.
+  group: ci-${{ github.ref }}-${{ inputs.device }}
   cancel-in-progress: true
 
 jobs:
@@ -65,6 +70,9 @@ jobs:
         timeout-minutes: 100
         env:
           SCENARIO_FILTER: ${{ inputs.filter || '.' }}
+          # Tests always run on the iPhone 18 Pro; `device` picks the capture simulator (ci/screenshots.sh syntax:
+          # an exact name, auto:<suffix> or screen:<WxH>), e.g. screen:750x1334 for the smallest iPhone.
+          DEVICE: ${{ inputs.device || 'iPhone 18 Pro' }}
         run: bash ci/screenshots.sh
 
       - name: Upload logs

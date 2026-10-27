@@ -96,6 +96,9 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_27.1.app
           xcodebuild -version
 
+      - name: Flatten the app icon (no alpha channel for the App Store)
+        run: xcrun swift ci/flatten-png.swift Swoop/Assets.xcassets/AppIcon.appiconset/*.png
+
       - name: Generate project
         run: |
           brew install xcodegen
@@ -147,6 +150,11 @@ jobs:
             echo "::error::CFBundleVersion is '$BUILT', not the run number ${{ github.run_number }}."
             exit 1
           fi
+          # QA-FINAL-release P1: the shipped binary itself carries no demo-mode code and no device-test readout (App
+          # Review and the App Store run this same binary).
+          if strings "$APP/Swoop" | grep -qx "freezeAfter"; then echo "::error::demo-mode code found in the Release binary"; exit 1; fi
+          if strings "$APP/Swoop" | grep -q "Hinge readout"; then echo "::error::the device-test hinge readout is in the Release binary"; exit 1; fi
+          echo "no demo code or device-test readout in Release"
 
       - name: Export locally and check the App Store signature
         run: |
