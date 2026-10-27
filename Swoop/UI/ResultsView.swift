@@ -665,8 +665,9 @@ struct ResultsPlan: Equatable {
         if p.farHeight() > cardHeight { p.hasStats = false }
         // R11 P0-2: the line that says why the flight ended outlasts the tracker strip.
         if p.farHeight() > cardHeight { p.routeStrip = false }
-        if p.farHeight() > cardHeight { p.headlineSub = false }
+        // On the tightest card the cause ("The storm caught you … before …") outlasts the headline above it.
         if p.farHeight() > cardHeight { p.headline = false }
+        if p.farHeight() > cardHeight { p.headlineSub = false }
         return p
     }
 
