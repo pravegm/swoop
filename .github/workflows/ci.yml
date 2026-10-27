@@ -25,7 +25,7 @@ concurrency:
 jobs:
   build-test:
     runs-on: xcode-27
-    timeout-minutes: 60
+    timeout-minutes: 120
     env:
       DEVICE: "iPhone 18 Pro"
       # Balance harness seeds per skill (BalanceTests); xcodebuild passes TEST_RUNNER_* to the test process.
@@ -62,6 +62,7 @@ jobs:
 
       - name: Capture screenshots
         if: success()
+        timeout-minutes: 100
         env:
           SCENARIO_FILTER: ${{ inputs.filter || '.' }}
         run: bash ci/screenshots.sh
@@ -77,7 +78,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload screenshots
-        if: success()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: screenshots
