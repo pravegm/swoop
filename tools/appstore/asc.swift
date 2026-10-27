@@ -1425,10 +1425,12 @@ final class ASC {
                     continue
                 }
                 return Response(status: status, json: json)
-            } catch let e as URLError where attempt < 3 {
+            } catch let e as URLError where attempt < (method == "GET" ? 8 : 3) {
+                // 27 Oct: Apple's Game Center endpoints hung for minutes (runs 40511872575, 40516094226). Reads are
+                // safe to retry, so they get more tries with a growing pause; writes keep 3 (no duplicate creates).
                 attempt += 1
-                warn("network: \(e.localizedDescription); retrying")
-                try await Task.sleep(nanoseconds: 3_000_000_000)
+                warn("network: \(e.localizedDescription); retrying (\(attempt))")
+                try await Task.sleep(nanoseconds: UInt64(min(5 * attempt, 30)) * 1_000_000_000)
             }
         }
     }

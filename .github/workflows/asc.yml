@@ -54,7 +54,7 @@ on:
 env:
   # Swoop's latest green store.yml run when the tool was written: 40451917135 (27 Oct 2026 04:50 UTC, commit 0a8ad46;
   # R6-R9 captions). NOT the final frames: after the final store run (code freeze, Mon 16 Nov), put its ID here.
-  DEFAULT_STORE_RUN: "40451917135"
+  DEFAULT_STORE_RUN: "40514986822"
 
 concurrency:
   group: asc-${{ github.ref }}
