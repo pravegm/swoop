@@ -1,6 +1,6 @@
 # Swoop: handover for the founder
 
-*Kept current as work continues. Last update: 27 Oct 2026, early hours (UK).*
+*Kept current as work continues. Last update: 27 Oct 2026, about 05:00 (UK).*
 
 ## What Swoop is
 **Swoop: Tuck & Soar**, £1.99 once, rated 4+. No ads, no in-app purchases, and no data collected.
@@ -20,16 +20,30 @@ was taken as a P0.
 | "The bird is on the side that blurs" | No app can switch the blur off; iOS does it to one physical half whenever a fold starts from flat. So the **bird now defaults to the right half**, flying right-to-left, and stays on that physical half if you turn the phone round. **Settings → Bird side** changes it, with a "Why?" explainer. A one-time tip says "no need to open flat" (folding from flat is what triggers the blur). |
 | "What is the storm, where are we going, what is success?" | **Lighthouses are fixed places on a route** (Gull Point 4 km, Saltlight 9 km, Kestrel Head 15 km…). The HUD always shows "← Gull Point · 1.2 km". Reaching one is the big moment ("Gull Point reached!", "New on your route"). Results lead with "Caught 0.8 km short of Saltlight". There's a **Route** page. "Outfly the storm. Reach the next lighthouse." shows under Fly and on your first run. |
 
-**Proof:** three new first-time testers with no context (a casual gamer on a Duo, a 52-year-old non-gamer on a Duo,
-and a gamer on a normal iPhone) were each given only the screens. **All three correctly explained** the hands, the
-storm, the route and win/lose. That was round 6, which scored 7, 6 and 7. Round 7 fixed what still confused them.
+**Proof:** after each round, three new first-time testers with no context walked the first session frame by
+frame. There have been 12 so far: casual gamers, a 52-year-old non-gamer, a creative director, and players on a Duo
+and on a normal iPhone. **All twelve correctly explained** the hands, the storm, the route and win/lose.
+"Understood" now scores 6–8. "Feels finished" ranges 5–8, and is what rounds 8–10 worked on. Their reports are in
+`design/fresh/`.
+
+## Rounds since your test
+| Round | What it fixed |
+|---|---|
+| 6 | Flight School, bird on the sharp half, lighthouses and the route |
+| 7 | Clarity polish from the first three fresh testers |
+| 8 | The finish pass: real lighthouse names everywhere, consistent step numbering, one story on Results ("Reached Saltlight! The storm caught you 2.17 km before Kestrel Head."), goals that tick on the same screen, at most one "New" badge |
+| 9 | Teach through the world, not text cards: a guide gull flies the path on the water, prompts of 7 words or fewer, one vocabulary (Duo says **fold / open**, iPhone says **hold / let go**), cards never cover the bird, no "on iPhone Duo…" lines on a normal iPhone |
+| 10 | The lesson now *shows* that Perfects push the storm back (a big PERFECT, the storm recoils, the meter jumps). The goal is stated before your first flight. One wing diagram style, showing the pose it asks for. Calmer Results, Home and Goals |
 
 ## Builds
 | TestFlight | What's in it |
 |---|---|
 | 1.0 (2) | the build you tested |
-| **1.0 (3)** | Round 6: Flight School, bird on the sharp half, lighthouse goals and the route |
-| next | Round 7 (clarity polish) and anything after; I'll keep pushing builds |
+| 1.0 (3) | Round 6 |
+| 1.0 (4) | Round 7 |
+| 1.0 (5) | Round 8 |
+| 1.0 (6) | Round 9 |
+| **1.0 (7)** | **Round 10: install this one** |
 
 ## What only you can do
 1. Install the newest TestFlight build and play the first 2 minutes as if you'd never seen it. Tell me whether

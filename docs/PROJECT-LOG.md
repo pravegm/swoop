@@ -63,3 +63,30 @@
 | ~15:30 | **Round 3** (built to the specs) compiled first time, 165 tests after 3 test fixes. **Duo checks:** all PASS. |
 | — | **Critic panel on R3:** juror 6.5, UX 7.0, first-time player 7.0, Duo specialist 7.5. All four said "not yet". |
 | — | **Round 4 dispatched** (`design/ROUND-4.md`). The store copy was corrected to the real stroke rate (about 40 × 30–36° per minute in active play). A store-frame pipeline is being built. |
+| ~18:59 | **Round 5** (last polish from the R4 panel). R5b fixed the Home text rects and the one-row Results buttons on small phones. |
+
+### 26 Oct, evening, to 27 Oct: the founder's real-Duo test, then rounds 6–10
+
+The founder tested TestFlight 1.0 (2) on a real iPhone Duo and raised three problems:
+- the controls were unclear (flap or hold?);
+- the bird sat on the half that blurs when folding;
+- the objective was unclear (what is the storm, where are we going, what is success?).
+
+They asked for 24 hours of unsupervised work. From then on, every round ended with **three new first-time testers**
+(agents with no context, given only a frame-by-frame first session) and a brief built from what confused them.
+
+| Round | Build | What changed | Fresh testers |
+|---|---|---|---|
+| 6 | TF 3 | Flight School, taught by doing; the bird on the sharp half (screen-right by default, then tracked physically; Settings → Bird side); lighthouses as fixed places on a route | 1–3: all four questions right; 7 / 6 / 7 |
+| 7 | TF 4 | Clarity polish | 4–6: all right; understood 7–8, finished 6 ("wordier and busier than Alto") |
+| 8 | TF 5 | The finish pass: real names, numbering, one Results story, goals cascade, one New badge | 7–9 |
+| 9 | TF 6 | Teach through the world: the guide gull, ≤ 7-word prompts, one vocabulary, cards keep off the bird | 10–12: all right; finished 5 / — / 8 |
+| 10 | TF 7 | The lesson shows that Perfects push the storm back; the goal sentence before the first flight; one diagram style; Results / Home / Goals cleanups; CI freezes land on each moment's peak | — |
+
+**Duo checks** passed on every round: READY-CALIB, HINGE-FLIGHT, HOLD-85, CLOSE-PAUSE and LOW-REST. OVERSHOOT is
+INCONCLUSIVE because the hinge tool can't make a sub-0.3 s dip; the app paused correctly for the dip it saw.
+**Tests:** 313 in 25 suites, all passing at R10b. The CI job limit was raised to 120 min, since 146 screenshot
+scenarios outgrew 60.
+
+**Honest limit:** fresh testers judge from still frames, so they can't judge feel. The remaining gate is the
+founder playing TF 7 on the Duo.
