@@ -691,7 +691,8 @@ struct FlightSchool: Equatable {
                 if elapsed >= Self.touchOfferAfter { offersTouch = true }
             }
         case .wings:
-            if let a = input.angle, !touch, a < 95 {
+            // Founder's Duo test (27 Oct): a deep fold is fine (it just holds full tuck); warn only near the closing pause.
+            if let a = input.angle, !touch, a < FeelClosingGate.closeBelow + 10 {
                 subline = "Not that far. Just a little."
             } else if u >= 0.4 || folded {
                 subline = touch ? "…and let go." : "…and open again."

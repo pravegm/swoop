@@ -19,7 +19,7 @@ enum HingeTuckTuning {
     /// The longest stroke, in degrees from "open" to "fully tucked" (θ_full = θ_open − stroke).
     static let stroke = 36.0
     /// Round 4 (REVIEW-3-duo P1-1): a low rest gets a shorter stroke, so full tuck never asks the hand to fold past
-    /// ~100° (the closing pause lives at 90°): stroke = clamp(open − 100, 30, 36).
+    /// ~100° (folding deeper just holds full tuck; the closing pause lives at 55°): stroke = clamp(open − 100, 30, 36).
     static let strokeMin = 30.0
     static let strokeFloor = 100.0
 
@@ -177,8 +177,8 @@ final class HingeTuckSource: TuckSource {
         self.logs = logs
     }
 
-    /// True while the phone is closing (Round 4, REVIEW-3-duo P1-2): the smoothed angle stayed under 90° for 0.2 s, or
-    /// went under 75° at all; it clears above 98°. An excited squeeze that overshoots a moment no longer pauses a dive.
+    /// True while the phone is closing (Round 4, REVIEW-3-duo P1-2): the smoothed angle stayed under 55° for 0.2 s, or
+    /// went under 40° at all; it clears above 65° (`FeelClosingGate`). An excited squeeze that overshoots a moment no longer pauses a dive.
     /// While frames run it judges the One-Euro angle; while paused (no frames) the tracked reports, so reopening works.
     /// As of the latest frame or report; `closing(at:)` judges the dwell at any time (use it while paused).
     var isClosing: Bool {
@@ -257,7 +257,7 @@ final class HingeTuckSource: TuckSource {
         if angle == nil || !framesLive {
             angle = tracked
         }
-        // The closing gate: frames judge the smoothed angle; without frames the reports do. A slam under 75° always
+        // The closing gate: frames judge the smoothed angle; without frames the reports do. A slam under 40° always
         // closes at once.
         if framesLive {
             gate.instant(angle: tracked, at: stamp)

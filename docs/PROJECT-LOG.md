@@ -90,3 +90,17 @@ scenarios outgrew 60.
 
 **Honest limit:** fresh testers judge from still frames, so they can't judge feel. The remaining gate is the
 founder playing TF 7 on the Duo.
+
+### 27 Oct, morning: the founder's second device note
+
+> "When I fold the flap to go down, halfway folded it says open your wings and then the ready timer. I think it's
+> too soon. You should allow the user to close the flap more."
+
+**Cause:** the closing gate paused any fold held under 90° for 0.2 s. A natural dive fold goes about halfway.
+**Fix:**
+- The gate moves to **55°** (instant under 40°, resume above 65°). Full tuck still saturates at open − 36°, so a deeper
+  fold just holds the dive.
+- The lesson's "Not that far" warning now shows only near 65°.
+- The resume ring waits for mostly-open wings, within its grace.
+- The Duo checks are now DEEP-FOLD (holding 75° keeps flying) and HOLD-50 (holding 50° pauses). OVERSHOOT and
+  HOLD-85 are gone.

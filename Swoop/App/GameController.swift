@@ -81,7 +81,7 @@ final class GameController: ObservableObject, SceneDriver {
     @Published private(set) var isShut = false
     @Published private(set) var input: AppInputKind = .autopilot
     @Published private(set) var isUserPaused = false
-    /// The run paused itself because the Duo is closing (< 95°): "Open your wings to keep flying".
+    /// The run paused itself because the Duo is closing (< 55°): "Open your wings to keep flying".
     @Published private(set) var isClosingPaused = false
     @Published private(set) var summary: ResultSummary?
     /// Home: the player has folded the Duo (or held the screen) at least once: "Fold to dive. Open to soar."
@@ -446,7 +446,10 @@ final class GameController: ObservableObject, SceneDriver {
         if let until = readyUntil {
             var left = until - now
             // A slow reopen finishes before the bird moves: the ring stays up while the hinge still moves.
-            if left <= 0 && input == .hinge && !hinge.isStill(at: now) && now < until + Self.readyStillGrace {
+            // The closing pause now ends from 65° (founder's Duo test, 27 Oct): like the countdown, "Go" waits for wings
+            // that read mostly open (start tuck ≤ 0.5), within the same grace.
+            if left <= 0 && input == .hinge && (!hinge.isStill(at: now) || hinge.startTuck(at: now) > 0.5)
+                && now < until + Self.readyStillGrace {
                 left = 0.05
             }
             if left > 0 {
@@ -797,7 +800,7 @@ final class GameController: ObservableObject, SceneDriver {
         if !homeFolded { homeFolded = true }
     }
 
-    /// Closing below 90° for 0.2 s (at once under 75°) pauses a live hinge run; reopening past 98° resumes it (Feel R4:
+    /// Closing below 55° for 0.2 s (at once under 40°) pauses a live hinge run; reopening past 65° resumes it (Feel R4:
     /// `closing(at:)` matures the dwell on the frame clock).
     private func checkClosing(now: TimeInterval) {
         let closing = (hinge.closing(at: now) || isShut) && !closingIgnoredUntilSample

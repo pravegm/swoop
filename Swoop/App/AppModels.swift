@@ -476,7 +476,7 @@ struct HintCoach: Equatable {
 
 /// On Results, a Duo flying by hinge can fly again with the wings: arm with the wings open (u ≤ 0.2 for 0.5 s, the card
 /// up ≥ 0.8 s); Fly again then fills with u; fire on a fold (u ≥ 0.7 held 0.25 s) and an open (u ≤ 0.25) within 2 s.
-/// Closing below 95° or shut disarms it.
+/// Closing (the hinge's closing gate, under 55°) or shut disarms it.
 struct FoldToFly: Equatable {
     enum Phase: Equatable { case idle, armed, folded }
 

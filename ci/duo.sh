@@ -124,25 +124,23 @@ if [[ " $PASSES " == *" hinge "* ]]; then
     log "HINGE-FLIGHT FAIL: input=$(grep -m1 'SWOOP-T input' "$HL") launches=$launches touchdowns=$touchdowns"
   fi
 
-  # R4 comfort rules (REVIEW-4-duo P2): a brief overshoot to 85° mid-dive must NOT pause (0.2 s dwell); holding 85°
-  # must pause; reopening resumes.
+  # Comfort rules. Founder, real Duo (27 Oct): a natural dive fold goes "about halfway" (~90°) and must NOT pause, so
+  # the closing gate sits at 55° (0.2 s dwell; instant under 40°). DEEP-FOLD: holding 75° keeps flying. HOLD-50:
+  # holding 50° pauses (the simulator may also hand over to the cover by ~60°; either way the run pauses).
+  # (R4's OVERSHOOT check is gone: the `hinge` tool can't make a sub-0.3 s dip; InputTests covers brief dips.)
   p0=$(grep -c "SWOOP-T paused closing" "$HL")
-  hinge_sweep 85 0.15; hinge_sweep 150 0.15; sleep 1.5
+  hinge_sweep 75 0.4; sleep 1.5
   p1=$(grep -c "SWOOP-T paused closing" "$HL")
-  # Run 40389436645: the `hinge` tool's second sweep starts late, so the "brief" dip can sit at 85° for ~0.6 s (a
-  # correct pause). Judge by the dip the app actually saw: the span of SWOOP-H samples under 90° in the last dip.
-  span=$(grep "SWOOP-H" "$HL" | awk '{t=$2; a=$3} a<90 {if(!s) s=t; e=t} a>=90 && s {last=e-s; s=0} END {if (s) last=e-s; printf "%.2f", last+0}')
-  if (( p1 == p0 )); then log "OVERSHOOT PASS (no pause; dip under 90° lasted ${span} s)"
-  elif awk "BEGIN{exit !($span >= 0.2)}"; then log "OVERSHOOT INCONCLUSIVE (the hinge tool held under 90° for ${span} s, so the pause was right)"
-  else log "OVERSHOOT FAIL (paused on a ${span} s dip)"; fi
-  hinge_sweep 85 0.4; sleep 1.5
+  if (( p1 == p0 )); then log "DEEP-FOLD PASS (holding 75° keeps flying)"; else log "DEEP-FOLD FAIL (paused while held at 75°)"; fi
+  hinge_sweep 150 0.6; sleep 1.5
+  hinge_sweep 50 0.6; sleep 1.5
   p2=$(grep -c "SWOOP-T paused closing" "$HL")
-  if (( p2 > p1 )); then log "HOLD-85 PASS (holding 85° pauses)"; else log "HOLD-85 FAIL (no pause after 1.5 s at 85°)"; fi
+  if (( p2 > p1 )); then log "HOLD-50 PASS (holding 50° pauses)"; else log "HOLD-50 FAIL (no pause after 1.5 s at 50°)"; fi
   hinge_sweep 150 1.0; sleep 4
 
   # Closing pauses (never a crash, never a lost run): close to the cover display, reopen, keep flying.
-  # Closing: 60° is past the pause threshold and iOS may already show the cover, so no inner shot here (the
-  # closing card is store-35, frozen); go straight on to shut.
+  # Closing: iOS may already show the cover by 60°, so no inner shot here (the closing card is store-35, frozen); go
+  # straight on to shut (under the 55° gate, and the cover).
   hinge_sweep 60 1.0; sleep 1
   hinge_sweep 10 0.6; hinge_set 0; sleep 3; shoot duo-07-closed cover
   hinge_sweep 150 2.0; sleep 3; shoot duo-08-reopened inner

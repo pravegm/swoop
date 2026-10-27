@@ -47,7 +47,9 @@ display rate, then a One-Euro filter on top.
   player's own resting angle: an exponential average of the angle while not tucking, clamped to 150–172°. `θ_full` is
   always `θ_open − 36°`.
 - **Play band:** 100–178°.
-  - **Below 95°**, the phone is closing: pause ("Open your wings to keep flying").
+  - **Below 55°** (held 0.2 s, or under 40° at once), the phone is closing: pause ("Open your wings to keep flying").
+    It resumes above 65°. **Founder note on the real Duo (27 Oct):** a natural dive fold goes about halfway (≈ 90°),
+    and the old 90°–95° gate paused mid-dive. Folding past full tuck just holds the dive.
   - **At 10° and below**, it is shut: the app is on the cover display. Show the pause card there.
   - Fully flat is allowed. It reads as fully open. **Founder note on the real Duo:** starting a fold from fully flat
     blurs one half of the screen for about 2 s (an iOS effect). So we never ask for flat. The "ready" pose is a

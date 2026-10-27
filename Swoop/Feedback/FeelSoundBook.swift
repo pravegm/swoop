@@ -673,7 +673,7 @@ enum FeelSoundBook {
                               gain: 0.06, delay: 0.04))]
     }
 
-    /// The closing pause (< 95°): a soft falling breath, like wings settling (Brim's pause whoosh).
+    /// The closing pause (< 55°): a soft falling breath, like wings settling (Brim's pause whoosh).
     static func closing() -> [FeelSynthCommand] {
         [
             .noise(FeelNoiseSpec(.bandPass, cutoff: 1900, to: 520, sweep: 0.34, q: 0.8, attack: 0.07, decay: 0.16,

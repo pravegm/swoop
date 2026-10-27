@@ -259,61 +259,76 @@ struct InputTests {
         #expect(low.openAngle < 147)
     }
 
-    // MARK: Closing (Round 4: 90° / 98°, a 0.2 s dwell, instant under 75°)
+    // MARK: Closing (Round 4's gate; founder's Duo test, 27 Oct: 55° / 65°, a 0.2 s dwell, instant under 40°)
 
     @Test func closingGateDwellsInstantClosesAndHasHysteresis() {
         var gate = FeelClosingGate()
         gate.update(angle: 120, at: 0)
         #expect(gate.isClosing(at: 0) == false)
-        // Under 90° for less than 0.2 s: still open.
-        gate.update(angle: 88, at: 1.0)
+        // Under 55° for less than 0.2 s: still open.
+        gate.update(angle: 53, at: 1.0)
         let early = gate.isClosing(at: 1.15)
-        gate.update(angle: 92, at: 1.15)
+        gate.update(angle: 57, at: 1.15)
         let afterBounce = gate.isClosing(at: 1.3)
         #expect(early == false)
         #expect(afterBounce == false)
-        // Under 90° for 0.2 s: closed, and the dwell matures with time alone.
-        gate.update(angle: 85, at: 2.0)
+        // Under 55° for 0.2 s: closed, and the dwell matures with time alone.
+        gate.update(angle: 50, at: 2.0)
         let matured = gate.isClosing(at: 2.21)
         #expect(matured)
-        // Hysteresis: 95° keeps it closed, 98.5° opens it.
-        gate.update(angle: 95, at: 2.3)
+        // Hysteresis: 60° keeps it closed, 65.5° opens it.
+        gate.update(angle: 60, at: 2.3)
         let held = gate.isClosing(at: 2.3)
-        gate.update(angle: 98.5, at: 2.4)
+        gate.update(angle: 65.5, at: 2.4)
         let reopened = gate.isClosing(at: 2.4)
         #expect(held)
         #expect(reopened == false)
-        // Under 75°: closed at once.
-        gate.update(angle: 70, at: 3.0)
+        // Under 40°: closed at once.
+        gate.update(angle: 35, at: 3.0)
         let slam = gate.isClosing(at: 3.0)
         #expect(slam)
         var instant = FeelClosingGate()
-        instant.instant(angle: 80, at: 0)
+        instant.instant(angle: 45, at: 0)
         let notYet = instant.isClosing(at: 1)
-        instant.instant(angle: 74, at: 1)
+        instant.instant(angle: 39, at: 1)
         let now = instant.isClosing(at: 1)
         instant.update(angle: Double.nan, at: 2)
         let stays = instant.isClosing(at: 2)
         #expect(notYet == false)
         #expect(now)
         #expect(stays)
-        #expect(FeelClosingGate.closeBelow == 90)
-        #expect(FeelClosingGate.reopenAbove == 98)
+        #expect(FeelClosingGate.closeBelow == 55)
+        #expect(FeelClosingGate.reopenAbove == 65)
+        #expect(FeelClosingGate.instantBelow == 40)
     }
 
-    @Test func hingeSourceReportsClosingBelow90AndReopensAbove98() {
+    @Test func hingeSourceReportsClosingBelow55AndReopensAbove65() {
         let source = HingeTuckSource(logs: false)
         let hinge = FakeHinge(source: source)
         hinge.run(1.0) { _ in 160 }
         #expect(source.isClosing == false)
-        hinge.run(1.0) { t in 160 - 80 * min(t / 0.8, 1) }
+        hinge.run(1.0) { t in 160 - 115 * min(t / 0.7, 1) }
         #expect(source.isClosing)
-        hinge.run(1.0) { t in 80 + 15 * min(t / 0.6, 1) }
+        hinge.run(1.0) { t in 45 + 15 * min(t / 0.6, 1) }
         #expect(source.isClosing)
-        hinge.run(1.0) { t in 95 + 15 * min(t / 0.4, 1) }
+        hinge.run(1.0) { t in 60 + 15 * min(t / 0.4, 1) }
         #expect(source.isClosing == false)
         // The hinge is never forgotten.
         #expect(source.hasHinge)
+    }
+
+    /// Founder, real Duo (27 Oct): folding "about halfway" (≈ 90°) to dive paused the run. A deep dive fold held well
+    /// past halfway keeps flying, fully tucked.
+    @Test func aDeepDiveFoldPastHalfwayKeepsFlying() {
+        let source = HingeTuckSource(logs: false)
+        let hinge = FakeHinge(source: source)
+        hinge.run(1, snap: true) { _ in 150 }
+        let tuck = hinge.run(0.6) { t in 150 - 80 * min(t / 0.4, 1) }
+        let deep = hinge.run(2.0) { _ in 70 }
+        #expect(source.isClosing == false)
+        #expect(source.closing(at: hinge.time + 1) == false)
+        #expect(tuck > 0.95)
+        #expect(deep > 0.95)
     }
 
     /// REVIEW-3-duo P1-2: an excited squeeze that overshoots full tuck for a moment must not pause the dive.
@@ -321,19 +336,19 @@ struct InputTests {
         let source = HingeTuckSource(logs: false)
         let hinge = FakeHinge(source: source)
         hinge.run(1, snap: true) { _ in 132 }
-        hinge.run(0.25) { t in 132 - 47 * t / 0.25 }
-        hinge.run(0.4) { t in 85 + 20 * min(t / 0.1, 1) }
+        hinge.run(0.25) { t in 132 - 82 * t / 0.25 }
+        hinge.run(0.4) { t in 50 + 20 * min(t / 0.1, 1) }
         #expect(source.isClosing == false)
-        // Held under 90°: paused once the dwell has passed.
-        hinge.run(0.15) { t in 105 - 20 * min(t / 0.1, 1) }
-        hinge.run(0.5) { _ in 85 }
+        // Held under 55°: paused once the dwell has passed.
+        hinge.run(0.15) { t in 70 - 20 * min(t / 0.1, 1) }
+        hinge.run(0.5) { _ in 50 }
         #expect(source.isClosing)
         #expect(source.closing(at: hinge.time + 1))
-        // A slam under 75° pauses at once.
+        // A slam under 40° pauses at once.
         let slam = HingeTuckSource(logs: false)
         let fast = FakeHinge(source: slam)
         fast.run(1) { _ in 150 }
-        fast.run(0.12) { t in max(150 - 1500 * t, 60) }
+        fast.run(0.15) { t in max(150 - 1500 * t, 25) }
         #expect(slam.isClosing)
     }
 

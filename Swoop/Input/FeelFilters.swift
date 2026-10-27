@@ -300,14 +300,16 @@ struct HingePredictor {
 }
 
 /// The "phone is closing" gate (GAME-DESIGN §3; Round 4, REVIEW-3-duo P1-2). It closes when the angle stays under
-/// `closeBelow` (90°) for `dwell` (0.2 s), or at once under `instantBelow` (75°: a real close, not a squeeze), and it
-/// opens again only above `reopenAbove` (98°). The dwell means an excited squeeze that overshoots full tuck for a
+/// `closeBelow` (55°) for `dwell` (0.2 s), or at once under `instantBelow` (40°: a real close, not a squeeze), and it
+/// opens again only above `reopenAbove` (65°). The dwell means an excited squeeze that overshoots full tuck for a
 /// moment never freezes a dive. Pure, with explicit times; `isClosing(at:)` lets the dwell mature with time alone.
+/// Founder, real Duo (27 Oct): at 90° a natural dive fold ("about halfway") paused the run, so the gate sits well past
+/// halfway now; full tuck still saturates at open − 36°, so any deeper fold simply holds the dive.
 struct FeelClosingGate {
-    static let closeBelow = 90.0
-    static let reopenAbove = 98.0
+    static let closeBelow = 55.0
+    static let reopenAbove = 65.0
     static let dwell = 0.2
-    static let instantBelow = 75.0
+    static let instantBelow = 40.0
 
     /// Latched closed (until above `reopenAbove`).
     private(set) var latched = false
@@ -316,7 +318,7 @@ struct FeelClosingGate {
 
     init() {}
 
-    /// Closed at `time`: latched, or under 90° for the whole dwell.
+    /// Closed at `time`: latched, or under 55° for the whole dwell.
     func isClosing(at time: Double) -> Bool {
         if latched { return true }
         guard let since = belowSince, time.isFinite else { return false }
@@ -344,7 +346,7 @@ struct FeelClosingGate {
         }
     }
 
-    /// Only the instant rule (a report while frames judge the dwell): under 75° closes at once.
+    /// Only the instant rule (a report while frames judge the dwell): under 40° closes at once.
     mutating func instant(angle: Double, at time: Double) {
         guard angle.isFinite, time.isFinite, !latched, angle < Self.instantBelow else { return }
         latched = true

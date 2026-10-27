@@ -14,7 +14,7 @@ enum FeelCue: Sendable, Equatable {
     /// Results: fold-to-fly armed (= `uiTap`) and fired (= `uiConfirm` plus a rising rush of air).
     case foldArmed
     case foldFired
-    /// The closing pause (< 95°): a falling breath. Call it alongside `silence()`.
+    /// The closing pause (< 55°): a falling breath. Call it alongside `silence()`.
     case closing
     /// The Ready ring appears after a pause or reopening: a rising breath.
     case reopened

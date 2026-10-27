@@ -1324,7 +1324,7 @@ struct PauseCard: View {
     }
 }
 
-/// The Duo is closing (< 95°) mid-flight: the run holds. Opening it again resumes behind "Ready"; Resume appears after
+/// The Duo is closing (< 55°) mid-flight: the run holds. Opening it again resumes behind "Ready"; Resume appears after
 /// 1.5 s, for a reopen iOS didn't report (QA-1 P2-3).
 struct ClosingCard: View {
     let meters: Double
