@@ -1,6 +1,6 @@
 # Swoop: App Review notes (v1.0)
 
-*Written Mon 26 Oct 2026; rewritten Tue 27 Oct for the Round 6–9 build; **final text Tue 27 Oct for the release candidate** (QA-FINAL-release P0-2, P0-3, P1-4: the 55° pause, Skip from the first step, the quickest path to a flight, "Scores", "The storm caught you", the resting angle saved on the device, and the clear-side check's "Not sure"). The block between the markers is what App Review reads. Apple limits the field to 4,000 bytes; the block is plain ASCII (no smart quotes or symbols), so bytes = characters: **3,964 bytes** (counted with Node; `tools/appstore/build-metadata.js` fails over 4,000). Before submission, tick the "Check against the build" table at the end; if a line is false, change the block, never the build to match the words.*
+*Written Mon 26 Oct 2026; rewritten Tue 27 Oct for the Round 6–9 build; **final text Tue 27 Oct for the release candidate** (QA-FINAL-release P0-2, P0-3, P1-4: the 55° pause, Skip from the first step, the quickest path to a flight, "Scores", "The storm caught you", the resting angle saved on the device, and the clear-side check's "Not sure"). The block between the markers is what App Review reads. Apple limits the field to 4,000 bytes; the block is plain ASCII (no smart quotes or symbols), so bytes = characters: **3,982 bytes** (counted with Node; `tools/appstore/build-metadata.js` fails over 4,000). Before submission, tick the "Check against the build" table at the end; if a line is false, change the block, never the build to match the words.*
 
 ## Where this goes
 
@@ -12,14 +12,16 @@ App Store Connect → the app → the **1.0** version page → **App Review Info
 
 <!-- REVIEW-NOTES:BEGIN -->
 ```
-Thanks for reviewing Swoop: a paid game with no ads, no in-app purchases, no accounts, no data collection and no network requests of its own.
+NO LOGIN - NO DEMO ACCOUNT NEEDED. Swoop has no accounts, no sign-up and no sign-in screen; everything works without signing in. Game Center is optional and is Apple's own system sign-in (only if you tap "Scores").
+
+Thanks for reviewing Swoop: a paid game with no ads, no in-app purchases, no data collection and no network requests of its own.
 
 1. TESTING WITHOUT AN iPHONE DUO (start here)
 You don't need a Duo. Everything works on any iPhone, on iPad (as an iPhone app) and in the Simulator, in landscape.
 - Quickest look (under a minute): Fly > Skip (bottom corner) > a real flight.
 - The first flight starts with Flight School, a short lesson on a calm practice sea (no storm, no score): a guide gull shows each move, then waits for you to copy it. Skip is there from the first step; Settings > Flight School replays it.
 - Control: press and hold anywhere on the way down a wave (the wings fold, the bird dives faster), let go on the way up (it flies off the top). Land on the way down of the next wave for a "Perfect". One hold per wave; no flapping.
-- A storm follows and speeds up; perfect landings push it back. The goal is the next lighthouse on a fixed route (Gull Point 4 km, Saltlight 9 km...), always shown at the top. When the storm catches up, "The storm caught you" appears and a card shows how far you got.
+- A storm follows and speeds up; perfect landings push it back. The goal is the next lighthouse on a fixed route, always shown at the top. When the storm catches up, "The storm caught you" appears and a card shows how far you got.
 - Settings > "Wings by: Tapping": one tap folds, the next opens.
 
 2. HOW THE HINGE IS USED (iPhone Duo)
@@ -33,12 +35,11 @@ e) Folded below about 55 degrees (well past an L shape) a flight pauses ("Open y
 3. KIND TO THE DEVICE (Guidelines 2.4.2 and 1.4.5)
 - Folds are short (about 30 degrees) and unhurried, about one per wave, in the middle of the hinge's range. The game eases the fold, so speed is never rewarded.
 - Swoop never asks the user to close the phone, lay it flat, fold quickly or slam it. Opening flat gains nothing, and a one-time tip says so.
-- No score, achievement or bonus rewards folding speed or fold count.
-- During play the game reads the angle, never the closed state. Nothing is placed on the screens.
+- During play the game reads the angle, never the closed state.
 
 4. MODES AND UNLOCKS (nothing hidden, nothing to buy)
 - Flight: endless, new waves every time. Lighthouses passed light up on the Route page.
-- Daily Flight: the same waves for everyone that day, one try that counts, then practice. Shareable as text via the share sheet.
+- Daily Flight: the same waves for everyone that day, one try that counts, then practice. Shareable as text.
 - Goals: three at a time, 15 levels. Levels unlock cosmetic birds, skies and trails (8 birds and 5 skies in all). Every bird flies the same.
 
 5. CONTENT
@@ -48,11 +49,11 @@ A bird over ocean waves. The storm is weather (cloud, rain, a soft rumble); noth
 No third-party SDKs, analytics, ads, accounts or tracking. Progress and settings stay on the device. App Privacy: Data Not Collected.
 
 7. GAME CENTER
-Optional ("Scores" button on Home). 2 leaderboards (Longest Flight, Daily Flight), 12 achievements (625 points), none hidden.
+Optional, no account of ours ("Scores" on Home). 2 leaderboards (Longest Flight, Daily Flight), 12 achievements (625 points), none hidden.
 
 8. OTHER
 - No notifications. Debug and demo modes are disabled in Release builds.
-- Sound plays with the silent switch on (playback audio, mixing); Settings > "Respect silent switch" turns that off. All sound is synthesized in the app.
+- Sound plays with the silent switch on (playback audio, mixing); Settings > "Respect silent switch" turns that off.
 ```
 <!-- REVIEW-NOTES:END -->
 
