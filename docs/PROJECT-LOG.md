@@ -129,3 +129,17 @@ HOLD-50), and the founder smoke-tested it on the Duo.
 
 **The founder** turned on Pages and did App Privacy, Mac/Vision Pro, Family Sharing and DSA. The review submission
 is READY_FOR_REVIEW with 14 items; it only needs Add for Review → Submit.
+
+### 28 Oct: first App Review answer and resubmission
+
+- **Rejected under 2.1.0 (App Completeness)** by Apple's *automated* check: "may include a login but was submitted
+  without a demo account". Swoop has no login; the scanner most likely saw Game Center.
+- **The same day, the repos were found private** (swoop, brim and squish, switched on 27 Oct). That had turned
+  GitHub Pages off, so the support and privacy URLs were 404, and Actions was blocked by billing. The founder made
+  them public again and re-enabled Pages. Squish's site deploys through `pages.yml` (source "GitHub Actions"); it
+  was redeployed.
+- **Fix:**
+  - The review notes now open with "NO LOGIN - NO DEMO ACCOUNT NEEDED" (3,982 bytes, pushed with `asc.yml`).
+  - The founder replied in App Review and resubmitted. The Resubmit button only enables after the version is opened
+    and saved in the UI; an API edit alone doesn't count.
+- **Lesson:** keep the store repos **public**, or their Pages sites and every CI job stop.
